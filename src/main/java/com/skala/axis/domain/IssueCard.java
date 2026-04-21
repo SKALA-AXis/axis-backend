@@ -1,0 +1,42 @@
+package com.skala.axis.domain;
+
+import jakarta.persistence.*;
+import lombok.*;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "issue_cards")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class IssueCard {
+    @Id
+    @Column(length = 50)
+    private String id;
+
+    @Column(name = "peer_id", nullable = false, length = 50)
+    private String peerId;
+
+    @Column(name = "cluster_id")
+    private Long clusterId;
+
+    @Column(nullable = false)
+    private String title;
+
+    @Column(name = "event_type", length = 50)
+    private String eventType;
+
+    @Column(length = 20)
+    private String importance;
+
+    @Column(name = "importance_score")
+    private Float importanceScore;
+
+    @Column(name = "validation_pass")
+    private Boolean validationPass;
+
+    @Column(name = "validation_sc_score")
+    private Float validationScScore;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
+}

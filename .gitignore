@@ -1,0 +1,12 @@
+target/
+*.class
+*.jar
+*.war
+.gradle/
+build/
+.env
+.env.local
+*.log
+.idea/
+*.iml
+.DS_Store
