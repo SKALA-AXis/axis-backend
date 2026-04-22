@@ -135,6 +135,8 @@ GitHub Actions (`.github/workflows/ci.yml`) — push / PR 시 자동 실행
 ./gradlew test
 ```
 
+> CI 상세 설명 및 실패 대응 방법: [axis-infra/docs/CI.md](https://github.com/SKALA-AXis/axis-infra/blob/develop/docs/CI.md)
+
 ---
 
 ## 주의사항
