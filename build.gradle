@@ -35,6 +35,10 @@ dependencies {
     // DB
     runtimeOnly 'org.postgresql:postgresql'
 
+    // Flyway 마이그레이션 (Spring Boot 3.3 + Flyway 10 — postgresql 모듈 별도 의존성 필수)
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
