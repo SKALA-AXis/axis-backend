@@ -2,7 +2,9 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres}?sslmode=require
+    # SSL·prepareThreshold 등 옵션은 env 쪽에서 URL 쿼리스트링으로 직접 지정한다.
+    # cloud: ...?sslmode=require&prepareThreshold=0  /  local 컨테이너: 옵션 없이 사용
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/axis}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
