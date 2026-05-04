@@ -21,6 +21,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(404).body(ApiResponse.error("NOT_FOUND", e.getMessage()));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<?>> handleBadRequest(IllegalArgumentException e) {
+        log.warn("잘못된 요청: {}", e.getMessage());
+        return ResponseEntity.status(400).body(ApiResponse.error("BAD_REQUEST", e.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<?>> handleGeneral(Exception e) {
         log.error("예상치 못한 오류", e);

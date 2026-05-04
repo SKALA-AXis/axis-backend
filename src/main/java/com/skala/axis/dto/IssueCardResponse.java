@@ -15,4 +15,13 @@ public class IssueCardResponse {
     private String importance;
     private Float importanceScore;
     private LocalDateTime createdAt;
+
+    /** 카드 대표 이미지 URL (예: "/api/images/123"). 이미지 없으면 null. */
+    private String imageUrl;
+
+    /** 이미지 출처 표기 (예: "제공: 한경"). null 이면 미표기. */
+    private String imageAttribution;
+
+    /** 이미지 alt 텍스트 (접근성 + 이메일 클라이언트가 이미지 차단 시 노출). */
+    private String imageAlt;
 }
