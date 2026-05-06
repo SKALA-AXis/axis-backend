@@ -23,7 +23,7 @@ public class ImageController {
 
     /**
      * 이미지 바이너리 반환. CDN 도입 전에는 backend 가 직접 서빙한다.
-     * 캐시 1년 (storage_path 안의 image_hash 가 immutable key 역할).
+     * 캐시 1년 (storage_path 가 immutable key 역할).
      */
     @GetMapping("/{id}")
     public ResponseEntity<Resource> getImage(@PathVariable Long id) {

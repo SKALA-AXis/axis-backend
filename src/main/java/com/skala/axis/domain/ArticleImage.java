@@ -54,17 +54,11 @@ public class ArticleImage {
     @Column(name = "file_size_bytes")
     private Integer fileSizeBytes;
 
-    @Column(name = "image_hash", length = 64)
-    private String imageHash;
-
     @Column(name = "alt_text", columnDefinition = "TEXT")
     private String altText;
 
     @Column(name = "attribution", columnDefinition = "TEXT")
     private String attribution;
-
-    @Column(name = "license_status", length = 20)
-    private String licenseStatus;
 
     @Column(name = "fetched_at")
     private LocalDateTime fetchedAt;
