@@ -1,27 +1,27 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.service.AiClientService;
+import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
+
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/pipeline")
 @RequiredArgsConstructor
 public class PipelineController {
-    private final AiClientService aiClientService;
+    private final ApiContractFixtureService fixture;
 
     @GetMapping("/status")
-    public ResponseEntity<ApiResponse<Map<String, String>>> getStatus() {
-        return ResponseEntity.ok(ApiResponse.success(Map.of("status", "idle")));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getStatus() {
+        return ResponseEntity.ok(ApiResponse.success(fixture.pipelineStatus()));
     }
 
     @PostMapping("/trigger")
-    public ResponseEntity<ApiResponse<Map<String, String>>> trigger() {
-        aiClientService.triggerPipeline(List.of("samsung_sds", "lg_cns")).subscribe();
-        return ResponseEntity.ok(ApiResponse.success(Map.of("result", "triggered")));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> trigger(@RequestBody(required = false) Map<String, Object> request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(fixture.pipelineTriggerResult()));
     }
 }

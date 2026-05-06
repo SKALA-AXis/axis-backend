@@ -4,6 +4,7 @@ import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import java.util.List;
@@ -15,10 +16,13 @@ public class SchedulerConfig {
     private final AiClientService aiClientService;
     private final BriefingService briefingService;
 
+    @Value("${axis.scheduler.ingestion-peer-ids}")
+    private List<String> ingestionPeerIds;
+
     @Scheduled(cron = "0 0 * * * *")
     public void triggerIngestionPipeline() {
         log.info("수집 파이프라인 트리거");
-        aiClientService.triggerPipeline(List.of("samsung_sds", "lg_cns"))
+        aiClientService.triggerPipeline(ingestionPeerIds)
                 .subscribe(null, e -> log.error("파이프라인 트리거 실패: {}", e.getMessage()));
     }
 

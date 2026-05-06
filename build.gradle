@@ -6,6 +6,7 @@ plugins {
 
 group = 'com.skala'
 version = '0.0.1-SNAPSHOT'
+description = 'AXIS Spring Boot REST API server'
 
 java {
     toolchain {
@@ -56,9 +57,18 @@ dependencies {
 
     // 테스트
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'com.h2database:h2'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+tasks.named('bootJar') {
+    archiveFileName = 'axis-backend.jar'
 }

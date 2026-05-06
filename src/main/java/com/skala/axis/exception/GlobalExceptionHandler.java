@@ -13,23 +13,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AiServerException.class)
     public ResponseEntity<ApiResponse<?>> handleAiServer(AiServerException e) {
         log.warn("AI 서버 오류: {}", e.getMessage());
-        return ResponseEntity.status(503).body(ApiResponse.error("AI_SERVER_UNAVAILABLE", e.getMessage()));
+        return ResponseEntity.status(503).body(ApiResponse.error("EXTERNAL_SERVICE_UNAVAILABLE", e.getMessage()));
     }
 
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<ApiResponse<?>> handleNotFound(EntityNotFoundException e) {
-        return ResponseEntity.status(404).body(ApiResponse.error("NOT_FOUND", e.getMessage()));
+        return ResponseEntity.status(404).body(ApiResponse.error("COMMON_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<?>> handleBadRequest(IllegalArgumentException e) {
         log.warn("잘못된 요청: {}", e.getMessage());
-        return ResponseEntity.status(400).body(ApiResponse.error("BAD_REQUEST", e.getMessage()));
+        return ResponseEntity.status(400).body(ApiResponse.error("COMMON_BAD_REQUEST", e.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<?>> handleGeneral(Exception e) {
         log.error("예상치 못한 오류", e);
-        return ResponseEntity.status(500).body(ApiResponse.error("INTERNAL_ERROR", "서버 내부 오류"));
+        return ResponseEntity.status(500).body(ApiResponse.error("COMMON_INTERNAL_SERVER_ERROR", "서버 내부 오류"));
     }
 }

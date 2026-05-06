@@ -1,12 +1,20 @@
-FROM gradle:8.8-jdk17-focal AS builder
+FROM eclipse-temurin:17-jdk-jammy AS builder
 WORKDIR /app
-COPY build.gradle settings.gradle ./
-RUN gradle dependencies --no-daemon -q
+
+COPY gradlew settings.gradle build.gradle ./
+COPY gradle gradle
+RUN chmod +x ./gradlew
+RUN ./gradlew dependencies --no-daemon -q
+
 COPY src src
-RUN gradle bootJar --no-daemon -q
+RUN ./gradlew clean bootJar --no-daemon -q
 
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
-COPY --from=builder /app/build/libs/*.jar app.jar
+
+RUN addgroup --system axis && adduser --system --ingroup axis axis
+COPY --from=builder /app/build/libs/axis-backend.jar app.jar
+USER axis
+
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
