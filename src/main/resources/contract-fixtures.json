@@ -219,6 +219,7 @@
     {
       "id": "samsung_sds",
       "name": "삼성SDS",
+      "tier": "domestic",
       "full_name": "Samsung SDS",
       "keywords": ["삼성SDS", "Samsung SDS"],
       "excluded_segments": ["물류BPO"],
@@ -228,6 +229,7 @@
     {
       "id": "lg_cns",
       "name": "LG CNS",
+      "tier": "domestic",
       "full_name": "LG CNS",
       "keywords": ["LG CNS", "LGCNS"],
       "excluded_segments": [],
@@ -237,6 +239,7 @@
     {
       "id": "hyundai_autoever",
       "name": "현대오토에버",
+      "tier": "domestic",
       "full_name": "Hyundai AutoEver",
       "keywords": ["현대오토에버", "AutoEver"],
       "excluded_segments": [],
@@ -246,6 +249,7 @@
     {
       "id": "posco_dx",
       "name": "포스코DX",
+      "tier": "domestic",
       "full_name": "POSCO DX",
       "keywords": ["포스코DX", "POSCO DX"],
       "excluded_segments": [],

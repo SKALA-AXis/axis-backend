@@ -16,6 +16,15 @@ public class PeerCompany {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Column(nullable = false, length = 20)
+    private String tier;
+
+    @Column(columnDefinition = "text[]")
+    private String[] keywords;
+
+    @Column(name = "is_active")
+    private Boolean isActive;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 }
