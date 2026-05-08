@@ -13,7 +13,7 @@ public class IssueCard {
     @Column(length = 50)
     private String id;
 
-    @Column(name = "peer_id", nullable = false, length = 50)
+    @Column(name = "company", nullable = false, length = 50)
     private String peerId;
 
     @Column(name = "cluster_id")

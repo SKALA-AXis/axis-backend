@@ -13,7 +13,7 @@ public class RawArticle {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "peer_id", nullable = false, length = 50)
+    @Column(name = "company", nullable = false, length = 50)
     private String peerId;
 
     @Column(nullable = false)
