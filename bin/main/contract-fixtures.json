@@ -33,6 +33,50 @@
       "peer_id": "samsung_sds",
       "cluster_id": 1001,
       "title": "삼성SDS가 생성형 AI 운영 플랫폼 투자를 확대했습니다.",
+      "category": "AX",
+      "date": "{{today}}",
+      "coverImageUrl": "/png.png",
+      "coverImageAlt": "생성형 AI 운영 플랫폼을 상징하는 카드 이미지",
+      "summary": [
+        "삼성SDS가 생성형 AI 운영 플랫폼 투자를 확대했습니다.",
+        "고객 운영 자동화 수요와 AX 제안 경쟁이 직접 연결되고 있습니다.",
+        "SK AX 관점에서는 유사 고객군 제안 패키지 보강이 필요합니다."
+      ],
+      "articlePages": [
+        {
+          "title": "핵심 동향",
+          "paragraphs": [
+            "삼성SDS는 생성형 AI 기반 운영 플랫폼을 앞세워 제조와 금융 고객의 자동화 수요를 공략하고 있습니다.",
+            "운영 자동화, 데이터 거버넌스, 보안 요구가 함께 묶이면서 AX 제안 경쟁의 속도가 빨라질 가능성이 있습니다."
+          ]
+        },
+        {
+          "title": "SK AX 관점",
+          "paragraphs": [
+            "SK AX는 유사 고객군의 운영 KPI와 보안 요구사항을 함께 제시하는 제안 패키지를 선제적으로 점검해야 합니다.",
+            "재무 지표와 공개 기사 근거를 연결하면 고객 브리핑에서 설득력을 높일 수 있습니다."
+          ]
+        }
+      ],
+      "insights": [
+        "운영 자동화 수요가 AX 플랫폼 경쟁의 핵심 진입점으로 이동하고 있습니다.",
+        "고객 제안에서는 기술 기능보다 운영 안정성과 보안 결합 메시지가 더 중요해질 수 있습니다.",
+        "재무 지표와 기사 근거를 함께 제시하는 브리핑 자료가 필요합니다."
+      ],
+      "source": "AXIS News",
+      "sourceUrl": "https://example.com/news/1",
+      "detailTitle": "생성형 AI 운영 플랫폼 투자 확대",
+      "detailDescription": "고객 운영 자동화 수요와 직접 연결되는 공개 신호로, SK AX의 산업별 제안 패키지와 재무 근거 보강이 필요한 동향입니다.",
+      "detailPoints": [
+        "생성형 AI 운영 플랫폼 투자 확대",
+        "제조·금융 고객 자동화 수요와 연결",
+        "보안 요구사항과 운영 KPI를 함께 검토"
+      ],
+      "actionItems": [
+        "유사 고객군 제안 패키지 검토",
+        "재무 지표 연결 분석 보강",
+        "보안 요구사항 체크리스트 업데이트"
+      ],
       "subtitle": "AX 경쟁 신호",
       "category_label": "AX",
       "published_date": "{{today}}",
@@ -142,6 +186,20 @@
         "background_asset_url": "/api/images/1",
         "accent_color": "orange"
       },
+      "displayEntries": [
+        {
+          "id": "card-cn-20260502-001",
+          "title": "생성형 AI 운영 플랫폼 투자 확대",
+          "subtitle": "운영 자동화 수요와 AX 제안 경쟁 신호",
+          "peerCompany": "삼성SDS",
+          "sector": "AX",
+          "sourceType": "뉴스",
+          "badgeLabel": "AX",
+          "displayDate": "{{today}}",
+          "coverStyle": "linear-gradient(135deg,#1A3A91 0%,#DC5A24 100%)",
+          "previewImageStyle": "linear-gradient(135deg,#1A3A91 0%,#708168 100%)"
+        }
+      ],
       "validation_pass": true,
       "is_human_reviewed": false,
       "is_bookmarked": false,
@@ -154,6 +212,50 @@
       "peer_id": "lg_cns",
       "cluster_id": 1002,
       "title": "LG CNS가 금융권 AX 전환 프로젝트 수주를 확대했습니다.",
+      "category": "AX",
+      "date": "{{today}}",
+      "coverImageUrl": "/png.png",
+      "coverImageAlt": "금융 AX 전환 프로젝트를 상징하는 카드 이미지",
+      "summary": [
+        "LG CNS가 금융권 AX 전환 프로젝트 수주를 확대했습니다.",
+        "금융 고객군의 AX 예산 흐름과 운영 자동화 수요가 함께 확인됩니다.",
+        "SK AX는 금융 AX 제안 자산을 빠르게 점검해야 합니다."
+      ],
+      "articlePages": [
+        {
+          "title": "핵심 동향",
+          "paragraphs": [
+            "LG CNS는 금융권 AX 전환 프로젝트를 확대하며 규제 산업의 AI 전환 수요를 실적과 레퍼런스로 연결하고 있습니다.",
+            "운영 자동화와 보안 요구가 결합된 제안이 금융 고객군에서 더 중요한 기준이 되고 있습니다."
+          ]
+        },
+        {
+          "title": "SK AX 관점",
+          "paragraphs": [
+            "금융 고객군에서는 보안, 감사 대응, 운영 자동화 범위를 함께 묶은 제안 자산이 필요합니다.",
+            "레퍼런스 확보 현황과 후속 수주 흐름을 지속적으로 추적해야 합니다."
+          ]
+        }
+      ],
+      "insights": [
+        "금융권 AX 예산이 운영 자동화와 보안 결합형 프로젝트로 이동하고 있습니다.",
+        "동종 고객 제안 경쟁에서 레퍼런스와 규제 대응 역량이 중요해질 수 있습니다.",
+        "금융 AX 제안 자산과 보안 운영 모델을 함께 정비해야 합니다."
+      ],
+      "source": "AXIS News",
+      "sourceUrl": "https://example.com/news/2",
+      "detailTitle": "금융권 AX 전환 프로젝트 확대",
+      "detailDescription": "금융 고객군의 AX 예산 흐름을 확인할 수 있는 신호로, 보안과 운영 자동화를 결합한 제안 자산 점검이 필요합니다.",
+      "detailPoints": [
+        "금융권 AX 전환 수요 확대",
+        "운영 자동화와 보안 요구 결합",
+        "레퍼런스 기반 수주 경쟁 강화"
+      ],
+      "actionItems": [
+        "금융 AX 제안 자산 점검",
+        "보안 운영 모델 메시지 보강",
+        "금융권 레퍼런스 확보 현황 추적"
+      ],
       "subtitle": "금융 AX 수주",
       "category_label": "AX",
       "published_date": "{{today}}",
@@ -198,6 +300,20 @@
         "background_asset_url": null,
         "accent_color": "blue"
       },
+      "displayEntries": [
+        {
+          "id": "card-cn-20260502-002",
+          "title": "금융권 AX 전환 프로젝트 수주 확대",
+          "subtitle": "운영 자동화와 보안 결합형 금융 제안 신호",
+          "peerCompany": "LG CNS",
+          "sector": "수주",
+          "sourceType": "뉴스",
+          "badgeLabel": "금융 AX",
+          "displayDate": "{{today}}",
+          "coverStyle": "linear-gradient(135deg,#15284C 0%,#708168 100%)",
+          "previewImageStyle": "linear-gradient(135deg,#15284C 0%,#DC5A24 100%)"
+        }
+      ],
       "validation_pass": true,
       "is_human_reviewed": false,
       "is_bookmarked": false,
@@ -219,6 +335,7 @@
     {
       "id": "samsung_sds",
       "name": "삼성SDS",
+      "tier": "domestic",
       "full_name": "Samsung SDS",
       "keywords": ["삼성SDS", "Samsung SDS"],
       "excluded_segments": ["물류BPO"],
@@ -228,6 +345,7 @@
     {
       "id": "lg_cns",
       "name": "LG CNS",
+      "tier": "domestic",
       "full_name": "LG CNS",
       "keywords": ["LG CNS", "LGCNS"],
       "excluded_segments": [],
@@ -237,6 +355,7 @@
     {
       "id": "hyundai_autoever",
       "name": "현대오토에버",
+      "tier": "domestic",
       "full_name": "Hyundai AutoEver",
       "keywords": ["현대오토에버", "AutoEver"],
       "excluded_segments": [],
@@ -246,6 +365,7 @@
     {
       "id": "posco_dx",
       "name": "포스코DX",
+      "tier": "domestic",
       "full_name": "POSCO DX",
       "keywords": ["포스코DX", "POSCO DX"],
       "excluded_segments": [],
@@ -253,6 +373,418 @@
       "is_active": true
     }
   ],
+  "frontend_dashboard": {
+    "trends": [
+      {
+        "peer": "삼성SDS",
+        "title": "생성형 AI 운영 플랫폼 투자 확대",
+        "reason": "운영 자동화와 보안 결합 수요를 앞세워 대형 고객군 AX 제안을 강화하고 있습니다.",
+        "reviewLevel": "primary",
+        "status": "대응 전략 수립"
+      },
+      {
+        "peer": "LG CNS",
+        "title": "금융권 AX 전환 프로젝트 수주 확대",
+        "reason": "규제 산업의 보안·운영 자동화 요구를 금융 AX 패키지로 연결하고 있습니다.",
+        "reviewLevel": "primary",
+        "status": "영업 기회 분석"
+      }
+    ],
+    "articles": [
+      {
+        "peer": "삼성SDS",
+        "title": "생성형 AI 운영 플랫폼 투자 확대",
+        "source": "AXIS News",
+        "publishedAt": "{{today}} 08:30",
+        "note": "운영형 AI 메시지 강화"
+      },
+      {
+        "peer": "LG CNS",
+        "title": "금융권 AX 전환 프로젝트 수주 확대",
+        "source": "AXIS News",
+        "publishedAt": "{{today}} 09:10",
+        "note": "금융 보안 진입 포인트 확대"
+      }
+    ],
+    "keywords": [
+      {"text": "Agentic AI", "type": "tech", "size": "text-2xl", "x": "48%", "y": "20%"},
+      {"text": "SK AX", "type": "org", "size": "text-2xl", "x": "34%", "y": "38%"},
+      {"text": "금융 AX", "type": "tech", "size": "text-xl", "x": "66%", "y": "44%"},
+      {"text": "운영 자동화", "type": "tech", "size": "text-lg", "x": "42%", "y": "68%"}
+    ],
+    "keywordSearchPoints": [
+      {"time": "09:00", "agenticAi": 120, "sovereignAi": 82, "digitalTwin": 65, "aiGovernance": 48},
+      {"time": "10:00", "agenticAi": 168, "sovereignAi": 96, "digitalTwin": 78, "aiGovernance": 60},
+      {"time": "11:00", "agenticAi": 214, "sovereignAi": 124, "digitalTwin": 92, "aiGovernance": 85}
+    ],
+    "keywordSeries": [
+      {"key": "agenticAi", "name": "Agentic AI", "color": "#EE7501", "total": "214"},
+      {"key": "sovereignAi", "name": "Sovereign AI", "color": "#1A3A91", "total": "124"}
+    ],
+    "stockPoints": [
+      {"date": "05.09", "samsungSds": 156000, "lgCns": 132000, "hyundaiAutoever": 169000, "poscoDx": 52400},
+      {"date": "05.10", "samsungSds": 158500, "lgCns": 133500, "hyundaiAutoever": 170500, "poscoDx": 53100},
+      {"date": "05.11", "samsungSds": 161000, "lgCns": 136800, "hyundaiAutoever": 172100, "poscoDx": 53700}
+    ],
+    "notifications": [
+      {"title": "전략 검토", "detail": "삼성SDS 운영 플랫폼 동향 대응 방향 작성 필요", "time": "12분 전", "tone": "urgent"},
+      {"title": "브리핑", "detail": "전략기획팀 일간 브리핑 생성 완료", "time": "38분 전", "tone": "info"}
+    ],
+    "keywordNewsCount": "2,104"
+  },
+  "global_search": {
+    "query": "AX",
+    "keywords": [
+      {"text": "Agentic AI", "type": "tech", "score": 0.92},
+      {"text": "운영 자동화", "type": "tech", "score": 0.86},
+      {"text": "금융 AX", "type": "sector", "score": 0.78}
+    ],
+    "peers": [
+      {"id": "samsung_sds", "name": "삼성SDS", "matchedKeywords": ["Agentic AI", "운영 플랫폼"]},
+      {"id": "lg_cns", "name": "LG CNS", "matchedKeywords": ["금융 AX", "보안"]}
+    ],
+    "cards": [
+      {
+        "id": "CN-20260502-001",
+        "title": "삼성SDS가 생성형 AI 운영 플랫폼 투자를 확대했습니다.",
+        "peerName": "삼성SDS",
+        "summary": "운영 자동화와 보안 결합 수요가 AX 제안 경쟁으로 이어지고 있습니다.",
+        "date": "{{today}}"
+      },
+      {
+        "id": "CN-20260502-002",
+        "title": "LG CNS가 금융권 AX 전환 프로젝트 수주를 확대했습니다.",
+        "peerName": "LG CNS",
+        "summary": "금융 고객군의 AX 예산 흐름과 보안 운영 수요가 함께 확인됩니다.",
+        "date": "{{today}}"
+      }
+    ],
+    "fallbackTarget": "issues"
+  },
+  "frontend_briefings": {
+    "dailySnapshot": {
+      "title": "{{today}} Peer Intelligence 일간 브리핑",
+      "summary": "AX 운영 플랫폼과 금융권 전환 수주 신호를 우선 검토 대상으로 정리했습니다.",
+      "sections": [
+        {
+          "title": "오늘 바로 검토할 동향",
+          "items": [
+            {"headline": "삼성SDS - 생성형 AI 운영 플랫폼 투자 확대", "source": "AXIS News, {{today}}"},
+            {"headline": "LG CNS - 금융권 AX 전환 프로젝트 수주 확대", "source": "AXIS News, {{today}}"}
+          ]
+        }
+      ]
+    },
+    "weeklySnapshot": {
+      "title": "{{month}} Peer Intelligence 주간 브리핑",
+      "summary": "운영 자동화, 금융 AX, 보안 내재화 흐름이 한 주간 반복 관찰되었습니다.",
+      "sections": [
+        {
+          "title": "이번 주 핵심 변화",
+          "items": [
+            {"headline": "운영형 AI 메시지가 산업 레퍼런스 중심으로 강화됨", "source": "주간 기사 묶음 분석"}
+          ]
+        }
+      ]
+    },
+    "evidenceSources": ["기업 공시·IR 자료", "주요 경제지 및 산업지 기사", "기업 보도자료"],
+    "history": [
+      {
+        "id": "BR-20260502-001",
+        "date": "{{today}}",
+        "title": "일간 브리핑",
+        "status": "delivered",
+        "summary": "생성형 AI 운영 플랫폼, 금융권 AX 수주 등 2건",
+        "primaryCount": 2,
+        "watchCount": 0,
+        "evidence": ["AXIS News"]
+      }
+    ]
+  },
+  "frontend_alerts": {
+    "rules": [
+      {
+        "id": "RULE-001",
+        "name": "우선 검토 동향 즉시 알림",
+        "description": "검토 수준이 우선 검토인 동향 발생 시 즉시 이메일 알림",
+        "enabled": true,
+        "channels": ["email"],
+        "lastTriggered": "{{now}}"
+      },
+      {
+        "id": "RULE-002",
+        "name": "Agentic AI/산업 AX 알림",
+        "description": "Agentic AI, 제조 AX, 금융 AX 키워드 포함 시 알림",
+        "enabled": true,
+        "channels": ["email"],
+        "lastTriggered": "{{now}}"
+      }
+    ],
+    "history": [
+      {
+        "id": "ALERT-001",
+        "title": "[전략 검토] 삼성SDS - 생성형 AI 운영 플랫폼",
+        "message": "고노출 AX 카드가 생성되었습니다.",
+        "channel": "email",
+        "status": "sent",
+        "triggeredAt": "{{now}}"
+      }
+    ],
+    "conditionOptions": [
+      "검토 수준이 우선 검토인 동향 발생 시 즉시 알림",
+      "Agentic AI, 제조 AX, 금융 AX 키워드 포함 시 알림",
+      "파트너십, M&A 이벤트 타입 알림"
+    ],
+    "channelOptions": ["email"]
+  },
+  "frontend_peers": {
+    "peers": [
+      {
+        "id": "samsung_sds",
+        "name": "삼성SDS",
+        "keywords": ["Agentic AI", "운영 플랫폼", "제조 AX"],
+        "priority": "high",
+        "stats": {"primary": 3, "watch": 8, "archive": 12},
+        "direction": "생성형 AI를 산업별 운영 플랫폼으로 패키지화",
+        "implication": "SK AX는 운영 KPI와 보안 요구사항을 함께 보여주는 제안 구조가 필요합니다."
+      },
+      {
+        "id": "lg_cns",
+        "name": "LG CNS",
+        "keywords": ["금융", "보안", "클라우드"],
+        "priority": "high",
+        "stats": {"primary": 1, "watch": 6, "archive": 9},
+        "direction": "규제 산업의 보안·컴플라이언스 부담을 AX 진입점으로 활용",
+        "implication": "금융·공공 제안에서는 AI 거버넌스와 감사 대응 메시지를 강화해야 합니다."
+      }
+    ],
+    "periodLabels": {"yearly": "연간", "quarterly": "분기", "monthly": "월간"},
+    "periodDescriptions": {
+      "yearly": "연간 기준으로 투자, 사업 포트폴리오, 전략 방향 변화를 묶어봅니다.",
+      "quarterly": "분기 기준으로 실적 발표와 신규 메시지 변화를 비교합니다.",
+      "monthly": "월간 기준으로 보도량과 세부 테마 확산 흐름을 빠르게 확인합니다."
+    },
+    "analyses": {
+      "samsung_sds": {
+        "source": "2026 IR 전략 자료",
+        "title": "AI Full Stack 중심의 사업 전환",
+        "summary": "삼성SDS는 클라우드와 AX 서비스를 AI 운영 플랫폼으로 확장하고 있습니다.",
+        "highlightsTitle": "전략 방향",
+        "highlights": ["클라우드와 MSP 역량을 AI 인프라 사업으로 확장", "업종 특화 Agent 중심의 AX 서비스 전환"],
+        "pillars": [
+          {"name": "AI 인프라", "details": ["GPUaaS/NPUaaS", "글로벌 CSP 연계"]},
+          {"name": "AX 서비스", "details": ["Vertical AI Agent", "AI Native 개발 체계"]}
+        ]
+      },
+      "lg_cns": {
+        "source": "2026 금융 AX 자료",
+        "title": "금융 AX와 보안 패키지 강화",
+        "summary": "LG CNS는 금융 고객군의 AI 전환과 보안 운영 요구를 묶어 제안하고 있습니다.",
+        "highlightsTitle": "주요 내용",
+        "highlights": ["금융권 AX 전환 프로젝트 확대", "보안·컴플라이언스 운영 모델 강조"],
+        "pillars": [
+          {"name": "금융 AX", "details": ["운영 자동화", "고객 채널 AI"]},
+          {"name": "보안", "details": ["감사 대응", "클라우드 보안 운영"]}
+        ]
+      }
+    }
+  },
+  "peer_plus_profile_defaults": {
+    "irProfile": {
+      "headline": "AI 운영 플랫폼과 산업 AX 패키지 중심의 사업 전환",
+      "revenueTrend": [
+        {"period": "2025Q4", "revenue": 1180, "operatingProfit": 96},
+        {"period": "2026Q1", "revenue": 1230, "operatingProfit": 104},
+        {"period": "2026Q2", "revenue": 1295, "operatingProfit": 116}
+      ],
+      "businessMix": [
+        {"name": "AX 서비스", "value": 42},
+        {"name": "클라우드", "value": 34},
+        {"name": "운영/SM", "value": 24}
+      ],
+      "signals": [
+        "AI 운영 자동화 메시지가 IR과 카드뉴스에 동시에 반복됩니다.",
+        "보안·감사 대응 요구가 AX 제안의 핵심 조건으로 올라왔습니다."
+      ]
+    },
+    "keywordCloud": [
+      {"text": "Agentic AI", "weight": 92},
+      {"text": "운영 플랫폼", "weight": 84},
+      {"text": "금융 AX", "weight": 76},
+      {"text": "보안", "weight": 71}
+    ]
+  },
+  "raw_articles": [
+    {
+      "id": 1,
+      "title": "삼성SDS 생성형 AI 운영 플랫폼 투자 확대",
+      "url": "https://example.com/news/1",
+      "sourceName": "AXIS News",
+      "peerId": "samsung_sds",
+      "publishedAt": "{{now}}",
+      "collectedAt": "{{now}}",
+      "importanceLevel": "urgent",
+      "processingStatus": "EMBEDDED"
+    },
+    {
+      "id": 2,
+      "title": "LG CNS 금융권 AX 전환 프로젝트 수주 확대",
+      "url": "https://example.com/news/2",
+      "sourceName": "AXIS News",
+      "peerId": "lg_cns",
+      "publishedAt": "{{now}}",
+      "collectedAt": "{{now}}",
+      "importanceLevel": "notable",
+      "processingStatus": "EMBEDDED"
+    }
+  ],
+  "frontend_issues": [
+    {
+      "id": "ISSUE-20260502-001",
+      "peerId": "samsung_sds",
+      "peerName": "삼성SDS",
+      "title": "생성형 AI 운영 플랫폼 투자 확대",
+      "summaryLines": ["운영 자동화 수요 확대", "보안 요구사항 결합", "AX 제안 경쟁 심화"],
+      "importance": "urgent",
+      "createdAt": "{{now}}",
+      "sourceUrl": "https://example.com/news/1"
+    },
+    {
+      "id": "ISSUE-20260502-002",
+      "peerId": "lg_cns",
+      "peerName": "LG CNS",
+      "title": "금융권 AX 전환 프로젝트 수주 확대",
+      "summaryLines": ["금융 AX 수주 확대", "운영 자동화와 보안 결합", "레퍼런스 경쟁 강화"],
+      "importance": "notable",
+      "createdAt": "{{now}}",
+      "sourceUrl": "https://example.com/news/2"
+    }
+  ],
+  "frontend_notifications": {
+    "items": [
+      {
+        "id": "notice-lg-cardnews",
+        "peer": "LG CNS",
+        "title": "AX 금융 패키지 관련 카드뉴스 요약이 준비되었습니다.",
+        "tone": "카드뉴스 보기",
+        "target": "issues",
+        "time": "08:12",
+        "read": false
+      },
+      {
+        "id": "notice-keyword-graph",
+        "peer": "AXIS",
+        "title": "AI 에이전트 키워드 관계 그래프가 갱신되었습니다.",
+        "tone": "그래프 보기",
+        "target": "keywordGraph",
+        "time": "08:30",
+        "read": false
+      }
+    ],
+    "unreadCount": 2
+  },
+  "mixer_options": {
+    "defaults": {
+      "peers": ["삼성SDS", "LG CNS"],
+      "customers": ["공공기관"],
+      "industries": ["공공", "제조"],
+      "keywords": ["AX", "수주", "AI 에이전트"]
+    },
+    "options": [
+      {"title": "Peer사", "values": ["삼성SDS", "LG CNS", "현대오토에버", "포스코DX"]},
+      {"title": "고객사", "values": ["공공기관", "금융", "제조", "유통"]},
+      {"title": "산업", "values": ["공공", "제조", "금융", "보안"]},
+      {"title": "키워드", "values": ["AX", "수주", "AI 에이전트", "운영 자동화", "보안"]}
+    ],
+    "connectionKeywords": ["AX", "AI", "보안", "운영", "수주", "클라우드"],
+    "radarMetrics": [
+      {"subject": "고객 적합", "base": 62, "cardWeight": 5, "max": 96},
+      {"subject": "근거 밀도", "base": 58, "cardWeight": 7, "max": 94},
+      {"subject": "실행성", "base": 65, "industryWeight": 4, "max": 95}
+    ]
+  },
+  "frontend_insight": {
+    "id": "INS-20260511-001",
+    "title": "과거와의 변화를 기반으로 오늘의 동향",
+    "summary": "Peer사의 수주 신호와 AI 인프라 투자가 함께 움직이고 있습니다.",
+    "flowSteps": [
+      {"id": "detect", "label": "감지", "description": "카드뉴스 노출과 IR 수치가 동시에 증가했습니다."},
+      {"id": "interpret", "label": "해석", "description": "운영형 AI 메시지가 고객 KPI 증명으로 이동하고 있습니다."},
+      {"id": "respond", "label": "대응", "description": "SK AX 제안서는 운영 안정성과 산업별 레퍼런스를 전면에 배치해야 합니다."}
+    ],
+    "evidence": [
+      "고노출 카드뉴스 2건에서 운영형 AI 메시지가 반복되었습니다.",
+      "금융 AX와 생성형 AI 운영 플랫폼 신호가 같은 날 관찰되었습니다."
+    ],
+    "implications": [
+      "SK AX는 고객 KPI와 운영 안정성을 제안서 전면에 배치해야 합니다.",
+      "보안·감사 대응을 AX 제안의 기본 구성으로 끌어올릴 필요가 있습니다."
+    ],
+    "evidenceCards": ["CN-20260502-001", "CN-20260502-002"],
+    "generatedAt": "{{now}}"
+  },
+  "keyword_graph": {
+    "selectedId": "sk-axis",
+    "nodes": [
+      {"id": "sk-axis", "label": "SK AX", "category": "기업", "size": 34, "changeRate": 12, "sourceType": "manual", "x": 0, "y": 0},
+      {"id": "agentic-ai", "label": "Agentic AI", "category": "AX", "size": 30, "changeRate": 18, "sourceType": "cardnews", "x": 110, "y": -60},
+      {"id": "security", "label": "보안", "category": "보안", "size": 24, "changeRate": 7, "sourceType": "cardnews", "x": -100, "y": 80}
+    ],
+    "edges": [
+      {"source": "sk-axis", "target": "agentic-ai", "weight": 0.88},
+      {"source": "agentic-ai", "target": "security", "weight": 0.64}
+    ],
+    "trendData": [
+      {"time": "09:00", "agenticAi": 120, "security": 72},
+      {"time": "10:00", "agenticAi": 168, "security": 96},
+      {"time": "11:00", "agenticAi": 214, "security": 124}
+    ]
+  },
+  "briefing_workspace": {
+    "id": "BR-20260511-D",
+    "briefing_type": "daily",
+    "title": "{{today}} 일간 브리핑",
+    "window": "{{today}} 감지 카드뉴스 기반",
+    "leadLabel": "오늘의 판단",
+    "displayLabel": "{{today}}",
+    "briefingLead": "오늘 감지된 카드뉴스 2건을 종합하면 AI 운영 플랫폼과 금융권 AX 수주 신호가 함께 움직입니다.",
+    "signalCards": [
+      {"label": "시장 신호", "value": "AX·수주·보안 키워드가 같은 흐름으로 반복됩니다.", "metric": "2건 종합"},
+      {"label": "우선순위", "value": "운영 자동화와 보안 요구가 함께 올라왔습니다.", "metric": "high"}
+    ],
+    "whatHappenedDigest": [
+      "AX가 PoC 검증을 넘어 실제 운영과 수주로 이동하고 있습니다.",
+      "금융권에서는 보안·감사 대응이 AX 제안의 핵심 조건으로 부상했습니다."
+    ],
+    "meaning": ["운영 지표로 증명되는 AX 전환이 중요해졌습니다."],
+    "response": ["SK AX 제안서는 고객 KPI와 안정성을 먼저 보여줘야 합니다."],
+    "benchmark": ["삼성SDS 공개 레퍼런스 표현 방식", "LG CNS 금융 AX 패키지 메시지"],
+    "ideas": ["고객별 오늘의 AX 변화 3줄 브리핑 자동 생성"],
+    "selectedCards": [],
+    "reportText": "[AXIS 일간 브리핑] {{today}} 일간 브리핑"
+  },
+  "assistant_chat_response": {
+    "conversation_id": "conv_20260511_001",
+    "message": {
+      "role": "assistant",
+      "content": "오늘 인사이트, 근거 카드뉴스, SK AX 대응 방향을 묶어 보고서 초안을 만들었습니다.",
+      "reportPreview": true
+    },
+    "report_draft": {
+      "title": "오늘 인사이트 보고서 초안",
+      "sections": [
+        {
+          "title": "핵심 변화",
+          "body": "AX 시장은 실제 운영 확산과 수주 기반 KPI 증명으로 이동하고 있습니다."
+        },
+        {
+          "title": "SK AX 대응",
+          "body": "운영 안정성, 보안·감사 대응, 산업별 레퍼런스를 제안서 전면에 배치합니다."
+        }
+      ]
+    },
+    "suggested_actions": ["보고서 미리보기", "근거 카드뉴스 열기", "브리핑에 추가"]
+  },
   "monitoring_overview": {
     "headline": "경쟁사 AX 투자와 보안 플랫폼 전환 흐름이 강화되고 있습니다.",
     "available_periods": [
@@ -346,10 +878,18 @@
     "min_exposure_band": "medium"
   },
   "notification_settings": {
+    "email": true,
+    "inApp": true,
+    "msTeams": false,
+    "briefingTime": "08:30",
+    "eventImmediate": true,
     "channels": {"email": true, "ms_teams": false, "in_app": true},
     "email_recipients": ["axis.user@sk.com"],
     "ms_teams_webhook_url": null,
     "schedule": {"briefing_time": "08:30", "event_immediate": true, "weekly_summary": false}
+  },
+  "view_preferences": {
+    "contentViewMode": "visual"
   },
   "access_log": {
     "id": 1,
@@ -368,6 +908,26 @@
       "sk_ax_perspective": "산업별 운영 자동화 패키지 제안으로 전환 여지가 있습니다.",
       "confidence": 0.82
     },
+    "summary": "선택 카드들은 AX 운영 플랫폼과 보안 결합 흐름으로 연결됩니다.",
+    "insightBrief": [
+      "운영형 AI 메시지가 고객 KPI와 수주 근거 중심으로 이동합니다.",
+      "금융권 AX에서는 보안·감사 대응이 제안의 기본 조건이 됩니다.",
+      "SK AX는 산업별 운영 자동화 패키지로 공개 신호를 전환할 수 있습니다."
+    ],
+    "evidenceLogic": ["선택 카드 2건", "Peer 2개사", "키워드 3개"],
+    "actions": [
+      "고객 미팅 전 카드뉴스 묶음을 3문장 브리핑으로 변환",
+      "제안서 첫 장에 수주/운영/보안 근거를 함께 배치",
+      "Graphify 관계도를 통해 예상 밖 연결 키워드를 후속 검토"
+    ],
+    "connections": ["AI 운영 자동화", "보안 관제", "재무 성과 연결"],
+    "skAxPerspective": "산업별 운영 자동화 패키지 제안으로 전환 여지가 있습니다.",
+    "confidence": 0.82,
+    "radarMetrics": [
+      {"subject": "고객 적합", "mixed": 78},
+      {"subject": "근거 밀도", "mixed": 82},
+      {"subject": "실행성", "mixed": 74}
+    ],
     "created_at": "{{now}}"
   },
   "data_sources": [

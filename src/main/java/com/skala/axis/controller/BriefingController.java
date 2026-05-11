@@ -26,6 +26,11 @@ public class BriefingController {
         return ResponseEntity.ok(ApiResponse.success(fixture.briefing(fixture.defaultBriefingId())));
     }
 
+    @GetMapping("/summary")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefingSummary(@RequestParam Map<String, String> params) {
+        return ResponseEntity.ok(ApiResponse.success(fixture.briefingWorkspace(params)));
+    }
+
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listBriefings(@RequestParam Map<String, String> params) {
         return ResponseEntity.ok(ApiResponse.success(fixture.briefingSummaryList()));
@@ -49,5 +54,16 @@ public class BriefingController {
     @GetMapping("/{briefingId}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefingById(@PathVariable String briefingId) {
         return ResponseEntity.ok(ApiResponse.success(fixture.briefing(briefingId)));
+    }
+
+    @PostMapping("/{briefingId}/share")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> shareBriefing(
+            @PathVariable String briefingId,
+            @RequestBody(required = false) Map<String, Object> request
+    ) {
+        Integer expiresInHours = request == null || request.get("expires_in_hours") == null
+                ? null
+                : Integer.parseInt(String.valueOf(request.get("expires_in_hours")));
+        return ResponseEntity.ok(ApiResponse.success(fixture.shareBriefing(briefingId, expiresInHours)));
     }
 }

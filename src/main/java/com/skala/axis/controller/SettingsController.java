@@ -35,12 +35,27 @@ public class SettingsController {
 
     @PutMapping("/notifications")
     public ResponseEntity<ApiResponse<Map<String, Object>>> updateNotificationSettings(@RequestBody(required = false) Map<String, Object> request) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.updatedResult()));
+        return ResponseEntity.ok(ApiResponse.success(fixture.updateNotificationSettings(request)));
+    }
+
+    @GetMapping("/profile")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getProfile() {
+        return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(Map.of())));
     }
 
     @PutMapping("/profile")
     public ResponseEntity<ApiResponse<Map<String, Object>>> updateProfile(@RequestBody(required = false) Map<String, Object> request) {
         return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(request)));
+    }
+
+    @GetMapping("/view-preferences")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getViewPreferences() {
+        return ResponseEntity.ok(ApiResponse.success(fixture.viewPreferences()));
+    }
+
+    @PutMapping("/view-preferences")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> updateViewPreferences(@RequestBody(required = false) Map<String, Object> request) {
+        return ResponseEntity.ok(ApiResponse.success(fixture.updateViewPreferences(request)));
     }
 
     @PutMapping("/password")

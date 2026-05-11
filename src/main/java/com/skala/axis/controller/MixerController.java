@@ -4,6 +4,7 @@ import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,6 +19,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MixerController {
     private final ApiContractFixtureService fixture;
+
+    @GetMapping("/options")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getMixerOptions() {
+        return ResponseEntity.ok(ApiResponse.success(fixture.mixerOptions()));
+    }
 
     @PostMapping
     @SuppressWarnings("unchecked")

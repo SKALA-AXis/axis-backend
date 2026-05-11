@@ -14,9 +14,11 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE TABLE IF NOT EXISTS peer_companies (
     id          VARCHAR(50)  PRIMARY KEY,            -- 예: 'samsung_sds', 'lg_cns'
     name        VARCHAR(100) NOT NULL,
+    tier        VARCHAR(20)  NOT NULL DEFAULT 'domestic',
     keywords    TEXT[]       DEFAULT '{}',            -- 수집 키워드 목록
     is_active   BOOLEAN      DEFAULT TRUE,
-    created_at  TIMESTAMPTZ  DEFAULT NOW()
+    created_at  TIMESTAMPTZ  DEFAULT NOW(),
+    CONSTRAINT chk_peer_companies_tier CHECK (tier IN ('self', 'domestic', 'overseas'))
 );
 
 -- ============================================================
@@ -202,9 +204,9 @@ CREATE INDEX IF NOT EXISTS idx_evidence_chain_pass
 -- ============================================================
 -- 초기 데이터 — Peer사 4사 (v3 확정)
 -- ============================================================
-INSERT INTO peer_companies (id, name, keywords) VALUES
-    ('samsung_sds',      '삼성SDS',     ARRAY['삼성SDS', '삼성 SDS', 'Samsung SDS']),
-    ('lg_cns',           'LG CNS',      ARRAY['LG CNS', 'LGCNS']),
-    ('hyundai_autoever', '현대오토에버', ARRAY['현대오토에버', '오토에버', 'Hyundai AutoEver']),
-    ('posco_dx',         '포스코DX',    ARRAY['포스코DX', '포스코 DX', 'POSCO DX'])
+INSERT INTO peer_companies (id, name, tier, keywords) VALUES
+    ('samsung_sds',      '삼성SDS',     'domestic', ARRAY['삼성SDS', '삼성 SDS', 'Samsung SDS']),
+    ('lg_cns',           'LG CNS',      'domestic', ARRAY['LG CNS', 'LGCNS']),
+    ('hyundai_autoever', '현대오토에버', 'domestic', ARRAY['현대오토에버', '오토에버', 'Hyundai AutoEver']),
+    ('posco_dx',         '포스코DX',    'domestic', ARRAY['포스코DX', '포스코 DX', 'POSCO DX'])
 ON CONFLICT (id) DO NOTHING;

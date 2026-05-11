@@ -1,27 +1,31 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.dto.SearchRequest;
-import com.skala.axis.dto.SearchResponse;
-import com.skala.axis.service.AiClientService;
+import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/search")
 @RequiredArgsConstructor
 public class SearchController {
-    private final AiClientService aiClientService;
+    private final ApiContractFixtureService fixture;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<SearchResponse>> search(@RequestBody SearchRequest request) {
-        SearchResponse result = aiClientService.search(request).block();
-        return ResponseEntity.ok(ApiResponse.success(result));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> search(@RequestBody(required = false) Map<String, Object> request) {
+        Object rawQuery = request == null ? null : request.get("query");
+        String query = rawQuery == null ? null : String.valueOf(rawQuery);
+        return ResponseEntity.ok(ApiResponse.success(fixture.globalSearch(query)));
     }
 
     @GetMapping("/suggestions")
-    public ResponseEntity<ApiResponse<Object>> suggestions(@RequestParam String q) {
-        return ResponseEntity.ok(ApiResponse.success(java.util.List.of()));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> suggestions(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "6") int limit
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(fixture.globalSearch(q)));
     }
 }

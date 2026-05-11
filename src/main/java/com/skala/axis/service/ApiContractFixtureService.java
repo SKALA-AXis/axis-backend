@@ -233,6 +233,14 @@ public class ApiContractFixtureService {
         return fixtureMap("notification_settings");
     }
 
+    public Map<String, Object> updateNotificationSettings(Map<String, Object> request) {
+        Map<String, Object> settings = notificationSettings();
+        if (request != null) {
+            settings.putAll(request);
+        }
+        return settings;
+    }
+
     public Map<String, Object> accessLogs() {
         return mapOf("items", List.of(fixtureMap("access_log")));
     }
@@ -244,6 +252,10 @@ public class ApiContractFixtureService {
             result.put("source_card_ids", new ArrayList<>(cardIds));
         }
         return result;
+    }
+
+    public Map<String, Object> mixerOptions() {
+        return fixtureMap("mixer_options");
     }
 
     public Map<String, Object> shareMixerResult(String mixId) {
@@ -282,6 +294,181 @@ public class ApiContractFixtureService {
 
     public Map<String, Object> pipelineTriggerResult() {
         return mapOf("run_id", defaultValue("pipeline_run_id"), "status", defaultValue("running_status"));
+    }
+
+    public Map<String, Object> frontendDashboard() {
+        return fixtureMap("frontend_dashboard");
+    }
+
+    public Map<String, Object> globalSearch(String query) {
+        Map<String, Object> result = fixtureMap("global_search");
+        result.put("query", query == null || query.isBlank() ? result.get("query") : query);
+        return result;
+    }
+
+    public Map<String, Object> frontendBriefings() {
+        return fixtureMap("frontend_briefings");
+    }
+
+    public Map<String, Object> briefingWorkspace(Map<String, String> params) {
+        Map<String, Object> workspace = fixtureMap("briefing_workspace");
+        String briefingType = params.get("briefing_type");
+        if (briefingType != null && !briefingType.isBlank()) {
+            workspace.put("briefing_type", briefingType);
+        }
+        return workspace;
+    }
+
+    public Map<String, Object> shareBriefing(String briefingId, Integer expiresInHours) {
+        int hours = expiresInHours == null ? 168 : expiresInHours;
+        return mapOf(
+                "share_url", shareBaseUrl + "/share/briefings/" + briefingId,
+                "expires_at", Instant.now().plusSeconds(hours * 3600L).toString()
+        );
+    }
+
+    public Map<String, Object> frontendAlerts() {
+        return fixtureMap("frontend_alerts");
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> alertRule(String ruleId, Map<String, Object> request) {
+        Map<String, Object> alerts = frontendAlerts();
+        List<Map<String, Object>> rules = (List<Map<String, Object>>) alerts.get("rules");
+        Map<String, Object> rule = rules.stream()
+                .filter(candidate -> ruleId != null && ruleId.equals(candidate.get("id")))
+                .findFirst()
+                .map(LinkedHashMap::new)
+                .orElseGet(() -> new LinkedHashMap<>(rules.get(0)));
+        rule.put("id", ruleId == null || ruleId.isBlank() ? "RULE-NEW-001" : ruleId);
+        if (request != null) {
+            overrideFromRequest(rule, request, "name");
+            overrideFromRequest(rule, request, "description");
+            overrideFromRequest(rule, request, "enabled");
+            overrideFromRequest(rule, request, "channels");
+        }
+        rule.putIfAbsent("lastTriggered", now());
+        return rule;
+    }
+
+    public Map<String, Object> frontendPeers() {
+        return fixtureMap("frontend_peers");
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> peerProfile(String peerId, boolean includeCards) {
+        Map<String, Object> peerData = frontendPeers();
+        List<Map<String, Object>> peerList = (List<Map<String, Object>>) peerData.get("peers");
+        Map<String, Object> selectedPeer = peerList.stream()
+                .filter(candidate -> peerId.equals(candidate.get("id")))
+                .findFirst()
+                .orElseGet(() -> peerList.get(0));
+        Map<String, Object> analyses = (Map<String, Object>) peerData.get("analyses");
+        Map<String, Object> profileDefaults = fixtureMap("peer_plus_profile_defaults");
+        return mapOf(
+                "peer", selectedPeer,
+                "analysis", analyses.get(String.valueOf(selectedPeer.get("id"))),
+                "irProfile", profileDefaults.get("irProfile"),
+                "keywordCloud", profileDefaults.get("keywordCloud"),
+                "relatedCards", includeCards ? cards(String.valueOf(selectedPeer.get("id"))) : List.of()
+        );
+    }
+
+    public List<Map<String, Object>> rawArticles() {
+        return fixtureList("raw_articles");
+    }
+
+    public Map<String, Object> rawArticleList(Map<String, String> params) {
+        int limit = intValue(params, "limit", 30);
+        int offset = intValue(params, "offset", 0);
+        List<Map<String, Object>> items = rawArticles().stream()
+                .filter(article -> matches(params.get("peer_id"), article.get("peerId")))
+                .filter(article -> matches(params.get("importance_level"), article.get("importanceLevel")))
+                .filter(article -> matches(params.get("processing_status"), article.get("processingStatus")))
+                .filter(article -> contains(params.get("q"), article.get("title")))
+                .skip(offset)
+                .limit(limit)
+                .toList();
+        return mapOf("items", items, "total", rawArticles().size(), "limit", limit, "offset", offset);
+    }
+
+    public Map<String, Object> rawArticleDetail(int id) {
+        Map<String, Object> article = rawArticles().stream()
+                .filter(candidate -> String.valueOf(id).equals(String.valueOf(candidate.get("id"))))
+                .findFirst()
+                .orElseGet(() -> rawArticles().get(0));
+        article.put("content", "AXIS가 수집한 원문 기사 본문 예시입니다. 실제 본문 저장소 연동 전까지 계약 검증용 fixture를 반환합니다.");
+        article.put("credibilityScore", 0.91);
+        article.put("qualityScore", 0.88);
+        article.put("rawTextAvailable", true);
+        return article;
+    }
+
+    public List<Map<String, Object>> frontendIssues() {
+        return fixtureList("frontend_issues");
+    }
+
+    public Map<String, Object> issueSummary(String id) {
+        Map<String, Object> issue = frontendIssues().stream()
+                .filter(candidate -> id.equals(candidate.get("id")))
+                .findFirst()
+                .orElseGet(() -> frontendIssues().get(0));
+        issue.put("relatedCards", cards(String.valueOf(issue.get("peerId"))));
+        return issue;
+    }
+
+    public Map<String, Object> latestInsight() {
+        return fixtureMap("frontend_insight");
+    }
+
+    public Map<String, Object> insightGenerationAccepted() {
+        return mapOf("job_id", "INSIGHT-JOB-20260511-001", "status", defaultValue("queued_status"));
+    }
+
+    public Map<String, Object> keywordGraph() {
+        return fixtureMap("keyword_graph");
+    }
+
+    public Map<String, Object> keywordGraphCards(String nodeId, Map<String, String> params) {
+        return mapOf(
+                "nodeId", nodeId,
+                "items", cards(null),
+                "total", cards(null).size(),
+                "limit", intValue(params, "limit", 6),
+                "offset", intValue(params, "offset", 0)
+        );
+    }
+
+    public Map<String, Object> notifications() {
+        return fixtureMap("frontend_notifications");
+    }
+
+    public Map<String, Object> markNotificationAsRead(String id) {
+        return mapOf("id", id, "read", true);
+    }
+
+    public Map<String, Object> clearNotifications() {
+        return mapOf("cleared", true);
+    }
+
+    public Map<String, Object> assistantChat(Map<String, Object> request) {
+        Map<String, Object> response = fixtureMap("assistant_chat_response");
+        if (request != null && request.get("conversation_id") != null) {
+            response.put("conversation_id", request.get("conversation_id"));
+        }
+        return response;
+    }
+
+    public Map<String, Object> viewPreferences() {
+        return fixtureMap("view_preferences");
+    }
+
+    public Map<String, Object> updateViewPreferences(Map<String, Object> request) {
+        Map<String, Object> preferences = viewPreferences();
+        if (request != null) {
+            preferences.putAll(request);
+        }
+        return preferences;
     }
 
     public static Map<String, Object> mapOf(Object... values) {
@@ -385,6 +572,14 @@ public class ApiContractFixtureService {
         if (request != null && request.get(key) != null) {
             target.put(key, request.get(key));
         }
+    }
+
+    private boolean matches(String expected, Object actual) {
+        return expected == null || expected.isBlank() || expected.equals(String.valueOf(actual));
+    }
+
+    private boolean contains(String query, Object value) {
+        return query == null || query.isBlank() || String.valueOf(value).toLowerCase().contains(query.toLowerCase());
     }
 
     @SuppressWarnings("unchecked")

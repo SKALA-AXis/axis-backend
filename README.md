@@ -97,6 +97,7 @@ docker compose --profile local --env-file .env.local up -d backend
 | `SPRING_DATASOURCE_USERNAME` | local profile: `axuser` | DB 사용자 |
 | `SPRING_DATASOURCE_PASSWORD` | local profile: `axpass` | DB 비밀번호 |
 | `AI_SERVER_URL` | `http://localhost:8001` | axis-ai API 주소 |
+| `AXIS_CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3100` | 브라우저 프론트 개발 서버 허용 origin |
 | `IMAGE_STORAGE_PATH` | `/data/images` | 카드 이미지 저장 볼륨 경로 |
 | `AXIS_SHARE_BASE_URL` | `https://axis.local` | 카드/믹서기 공유 링크 base URL |
 | `AXIS_SCHEDULER_INGESTION_PEER_IDS` | `samsung_sds,lg_cns` | 수집 스케줄러가 트리거할 Peer ID 목록 |
