@@ -1,7 +1,7 @@
 package com.skala.axis.service;
 
 import com.skala.axis.dto.BriefingContent;
-import com.skala.axis.dto.IssueCardResponse;
+import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.dto.SearchRequest;
 import com.skala.axis.dto.SearchResponse;
 import com.skala.axis.exception.AiServerException;
@@ -57,7 +57,7 @@ public class AiClientService {
      * 일일 브리핑 본문 데이터 요청 — axis-ai 가 cards 받아 HTML/text 본문 빌더 후 반환.
      * SES 발송은 backend 의 SesMailService 가 담당 (axis-ai 는 발송 안 함).
      */
-    public Mono<BriefingContent> buildBriefing(List<IssueCardResponse> cards) {
+    public Mono<BriefingContent> buildBriefing(List<CardNewsResponse> cards) {
         return aiWebClient.post()
                 .uri("/pipeline/delivery")
                 .bodyValue(Map.of("cards", cards))

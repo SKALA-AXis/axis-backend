@@ -1,10 +1,10 @@
 package com.skala.axis.service;
 
 import com.skala.axis.domain.ArticleImage;
-import com.skala.axis.domain.IssueCard;
-import com.skala.axis.dto.IssueCardResponse;
+import com.skala.axis.domain.CardNews;
+import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.repository.ArticleImageRepository;
-import com.skala.axis.repository.IssueCardRepository;
+import com.skala.axis.repository.CardNewsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,13 +17,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class IssueCardService {
-    private final IssueCardRepository issueCardRepository;
+public class CardNewsService {
+    private final CardNewsRepository cardNewsRepository;
     private final ArticleImageRepository articleImageRepository;
 
-    public List<IssueCardResponse> getTodayIssues(String peerId, String importance) {
+    public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
         LocalDateTime since = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
-        List<IssueCard> cards = issueCardRepository.findTodayIssues(since);
+        List<CardNews> cards = cardNewsRepository.findTodayCards(since);
         return cards.stream()
                 .filter(c -> peerId == null || peerId.equals(c.getPeerId()))
                 .filter(c -> importance == null || importance.equals(c.getImportance()))
@@ -31,8 +31,8 @@ public class IssueCardService {
                 .collect(Collectors.toList());
     }
 
-    public List<IssueCardResponse> getAll(String peerId, String importance, String eventType) {
-        return issueCardRepository.findAll().stream()
+    public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
+        return cardNewsRepository.findAll().stream()
                 .filter(c -> peerId == null || peerId.equals(c.getPeerId()))
                 .filter(c -> importance == null || importance.equals(c.getImportance()))
                 .filter(c -> eventType == null || eventType.equals(c.getEventType()))
@@ -40,15 +40,15 @@ public class IssueCardService {
                 .collect(Collectors.toList());
     }
 
-    public IssueCardResponse getById(String id) {
-        return issueCardRepository.findById(id)
+    public CardNewsResponse getById(String id) {
+        return cardNewsRepository.findById(id)
                 .map(this::toResponse)
-                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("이슈 카드 없음: " + id));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
     }
 
-    private IssueCardResponse toResponse(IssueCard card) {
+    private CardNewsResponse toResponse(CardNews card) {
         Optional<ArticleImage> image = articleImageRepository
-                .findFirstByIssueCardIdOrderByCreatedAtDesc(card.getId());
+                .findFirstByCardNewsIdOrderByCreatedAtDesc(card.getId());
         Map<String, Object> implication = card.getImplication() == null ? Map.of() : card.getImplication();
         String sector = stringValue(implication.get("sector"), "other");
         List<String> sectors = stringList(implication.get("sectors"));
@@ -56,7 +56,7 @@ public class IssueCardService {
             sectors = List.of(sector);
         }
 
-        return IssueCardResponse.builder()
+        return CardNewsResponse.builder()
                 .id(card.getId())
                 .peerId(card.getPeerId())
                 .clusterId(card.getClusterId())

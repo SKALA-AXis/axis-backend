@@ -29,8 +29,8 @@ public class ArticleImage {
     @Column(name = "cluster_id")
     private Long clusterId;
 
-    @Column(name = "issue_card_id", length = 50)
-    private String issueCardId;
+    @Column(name = "card_news_id", length = 50)
+    private String cardNewsId;
 
     @Column(name = "source_url", nullable = false, columnDefinition = "TEXT")
     private String sourceUrl;

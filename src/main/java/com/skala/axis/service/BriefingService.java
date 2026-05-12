@@ -1,6 +1,6 @@
 package com.skala.axis.service;
 
-import com.skala.axis.dto.IssueCardResponse;
+import com.skala.axis.dto.CardNewsResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +20,7 @@ import java.util.Map;
  *
  * <p>v4 변경: 발송 채널 Slack → AWS SES V2 SDK (IRSA). sector-grouped 본문 빌더 보존.
  * 자세한 spec: {@code axis-infra/docs/SES_INTEGRATION.md} · ADR-0008.</p>
+ * <p>v5 변경: issue_cards → card_news rename. DTO IssueCardResponse → CardNewsResponse.</p>
  */
 @Slf4j
 @Service
@@ -34,16 +35,16 @@ public class BriefingService {
             "other", new SectorDisplay("기타", "기타 관찰 경향")
     );
 
-    private final IssueCardService issueCardService;
+    private final CardNewsService cardNewsService;
     private final SesMailService sesMailService;
 
     @Value("${briefing.recipients:}")
     private String briefingRecipientsCsv;
 
     public void generateAndSend() {
-        List<IssueCardResponse> todayIssues = issueCardService.getTodayIssues(null, null);
-        if (todayIssues.isEmpty()) {
-            log.info("오늘의 이슈 카드 없음. 브리핑 스킵.");
+        List<CardNewsResponse> todayCards = cardNewsService.getTodayCards(null, null);
+        if (todayCards.isEmpty()) {
+            log.info("오늘의 카드 뉴스 없음. 브리핑 스킵.");
             return;
         }
 
@@ -54,10 +55,10 @@ public class BriefingService {
         }
 
         String subject = "[AXIS] 오늘의 동향 브리핑 — " + LocalDate.now();
-        String text = buildBriefingText(todayIssues);
-        String html = buildBriefingHtml(todayIssues);
+        String text = buildBriefingText(todayCards);
+        String html = buildBriefingHtml(todayCards);
         sesMailService.sendBriefing(recipients, subject, html, text);
-        log.info("브리핑 발송 완료 — 이슈 {}건, 수신자 {}명", todayIssues.size(), recipients.size());
+        log.info("브리핑 발송 완료 — 카드 {}건, 수신자 {}명", todayCards.size(), recipients.size());
     }
 
     private List<String> resolveRecipients() {
@@ -70,31 +71,31 @@ public class BriefingService {
                 .toList();
     }
 
-    private String buildBriefingText(List<IssueCardResponse> issues) {
-        Map<String, List<IssueCardResponse>> grouped = groupBySector(issues);
+    private String buildBriefingText(List<CardNewsResponse> cards) {
+        Map<String, List<CardNewsResponse>> grouped = groupBySector(cards);
         StringBuilder sb = new StringBuilder("AXIS 오늘의 섹터별 브리핑\n");
         sb.append("오늘 감지된 동향 ")
-                .append(issues.size())
+                .append(cards.size())
                 .append("건을 섹터 경향별로 정리했습니다.\n\n");
 
         for (String sector : orderedSectors(grouped)) {
-            List<IssueCardResponse> sectorIssues = grouped.get(sector).stream()
+            List<CardNewsResponse> sectorCards = grouped.get(sector).stream()
                     .sorted(Comparator.comparing(this::trendScore, Comparator.reverseOrder()))
                     .toList();
             SectorDisplay display = SECTOR_DISPLAY.getOrDefault(sector, SECTOR_DISPLAY.get("other"));
 
             sb.append("■ ").append(display.label()).append(" 경향")
-                    .append(" · ").append(sectorIssues.size()).append("건")
-                    .append(" · ").append(trendLabel(sectorIssues))
+                    .append(" · ").append(sectorCards.size()).append("건")
+                    .append(" · ").append(trendLabel(sectorCards))
                     .append("\n");
             sb.append("  ").append(display.description()).append("\n");
 
-            for (IssueCardResponse issue : sectorIssues) {
+            for (CardNewsResponse card : sectorCards) {
                 sb.append("- ");
-                if (issue.getPeerId() != null && !issue.getPeerId().isBlank()) {
-                    sb.append("[").append(issue.getPeerId()).append("] ");
+                if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
+                    sb.append("[").append(card.getPeerId()).append("] ");
                 }
-                sb.append(issue.getTitle()).append("\n");
+                sb.append(card.getTitle()).append("\n");
             }
             sb.append("\n");
         }
@@ -102,8 +103,8 @@ public class BriefingService {
         return sb.toString();
     }
 
-    private String buildBriefingHtml(List<IssueCardResponse> issues) {
-        Map<String, List<IssueCardResponse>> grouped = groupBySector(issues);
+    private String buildBriefingHtml(List<CardNewsResponse> cards) {
+        Map<String, List<CardNewsResponse>> grouped = groupBySector(cards);
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"UTF-8\"></head>");
         sb.append("<body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;");
@@ -111,11 +112,11 @@ public class BriefingService {
         sb.append("<header style=\"border-bottom:2px solid #111827;padding-bottom:16px;margin-bottom:24px;\">");
         sb.append("<h1 style=\"margin:0;font-size:22px;\">AXIS 오늘의 섹터별 브리핑</h1>");
         sb.append("<p style=\"margin:8px 0 0;color:#6b7280;font-size:14px;\">")
-                .append(LocalDate.now()).append(" · ").append(issues.size()).append("건</p>");
+                .append(LocalDate.now()).append(" · ").append(cards.size()).append("건</p>");
         sb.append("</header>");
 
         for (String sector : orderedSectors(grouped)) {
-            List<IssueCardResponse> sectorIssues = grouped.get(sector).stream()
+            List<CardNewsResponse> sectorCards = grouped.get(sector).stream()
                     .sorted(Comparator.comparing(this::trendScore, Comparator.reverseOrder()))
                     .toList();
             SectorDisplay display = SECTOR_DISPLAY.getOrDefault(sector, SECTOR_DISPLAY.get("other"));
@@ -123,18 +124,18 @@ public class BriefingService {
             sb.append("<section style=\"margin-bottom:24px;\">");
             sb.append("<h2 style=\"font-size:16px;margin:0 0 4px;color:#111827;\">")
                     .append(htmlEscape(display.label())).append(" 경향 · ")
-                    .append(sectorIssues.size()).append("건 · ")
-                    .append(htmlEscape(trendLabel(sectorIssues))).append("</h2>");
+                    .append(sectorCards.size()).append("건 · ")
+                    .append(htmlEscape(trendLabel(sectorCards))).append("</h2>");
             sb.append("<p style=\"margin:0 0 12px;color:#6b7280;font-size:13px;\">")
                     .append(htmlEscape(display.description())).append("</p>");
             sb.append("<ul style=\"list-style:none;padding:0;margin:0;\">");
-            for (IssueCardResponse issue : sectorIssues) {
+            for (CardNewsResponse card : sectorCards) {
                 sb.append("<li style=\"padding:8px 0;border-bottom:1px solid #e5e7eb;\">");
-                if (issue.getPeerId() != null && !issue.getPeerId().isBlank()) {
+                if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
                     sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
-                            .append(htmlEscape(issue.getPeerId())).append("]</span> ");
+                            .append(htmlEscape(card.getPeerId())).append("]</span> ");
                 }
-                sb.append(htmlEscape(issue.getTitle()));
+                sb.append(htmlEscape(card.getTitle()));
                 sb.append("</li>");
             }
             sb.append("</ul></section>");
@@ -154,16 +155,16 @@ public class BriefingService {
                 .replace("\"", "&quot;");
     }
 
-    private Map<String, List<IssueCardResponse>> groupBySector(List<IssueCardResponse> issues) {
-        Map<String, List<IssueCardResponse>> grouped = new LinkedHashMap<>();
-        for (IssueCardResponse issue : issues) {
-            String sector = resolveSector(issue);
-            grouped.computeIfAbsent(sector, ignored -> new ArrayList<>()).add(issue);
+    private Map<String, List<CardNewsResponse>> groupBySector(List<CardNewsResponse> cards) {
+        Map<String, List<CardNewsResponse>> grouped = new LinkedHashMap<>();
+        for (CardNewsResponse card : cards) {
+            String sector = resolveSector(card);
+            grouped.computeIfAbsent(sector, ignored -> new ArrayList<>()).add(card);
         }
         return grouped;
     }
 
-    private List<String> orderedSectors(Map<String, List<IssueCardResponse>> grouped) {
+    private List<String> orderedSectors(Map<String, List<CardNewsResponse>> grouped) {
         List<String> ordered = new ArrayList<>(SECTOR_ORDER.stream()
                 .filter(grouped::containsKey)
                 .toList());
@@ -174,20 +175,20 @@ public class BriefingService {
         return ordered;
     }
 
-    private String resolveSector(IssueCardResponse issue) {
-        String sector = normalizeSector(issue.getSector());
+    private String resolveSector(CardNewsResponse card) {
+        String sector = normalizeSector(card.getSector());
         if (!"other".equals(sector)) {
             return sector;
         }
-        if (issue.getSectors() != null) {
-            for (String candidate : issue.getSectors()) {
+        if (card.getSectors() != null) {
+            for (String candidate : card.getSectors()) {
                 sector = normalizeSector(candidate);
                 if (!"other".equals(sector)) {
                     return sector;
                 }
             }
         }
-        return inferSector(issue.getTitle());
+        return inferSector(card.getTitle());
     }
 
     private String normalizeSector(String value) {
@@ -232,8 +233,8 @@ public class BriefingService {
         return false;
     }
 
-    private String trendLabel(List<IssueCardResponse> issues) {
-        Float score = issues.stream()
+    private String trendLabel(List<CardNewsResponse> cards) {
+        Float score = cards.stream()
                 .map(this::trendScore)
                 .max(Float::compareTo)
                 .orElse(0.0f);
@@ -248,12 +249,12 @@ public class BriefingService {
         return label + " (" + String.format(Locale.ROOT, "%.2f", score) + ")";
     }
 
-    private Float trendScore(IssueCardResponse issue) {
-        if (issue.getExposureScore() != null) {
-            return issue.getExposureScore();
+    private Float trendScore(CardNewsResponse card) {
+        if (card.getExposureScore() != null) {
+            return card.getExposureScore();
         }
-        if (issue.getImportanceScore() != null) {
-            return issue.getImportanceScore();
+        if (card.getImportanceScore() != null) {
+            return card.getImportanceScore();
         }
         return 0.0f;
     }

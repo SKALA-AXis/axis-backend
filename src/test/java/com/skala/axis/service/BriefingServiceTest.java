@@ -1,6 +1,6 @@
 package com.skala.axis.service;
 
-import com.skala.axis.dto.IssueCardResponse;
+import com.skala.axis.dto.CardNewsResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class BriefingServiceTest {
     @Mock
-    private IssueCardService issueCardService;
+    private CardNewsService cardNewsService;
 
     @Mock
     private SesMailService sesMailService;
@@ -37,10 +37,10 @@ class BriefingServiceTest {
 
     @Test
     void generateAndSendGroupsBriefingBySectorTrend() {
-        when(issueCardService.getTodayIssues(null, null)).thenReturn(List.of(
-                issue("AX-1", "ax", 0.72f, "삼성SDS 제조 AX 플랫폼 확산"),
-                issue("SEC-1", "security", 0.61f, "LG CNS 클라우드 보안 관제 고도화"),
-                issue("INFRA-1", null, 0.47f, "현대오토에버 GPU 인프라 투자 확대")
+        when(cardNewsService.getTodayCards(null, null)).thenReturn(List.of(
+                card("AX-1", "ax", 0.72f, "삼성SDS 제조 AX 플랫폼 확산"),
+                card("SEC-1", "security", 0.61f, "LG CNS 클라우드 보안 관제 고도화"),
+                card("INFRA-1", null, 0.47f, "현대오토에버 GPU 인프라 투자 확대")
         ));
 
         briefingService.generateAndSend();
@@ -73,16 +73,16 @@ class BriefingServiceTest {
     }
 
     @Test
-    void generateAndSendSkipsWhenNoIssues() {
-        when(issueCardService.getTodayIssues(null, null)).thenReturn(List.of());
+    void generateAndSendSkipsWhenNoCards() {
+        when(cardNewsService.getTodayCards(null, null)).thenReturn(List.of());
 
         briefingService.generateAndSend();
 
         verifyNoInteractions(sesMailService);
     }
 
-    private IssueCardResponse issue(String id, String sector, Float score, String title) {
-        return IssueCardResponse.builder()
+    private CardNewsResponse card(String id, String sector, Float score, String title) {
+        return CardNewsResponse.builder()
                 .id(id)
                 .peerId("samsung_sds")
                 .sector(sector)
