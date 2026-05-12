@@ -29,7 +29,10 @@ public class ArticleImage {
     @Column(name = "cluster_id")
     private Long clusterId;
 
-    @Column(name = "card_news_id", length = 50)
+    // V9 (2026-05-12): card_news 테이블 rename 후에도 본 컬럼은 issue_card_id 유지.
+    // 컬럼 rename 은 V10 (deploy 안정화 후) 에 분리. Java field 명은 cardNewsId 로
+    // 의미 정렬, @Column.name 만 legacy column 가리킴.
+    @Column(name = "issue_card_id", length = 50)
     private String cardNewsId;
 
     @Column(name = "source_url", nullable = false, columnDefinition = "TEXT")
