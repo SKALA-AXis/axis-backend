@@ -36,6 +36,9 @@ dependencies {
     // DB
     runtimeOnly 'org.postgresql:postgresql'
 
+    // AWS SES V2 (이메일 발송 — IRSA 통한 IAM credentials 자동 주입)
+    implementation 'software.amazon.awssdk:sesv2'
+
     // Flyway 마이그레이션 (Spring Boot 3.3 + Flyway 10 — postgresql 모듈 별도 의존성 필수)
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'

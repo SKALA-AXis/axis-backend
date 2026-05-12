@@ -50,9 +50,19 @@ axis:
     # 컨테이너에서는 IMAGE_STORAGE_PATH 환경변수가 주입되며, 기본값은 /data/images.
     storage-path: ${IMAGE_STORAGE_PATH:/data/images}
 
-slack:
-  webhook-url: ${SLACK_WEBHOOK_URL:}
-  briefing-time: "08:30"
+# 이메일 발송 — AWS SES V2 SDK + IRSA (ses-mailer-sa) — Slack 폐기 (v4).
+# 자세한 spec: axis-infra/docs/SES_INTEGRATION.md
+aws:
+  region: ${AWS_REGION:ap-northeast-2}
+
+mail:
+  from: ${MAIL_FROM:noreply@skala-ai.com}
+
+briefing:
+  # comma-separated 수신자 목록. cluster 의 axis-config 의 BRIEFING_RECIPIENTS envFrom 으로 주입.
+  # axis-ai 응답의 recipients 가 비어있을 때만 사용 (BriefingService.resolveRecipients).
+  recipients: ${BRIEFING_RECIPIENTS:}
+  time: "08:30"
 
 springdoc:
   api-docs:

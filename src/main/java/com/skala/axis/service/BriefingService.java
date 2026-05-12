@@ -3,14 +3,24 @@ package com.skala.axis.service;
 import com.skala.axis.dto.IssueCardResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 일일 브리핑 — Spring @Scheduled (08:30 KST MON-FRI) 가 호출.
+ *
+ * <p>v4 변경: 발송 채널 Slack → AWS SES V2 SDK (IRSA). sector-grouped 본문 빌더 보존.
+ * 자세한 spec: {@code axis-infra/docs/SES_INTEGRATION.md} · ADR-0008.</p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -25,7 +35,10 @@ public class BriefingService {
     );
 
     private final IssueCardService issueCardService;
-    private final SlackService slackService;
+    private final SesMailService sesMailService;
+
+    @Value("${briefing.recipients:}")
+    private String briefingRecipientsCsv;
 
     public void generateAndSend() {
         List<IssueCardResponse> todayIssues = issueCardService.getTodayIssues(null, null);
@@ -33,14 +46,33 @@ public class BriefingService {
             log.info("오늘의 이슈 카드 없음. 브리핑 스킵.");
             return;
         }
-        String briefing = buildBriefingText(todayIssues);
-        slackService.sendMessage(briefing);
-        log.info("브리핑 전송 완료. 이슈 {}건", todayIssues.size());
+
+        List<String> recipients = resolveRecipients();
+        if (recipients.isEmpty()) {
+            log.warn("수신자 미설정 (briefing.recipients env 비어있음) — 발송 스킵");
+            return;
+        }
+
+        String subject = "[AXIS] 오늘의 동향 브리핑 — " + LocalDate.now();
+        String text = buildBriefingText(todayIssues);
+        String html = buildBriefingHtml(todayIssues);
+        sesMailService.sendBriefing(recipients, subject, html, text);
+        log.info("브리핑 발송 완료 — 이슈 {}건, 수신자 {}명", todayIssues.size(), recipients.size());
+    }
+
+    private List<String> resolveRecipients() {
+        if (briefingRecipientsCsv == null || briefingRecipientsCsv.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(briefingRecipientsCsv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
     private String buildBriefingText(List<IssueCardResponse> issues) {
         Map<String, List<IssueCardResponse>> grouped = groupBySector(issues);
-        StringBuilder sb = new StringBuilder("*AXIS 오늘의 섹터별 브리핑*\n");
+        StringBuilder sb = new StringBuilder("AXIS 오늘의 섹터별 브리핑\n");
         sb.append("오늘 감지된 동향 ")
                 .append(issues.size())
                 .append("건을 섹터 경향별로 정리했습니다.\n\n");
@@ -51,11 +83,11 @@ public class BriefingService {
                     .toList();
             SectorDisplay display = SECTOR_DISPLAY.getOrDefault(sector, SECTOR_DISPLAY.get("other"));
 
-            sb.append("*").append(display.label()).append(" 경향*")
+            sb.append("■ ").append(display.label()).append(" 경향")
                     .append(" · ").append(sectorIssues.size()).append("건")
                     .append(" · ").append(trendLabel(sectorIssues))
                     .append("\n");
-            sb.append("_").append(display.description()).append("_\n");
+            sb.append("  ").append(display.description()).append("\n");
 
             for (IssueCardResponse issue : sectorIssues) {
                 sb.append("- ");
@@ -66,7 +98,60 @@ public class BriefingService {
             }
             sb.append("\n");
         }
+        sb.append("— SK AX 사업전략팀 AXIS\n");
         return sb.toString();
+    }
+
+    private String buildBriefingHtml(List<IssueCardResponse> issues) {
+        Map<String, List<IssueCardResponse>> grouped = groupBySector(issues);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"UTF-8\"></head>");
+        sb.append("<body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;");
+        sb.append("max-width:680px;margin:0 auto;padding:24px;color:#111827;\">");
+        sb.append("<header style=\"border-bottom:2px solid #111827;padding-bottom:16px;margin-bottom:24px;\">");
+        sb.append("<h1 style=\"margin:0;font-size:22px;\">AXIS 오늘의 섹터별 브리핑</h1>");
+        sb.append("<p style=\"margin:8px 0 0;color:#6b7280;font-size:14px;\">")
+                .append(LocalDate.now()).append(" · ").append(issues.size()).append("건</p>");
+        sb.append("</header>");
+
+        for (String sector : orderedSectors(grouped)) {
+            List<IssueCardResponse> sectorIssues = grouped.get(sector).stream()
+                    .sorted(Comparator.comparing(this::trendScore, Comparator.reverseOrder()))
+                    .toList();
+            SectorDisplay display = SECTOR_DISPLAY.getOrDefault(sector, SECTOR_DISPLAY.get("other"));
+
+            sb.append("<section style=\"margin-bottom:24px;\">");
+            sb.append("<h2 style=\"font-size:16px;margin:0 0 4px;color:#111827;\">")
+                    .append(htmlEscape(display.label())).append(" 경향 · ")
+                    .append(sectorIssues.size()).append("건 · ")
+                    .append(htmlEscape(trendLabel(sectorIssues))).append("</h2>");
+            sb.append("<p style=\"margin:0 0 12px;color:#6b7280;font-size:13px;\">")
+                    .append(htmlEscape(display.description())).append("</p>");
+            sb.append("<ul style=\"list-style:none;padding:0;margin:0;\">");
+            for (IssueCardResponse issue : sectorIssues) {
+                sb.append("<li style=\"padding:8px 0;border-bottom:1px solid #e5e7eb;\">");
+                if (issue.getPeerId() != null && !issue.getPeerId().isBlank()) {
+                    sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
+                            .append(htmlEscape(issue.getPeerId())).append("]</span> ");
+                }
+                sb.append(htmlEscape(issue.getTitle()));
+                sb.append("</li>");
+            }
+            sb.append("</ul></section>");
+        }
+
+        sb.append("<footer style=\"margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;");
+        sb.append("color:#6b7280;font-size:12px;\">SK AX 사업전략팀 AXIS · 자동 발송</footer>");
+        sb.append("</body></html>");
+        return sb.toString();
+    }
+
+    private static String htmlEscape(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     private Map<String, List<IssueCardResponse>> groupBySector(List<IssueCardResponse> issues) {

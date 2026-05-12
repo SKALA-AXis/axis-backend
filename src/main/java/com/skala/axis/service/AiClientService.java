@@ -1,5 +1,7 @@
 package com.skala.axis.service;
 
+import com.skala.axis.dto.BriefingContent;
+import com.skala.axis.dto.IssueCardResponse;
 import com.skala.axis.dto.SearchRequest;
 import com.skala.axis.dto.SearchResponse;
 import com.skala.axis.exception.AiServerException;
@@ -48,6 +50,24 @@ public class AiClientService {
                 .onErrorResume(e -> {
                     log.warn("파이프라인 트리거 실패 (비동기 무시): track={} error={}", track, e.getMessage());
                     return Mono.empty();
+                });
+    }
+
+    /**
+     * 일일 브리핑 본문 데이터 요청 — axis-ai 가 cards 받아 HTML/text 본문 빌더 후 반환.
+     * SES 발송은 backend 의 SesMailService 가 담당 (axis-ai 는 발송 안 함).
+     */
+    public Mono<BriefingContent> buildBriefing(List<IssueCardResponse> cards) {
+        return aiWebClient.post()
+                .uri("/pipeline/delivery")
+                .bodyValue(Map.of("cards", cards))
+                .retrieve()
+                .bodyToMono(BriefingContent.class)
+                .timeout(Duration.ofSeconds(30))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("브리핑 빌더 타임아웃"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /pipeline/delivery 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
                 });
     }
 
