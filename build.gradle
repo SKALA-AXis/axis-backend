@@ -24,6 +24,13 @@ repositories {
     mavenCentral()
 }
 
+// AWS SDK V2 BOM — 의존성 버전 일관 관리 (sesv2 등)
+dependencyManagement {
+    imports {
+        mavenBom 'software.amazon.awssdk:bom:2.27.21'
+    }
+}
+
 dependencies {
     // 핵심 웹
     implementation 'org.springframework.boot:spring-boot-starter-web'
