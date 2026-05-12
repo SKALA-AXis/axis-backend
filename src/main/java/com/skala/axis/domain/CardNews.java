@@ -8,10 +8,10 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @Entity
-@Table(name = "issue_cards")
+@Table(name = "card_news")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class IssueCard {
+public class CardNews {
     @Id
     @Column(length = 50)
     private String id;

@@ -7,7 +7,7 @@ import java.util.List;
 
 @Getter
 @Builder
-public class IssueCardResponse {
+public class CardNewsResponse {
     private String id;
     private String peerId;
     private Long clusterId;

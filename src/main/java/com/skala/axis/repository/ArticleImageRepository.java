@@ -7,6 +7,6 @@ import java.util.Optional;
 
 public interface ArticleImageRepository extends JpaRepository<ArticleImage, Long> {
 
-    /** 카드별 대표 이미지 조회 — IssueCardService 가 응답 빌드 시 사용. */
-    Optional<ArticleImage> findFirstByIssueCardIdOrderByCreatedAtDesc(String issueCardId);
+    /** 카드별 대표 이미지 조회 — CardNewsService 가 응답 빌드 시 사용. */
+    Optional<ArticleImage> findFirstByCardNewsIdOrderByCreatedAtDesc(String cardNewsId);
 }
