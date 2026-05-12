@@ -41,7 +41,9 @@ axis:
   share:
     base-url: ${AXIS_SHARE_BASE_URL:https://axis.local}
   scheduler:
-    ingestion-peer-ids: ${AXIS_SCHEDULER_INGESTION_PEER_IDS:samsung_sds,lg_cns}
+    enabled: ${AXIS_SCHEDULER_ENABLED:false}
+    ingestion-peer-ids: ${AXIS_SCHEDULER_INGESTION_PEER_IDS:samsung_sds,lg_cns,hyundai_autoever,posco_dx,nvidia,apple,microsoft,google,amazon,meta}
+    cron-internal-token: ${CRON_INTERNAL_TOKEN:}
   image:
     # 카드 뉴스 이미지 파일이 저장된 공유 볼륨의 마운트 경로.
     # axis-ai (ImageFetchAgent) 가 쓰고, axis-backend 가 read-only 로 서빙.

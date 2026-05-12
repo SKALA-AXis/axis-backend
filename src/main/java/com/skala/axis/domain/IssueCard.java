@@ -2,7 +2,10 @@ package com.skala.axis.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Entity
 @Table(name = "issue_cards")
@@ -30,6 +33,10 @@ public class IssueCard {
 
     @Column(name = "importance_score")
     private Float importanceScore;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "implication", columnDefinition = "jsonb")
+    private Map<String, Object> implication;
 
     @Column(name = "validation_pass")
     private Boolean validationPass;

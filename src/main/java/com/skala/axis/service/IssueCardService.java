@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -48,6 +49,12 @@ public class IssueCardService {
     private IssueCardResponse toResponse(IssueCard card) {
         Optional<ArticleImage> image = articleImageRepository
                 .findFirstByIssueCardIdOrderByCreatedAtDesc(card.getId());
+        Map<String, Object> implication = card.getImplication() == null ? Map.of() : card.getImplication();
+        String sector = stringValue(implication.get("sector"), "other");
+        List<String> sectors = stringList(implication.get("sectors"));
+        if (sectors.isEmpty()) {
+            sectors = List.of(sector);
+        }
 
         return IssueCardResponse.builder()
                 .id(card.getId())
@@ -55,6 +62,10 @@ public class IssueCardService {
                 .clusterId(card.getClusterId())
                 .title(card.getTitle())
                 .eventType(card.getEventType())
+                .sector(sector)
+                .sectors(sectors)
+                .exposureBand(stringValue(implication.get("exposure_band"), card.getImportance()))
+                .exposureScore(floatValue(implication.get("exposure_score"), card.getImportanceScore()))
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
                 .createdAt(card.getCreatedAt())
@@ -62,5 +73,37 @@ public class IssueCardService {
                 .imageAttribution(image.map(ArticleImage::getAttribution).orElse(null))
                 .imageAlt(image.map(ArticleImage::getAltText).orElse(null))
                 .build();
+    }
+
+    private String stringValue(Object value, String defaultValue) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return defaultValue;
+        }
+        return String.valueOf(value);
+    }
+
+    private Float floatValue(Object value, Float defaultValue) {
+        if (value instanceof Number number) {
+            return number.floatValue();
+        }
+        if (value == null || String.valueOf(value).isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Float.parseFloat(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private List<String> stringList(Object value) {
+        if (!(value instanceof List<?> values)) {
+            return List.of();
+        }
+        return values.stream()
+                .map(String::valueOf)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .toList();
     }
 }

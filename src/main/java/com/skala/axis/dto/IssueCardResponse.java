@@ -3,6 +3,7 @@ package com.skala.axis.dto;
 import lombok.Builder;
 import lombok.Getter;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Builder
@@ -12,6 +13,10 @@ public class IssueCardResponse {
     private Long clusterId;
     private String title;
     private String eventType;
+    private String sector;
+    private List<String> sectors;
+    private String exposureBand;
+    private Float exposureScore;
     private String importance;
     private Float importanceScore;
     private LocalDateTime createdAt;
