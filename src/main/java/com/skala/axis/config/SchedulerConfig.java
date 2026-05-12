@@ -28,7 +28,7 @@ public class SchedulerConfig {
                 .subscribe(null, e -> log.error("파이프라인 트리거 실패: {}", e.getMessage()));
     }
 
-    @Scheduled(cron = "0 30 8 * * MON-FRI")
+    @Scheduled(cron = "0 30 8 * * MON-FRI", zone = "Asia/Seoul")
     public void sendDailyBriefing() {
         log.info("일일 브리핑 전송 시작");
         briefingService.generateAndSend();

@@ -3,6 +3,7 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.AiClientService;
+import com.skala.axis.service.BriefingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,7 @@ import java.util.Set;
 public class PipelineController {
     private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
+    private final BriefingService briefingService;
 
     @Value("${axis.scheduler.ingestion-peer-ids}")
     private List<String> ingestionPeerIds;
@@ -59,6 +61,24 @@ public class PipelineController {
                 "track", normalizedTrack,
                 "peer_ids", ingestionPeerIds
         )));
+    }
+
+    @PostMapping("/briefing")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> triggerBriefing(
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        if (!isCronAuthorized(authorization)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.success(Map.of("status", "unauthorized")));
+        }
+        try {
+            briefingService.generateAndSend();
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(ApiResponse.success(Map.of("status", "accepted")));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(ApiResponse.success(Map.of("status", "failed", "error", e.getMessage())));
+        }
     }
 
     private boolean isCronAuthorized(String authorization) {
