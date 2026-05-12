@@ -33,15 +33,20 @@ public class AiClientService {
                 });
     }
 
-    public Mono<Void> triggerPipeline(List<String> peerIds) {
+    public Mono<Void> triggerPipeline(String track, List<String> peerIds) {
         return aiWebClient.post()
                 .uri("/pipeline/run")
-                .bodyValue(Map.of("peer_ids", peerIds, "trigger_type", "scheduled"))
+                .bodyValue(Map.of(
+                        "track", track,
+                        "company", peerIds,
+                        "trigger_type", "scheduled"
+                ))
                 .retrieve()
-                .bodyToMono(Void.class)
+                .bodyToMono(Map.class)
+                .then()
                 .timeout(Duration.ofSeconds(5))
                 .onErrorResume(e -> {
-                    log.warn("파이프라인 트리거 실패 (비동기 무시): {}", e.getMessage());
+                    log.warn("파이프라인 트리거 실패 (비동기 무시): track={} error={}", track, e.getMessage());
                     return Mono.empty();
                 });
     }

@@ -4,6 +4,7 @@ import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -11,6 +12,7 @@ import java.util.List;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(name = "axis.scheduler.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class SchedulerConfig {
     private final AiClientService aiClientService;
@@ -22,7 +24,7 @@ public class SchedulerConfig {
     @Scheduled(cron = "0 0 * * * *")
     public void triggerIngestionPipeline() {
         log.info("수집 파이프라인 트리거");
-        aiClientService.triggerPipeline(ingestionPeerIds)
+        aiClientService.triggerPipeline("A", ingestionPeerIds)
                 .subscribe(null, e -> log.error("파이프라인 트리거 실패: {}", e.getMessage()));
     }
 
