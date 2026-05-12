@@ -17,8 +17,9 @@
 -- 1) 본 테이블 rename
 ALTER TABLE issue_cards RENAME TO card_news;
 
--- 2) article_images 의 FK 컬럼 이름도 일관성 위해 rename
+-- 2) FK 컬럼 이름도 일관성 위해 rename — article_images + evidence_chain
 ALTER TABLE article_images RENAME COLUMN issue_card_id TO card_news_id;
+ALTER TABLE evidence_chain RENAME COLUMN issue_card_id TO card_news_id;
 
 -- 3) 보조 인덱스 명시적 rename (Postgres 가 자동으로 따라오지 않는 일부)
 DO $$
@@ -31,12 +32,30 @@ BEGIN
           AND (
             (tablename = 'card_news' AND indexname LIKE 'issue_cards_%')
             OR (tablename = 'article_images' AND indexname LIKE 'article_images_issue_card_%')
+            OR (tablename = 'evidence_chain' AND indexname LIKE '%issue_card%')
           )
     LOOP
         EXECUTE format('ALTER INDEX %I RENAME TO %I',
                        idx_name,
-                       replace(replace(idx_name, 'issue_cards_', 'card_news_'),
-                               'article_images_issue_card_', 'article_images_card_news_'));
+                       replace(replace(replace(idx_name, 'issue_cards_', 'card_news_'),
+                                       'article_images_issue_card_', 'article_images_card_news_'),
+                               'issue_card', 'card_news'));
+    END LOOP;
+END $$;
+
+-- 4) UNIQUE constraint rename (evidence_chain.issue_card_id 는 UNIQUE 라 자동 생성 constraint name 처리)
+DO $$
+DECLARE
+    con_name text;
+BEGIN
+    FOR con_name IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'evidence_chain'::regclass
+          AND conname LIKE '%issue_card%'
+    LOOP
+        EXECUTE format('ALTER TABLE evidence_chain RENAME CONSTRAINT %I TO %I',
+                       con_name,
+                       replace(con_name, 'issue_card', 'card_news'));
     END LOOP;
 END $$;
 
