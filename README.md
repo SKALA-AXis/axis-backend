@@ -101,7 +101,11 @@ docker compose --profile local --env-file .env.local up -d backend
 | `IMAGE_STORAGE_PATH` | `/data/images` | 카드 이미지 저장 볼륨 경로 |
 | `AXIS_SHARE_BASE_URL` | `https://axis.local` | 카드/믹서기 공유 링크 base URL |
 | `AXIS_SCHEDULER_INGESTION_PEER_IDS` | `samsung_sds,lg_cns` | 수집 스케줄러가 트리거할 Peer ID 목록 |
-| `SLACK_WEBHOOK_URL` | empty | Slack 브리핑 Webhook |
+| `AWS_REGION` | `ap-northeast-2` | AWS SES 발송 region (운영 — IRSA 통한 자동 주입) |
+| `MAIL_FROM` | `noreply@skala-ai.com` | SES 발신자 (운영 — verified domain) |
+| `BRIEFING_RECIPIENTS` | empty (운영 시 axis-config 박음) | 일일 브리핑 수신자 comma-separated |
+
+> 운영 배포 시: backend pod 의 `serviceAccountName: ses-mailer-sa` 가 IRSA 통해 SES 권한 받음. SMTP credentials 불필요. 자세한 spec: [axis-infra/docs/SES_INTEGRATION.md](../axis-infra/docs/SES_INTEGRATION.md).
 
 `.env`, `.env.local`은 커밋하지 않습니다.
 
