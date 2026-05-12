@@ -44,7 +44,9 @@ dependencies {
     runtimeOnly 'org.postgresql:postgresql'
 
     // AWS SES V2 (이메일 발송 — IRSA 통한 IAM credentials 자동 주입)
+    // sts: IRSA web identity token → IAM 자격증명 교환에 필수 (SDK v2 는 기본 의존성 아님)
     implementation 'software.amazon.awssdk:sesv2'
+    implementation 'software.amazon.awssdk:sts'
 
     // Flyway 마이그레이션 (Spring Boot 3.3 + Flyway 10 — postgresql 모듈 별도 의존성 필수)
     implementation 'org.flywaydb:flyway-core'
