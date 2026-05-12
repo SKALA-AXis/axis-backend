@@ -11,7 +11,9 @@ axis-backend가 하는 일
 ├── PostgreSQL 조회/저장
 ├── Python AI 서버에 작업 위임
 ├── 이미지 파일 서빙
-├── Slack Webhook 발송
+├── 이메일 발송 — AWS SES V2 SDK + IRSA (ses-mailer-sa)
+│   ├ sender: noreply@skala-ai.com (매니저 verified)
+│   └ 일일 브리핑: axis-cron-delivery CronJob → /api/pipeline/delivery → axis-ai 본문 데이터 → SES
 └── 스케줄러와 파이프라인 트리거
 
 axis-backend가 하지 않는 일
@@ -60,7 +62,7 @@ src/main/java/com/skala/axis/
 │   ├── IssueCardService.java
 │   ├── ArticleImageService.java
 │   ├── BriefingService.java
-│   └── SlackService.java
+│   └── SesMailService.java          # AWS SES V2 SDK 발송 (IRSA) — SlackService 폐기 후 신설
 ├── domain/
 ├── repository/
 ├── dto/
