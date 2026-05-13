@@ -14,9 +14,11 @@ CREATE TABLE infra_cost_daily (
     cost_usd     NUMERIC(12,4) NOT NULL,
     fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     raw_payload  JSONB,                                             -- 원본 API 응답 (audit)
-    -- UNIQUE constraint: resource 가 NULL 일 수도 있어 expression 으로 처리
+    -- 의도: (date, service, resource=NULL) = service 합계 row (1개만 허용).
+    -- PG default 'NULLS DISTINCT' 로는 NULL resource 가 여러 개 허용되어 의도 위배 →
+    -- 'NULLS NOT DISTINCT' (PG 15+) 명시. 본 cluster = PG 16.13 검증 완료 (2026-05-13).
     CONSTRAINT infra_cost_unique
-        UNIQUE (date, service, resource),                           -- NULL resource 는 distinct (PG 기본 동작)
+        UNIQUE NULLS NOT DISTINCT (date, service, resource),
     CONSTRAINT infra_cost_nonneg
         CHECK (cost_usd >= 0)
 );
