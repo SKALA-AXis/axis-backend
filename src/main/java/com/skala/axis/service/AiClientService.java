@@ -164,6 +164,48 @@ public class AiClientService {
                 });
     }
 
+    /**
+     * GlobalTrends 5-phase 분석 — axis-ai 의 {@code /global/trends/run} 위임.
+     *
+     * <p>prototype (Walking Skeleton Phase 2). Phase 1+2 결정적 산식, Phase 3+4+5 LLM 단일
+     * 호출. 글로벌 카드 부재 시 graceful 빈 응답 + warning. timeout 90초.</p>
+     *
+     * @param companyIds 분석 대상 글로벌 회사 ids (null 이면 default 6사)
+     * @param focusThemes 특정 theme 필터 (옵션)
+     * @param windowDays 분석 윈도우 (기본 30일)
+     * @param skAxBusinessLines impact matrix 컬럼 축 (옵션)
+     */
+    public Mono<Map<String, Object>> runGlobalTrends(
+            List<String> companyIds,
+            List<String> focusThemes,
+            Integer windowDays,
+            List<String> skAxBusinessLines) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        if (companyIds != null && !companyIds.isEmpty()) {
+            body.put("company_ids", companyIds);
+        }
+        if (focusThemes != null && !focusThemes.isEmpty()) {
+            body.put("focus_themes", focusThemes);
+        }
+        if (windowDays != null) {
+            body.put("window_days", windowDays);
+        }
+        if (skAxBusinessLines != null && !skAxBusinessLines.isEmpty()) {
+            body.put("sk_ax_business_lines", skAxBusinessLines);
+        }
+        return aiWebClient.post()
+                .uri("/global/trends/run")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
+                .timeout(Duration.ofSeconds(90))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("GlobalTrends 타임아웃 (90s)"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /global/trends/run 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
+                });
+    }
+
     public Mono<Void> triggerWeakSignal() {
         return aiWebClient.post()
                 .uri("/weak-signal/run")
