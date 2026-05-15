@@ -35,6 +35,9 @@ public class BriefingService {
             "other", new SectorDisplay("기타", "기타 관찰 경향")
     );
 
+    /** 일일 브리핑 본문에 섹터당 최대 노출 카드 수. importance_score desc 정렬 후 상위만. */
+    private static final int MAX_CARDS_PER_SECTOR = 5;
+
     private final CardNewsService cardNewsService;
     private final SesMailService sesMailService;
 
@@ -76,11 +79,14 @@ public class BriefingService {
         StringBuilder sb = new StringBuilder("AXIS 오늘의 섹터별 브리핑\n");
         sb.append("오늘 감지된 동향 ")
                 .append(cards.size())
-                .append("건을 섹터 경향별로 정리했습니다.\n\n");
+                .append("건 중 섹터당 핵심 최대 ")
+                .append(MAX_CARDS_PER_SECTOR)
+                .append("건씩 정리했습니다.\n\n");
 
         for (String sector : orderedSectors(grouped)) {
             List<CardNewsResponse> sectorCards = grouped.get(sector).stream()
                     .sorted(Comparator.comparing(this::trendScore, Comparator.reverseOrder()))
+                    .limit(MAX_CARDS_PER_SECTOR)
                     .toList();
             SectorDisplay display = SECTOR_DISPLAY.getOrDefault(sector, SECTOR_DISPLAY.get("other"));
 
@@ -112,12 +118,14 @@ public class BriefingService {
         sb.append("<header style=\"border-bottom:2px solid #111827;padding-bottom:16px;margin-bottom:24px;\">");
         sb.append("<h1 style=\"margin:0;font-size:22px;\">AXIS 오늘의 섹터별 브리핑</h1>");
         sb.append("<p style=\"margin:8px 0 0;color:#6b7280;font-size:14px;\">")
-                .append(LocalDate.now()).append(" · ").append(cards.size()).append("건</p>");
+                .append(LocalDate.now()).append(" · 전체 ").append(cards.size())
+                .append("건 · 섹터당 핵심 최대 ").append(MAX_CARDS_PER_SECTOR).append("건</p>");
         sb.append("</header>");
 
         for (String sector : orderedSectors(grouped)) {
             List<CardNewsResponse> sectorCards = grouped.get(sector).stream()
                     .sorted(Comparator.comparing(this::trendScore, Comparator.reverseOrder()))
+                    .limit(MAX_CARDS_PER_SECTOR)
                     .toList();
             SectorDisplay display = SECTOR_DISPLAY.getOrDefault(sector, SECTOR_DISPLAY.get("other"));
 
