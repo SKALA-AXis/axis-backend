@@ -206,6 +206,29 @@ public class AiClientService {
                 });
     }
 
+    /**
+     * LinkVerification — axis-ai 의 {@code /link/verify} 위임.
+     *
+     * <p>HTTP HEAD/GET 기반 deterministic 검증 — LLM 미사용. 카드 source 수 N에 비례 (병렬).
+     * timeout 20초 (대량 sources + GET hash 검증 포함).</p>
+     *
+     * @param cardId 검증 대상 카드 id
+     */
+    public Mono<Map<String, Object>> verifyLink(String cardId) {
+        Map<String, Object> body = Map.of("card_id", cardId);
+        return aiWebClient.post()
+                .uri("/link/verify")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
+                .timeout(Duration.ofSeconds(20))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("LinkVerify 타임아웃 (20s)"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /link/verify 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
+                });
+    }
+
     public Mono<Void> triggerWeakSignal() {
         return aiWebClient.post()
                 .uri("/weak-signal/run")
