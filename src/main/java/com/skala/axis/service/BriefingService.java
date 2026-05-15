@@ -98,15 +98,34 @@ public class BriefingService {
 
             for (CardNewsResponse card : sectorCards) {
                 sb.append("- ");
-                if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
-                    sb.append("[").append(card.getPeerId()).append("] ");
-                }
+                sb.append("[").append(cardBadgeText(card)).append("] ");
                 sb.append(card.getTitle()).append("\n");
             }
             sb.append("\n");
         }
         sb.append("— SK AX 사업전략팀 AXIS\n");
         return sb.toString();
+    }
+
+    /**
+     * 카드 line head 의 메타 badge 텍스트.
+     *
+     * <p>예: {@code "samsung_sds · infra · 0.75"} — peer id · sector · exposure score.
+     * peer / sector / score 중 누락된 항목은 자동 skip.</p>
+     */
+    private String cardBadgeText(CardNewsResponse card) {
+        java.util.List<String> parts = new java.util.ArrayList<>(3);
+        if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
+            parts.add(card.getPeerId());
+        }
+        if (card.getSector() != null && !card.getSector().isBlank()) {
+            parts.add(card.getSector());
+        }
+        Float score = card.getExposureScore() != null ? card.getExposureScore() : card.getImportanceScore();
+        if (score != null) {
+            parts.add(String.format(Locale.ROOT, "%.2f", score));
+        }
+        return String.join(" · ", parts);
     }
 
     private String buildBriefingHtml(List<CardNewsResponse> cards) {
@@ -139,10 +158,8 @@ public class BriefingService {
             sb.append("<ul style=\"list-style:none;padding:0;margin:0;\">");
             for (CardNewsResponse card : sectorCards) {
                 sb.append("<li style=\"padding:8px 0;border-bottom:1px solid #e5e7eb;\">");
-                if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
-                    sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
-                            .append(htmlEscape(card.getPeerId())).append("]</span> ");
-                }
+                sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
+                        .append(htmlEscape(cardBadgeText(card))).append("]</span> ");
                 sb.append(htmlEscape(card.getTitle()));
                 sb.append("</li>");
             }
