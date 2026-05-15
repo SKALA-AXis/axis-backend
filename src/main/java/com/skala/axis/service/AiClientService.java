@@ -229,6 +229,39 @@ public class AiClientService {
                 });
     }
 
+    /**
+     * ChatOrchestrator — axis-ai 의 {@code /chat} 위임.
+     *
+     * <p>intent 분류 + 분석 agent 라우팅 + compose. sub-agent 호출이 일어나면 LLM 응답
+     * 시간 더해져 ~60s. timeout 90초.</p>
+     *
+     * @param message 사용자 메시지
+     * @param sessionId 세션 ID (null 시 axis-ai 가 생성)
+     * @param history 최근 대화 turn 들
+     */
+    public Mono<Map<String, Object>> chat(
+            String message, String sessionId, List<Map<String, Object>> history) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("message", message);
+        if (sessionId != null && !sessionId.isBlank()) {
+            body.put("session_id", sessionId);
+        }
+        if (history != null && !history.isEmpty()) {
+            body.put("history", history);
+        }
+        return aiWebClient.post()
+                .uri("/chat")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
+                .timeout(Duration.ofSeconds(90))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Chat 타임아웃 (90s)"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /chat 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
+                });
+    }
+
     public Mono<Void> triggerWeakSignal() {
         return aiWebClient.post()
                 .uri("/weak-signal/run")
