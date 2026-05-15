@@ -132,6 +132,38 @@ public class AiClientService {
                 });
     }
 
+    /**
+     * PeerComparison Phase 1+2+4 분석 — axis-ai 의 {@code /peer/compare} 위임.
+     *
+     * <p>prototype (Walking Skeleton Phase 2). Phase 3 (Forecast) 는 Day 90+ deferred —
+     * 응답의 forecasts 는 빈 배열. timeout 60초.</p>
+     *
+     * @param peerId 분석 대상 peer id
+     * @param windowDays 카드 조회 윈도우 (기본 30일)
+     * @param focusSector sector 필터 (옵션)
+     */
+    public Mono<Map<String, Object>> comparePeer(String peerId, Integer windowDays, String focusSector) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("peer_id", peerId);
+        if (windowDays != null) {
+            body.put("window_days", windowDays);
+        }
+        if (focusSector != null && !focusSector.isBlank()) {
+            body.put("focus_sector", focusSector);
+        }
+        return aiWebClient.post()
+                .uri("/peer/compare")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
+                .timeout(Duration.ofSeconds(60))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Peer 분석 타임아웃 (60s)"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /peer/compare 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
+                });
+    }
+
     public Mono<Void> triggerWeakSignal() {
         return aiWebClient.post()
                 .uri("/weak-signal/run")
