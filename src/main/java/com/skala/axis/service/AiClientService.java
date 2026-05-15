@@ -99,6 +99,39 @@ public class AiClientService {
                 });
     }
 
+    /**
+     * MixerAnalysis 3-phase 분석 — axis-ai 의 {@code /mixer/analyze} 위임.
+     *
+     * <p>cold-start fallback prototype (Walking Skeleton Phase 2). LLM gpt-4o 단일 호출이라
+     * 응답 ~30초 소요. timeout 60초 (frontend 가 spinner 처리).</p>
+     *
+     * @param cardIds 분석 대상 카드 id 목록 (2 ≤ N ≤ 20)
+     * @param ratios peer / industry / keyword 가중치 (옵션)
+     * @param userContext 사용자 자유 입력 (옵션)
+     */
+    public Mono<Map<String, Object>> runMixer(
+            List<String> cardIds, Map<String, Object> ratios, String userContext) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("card_ids", cardIds);
+        if (ratios != null && !ratios.isEmpty()) {
+            body.put("ratios", ratios);
+        }
+        if (userContext != null && !userContext.isBlank()) {
+            body.put("user_context", userContext);
+        }
+        return aiWebClient.post()
+                .uri("/mixer/analyze")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
+                .timeout(Duration.ofSeconds(60))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Mixer 분석 타임아웃 (60s)"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /mixer/analyze 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
+                });
+    }
+
     public Mono<Void> triggerWeakSignal() {
         return aiWebClient.post()
                 .uri("/weak-signal/run")
