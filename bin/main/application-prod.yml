@@ -3,4 +3,10 @@ spring:
     show-sql: false
 logging:
   level:
+    # baseline — 자잘한 INFO 로 인한 로그 폭증 차단
     com.skala.axis: WARN
+    # 운영 핵심 흐름 (SES messageId, 브리핑 발송 결과, 스케줄러 발사) 는
+    # 디버깅·SR 추적에 필수라 INFO 로 격상. 매니저 가이드 위반 시 즉시 추적 필요.
+    com.skala.axis.service.SesMailService: INFO
+    com.skala.axis.service.BriefingService: INFO
+    com.skala.axis.config.SchedulerConfig: INFO
