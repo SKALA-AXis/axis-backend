@@ -6,6 +6,7 @@ import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -62,7 +63,8 @@ public class InsightController {
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
             log.info("Insight generate | card_ids 미지정 — fixture stub 반환");
-            return ResponseEntity.ok(ApiResponse.success(fixture.insightGenerationAccepted()));
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(ApiResponse.success(fixture.insightGenerationAccepted()));
         }
 
         @SuppressWarnings("unchecked")
@@ -74,14 +76,16 @@ public class InsightController {
             Map<String, Object> result = aiClientService.generateInsight(cardIds, context).block();
             if (result == null) {
                 log.warn("Insight generate | axis-ai 응답 null — fixture fallback");
-                return ResponseEntity.ok(ApiResponse.success(fixture.insightGenerationAccepted()));
+                return ResponseEntity.status(HttpStatus.ACCEPTED)
+                        .body(ApiResponse.success(fixture.insightGenerationAccepted()));
             }
             log.info("Insight generate | cards={} confidence={}",
                     cardIds.size(), result.get("confidence"));
-            return ResponseEntity.ok(ApiResponse.success(result));
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(result));
         } catch (AiServerException e) {
             log.warn("Insight generate | axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(fixture.insightGenerationAccepted()));
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(ApiResponse.success(fixture.insightGenerationAccepted()));
         }
     }
 
