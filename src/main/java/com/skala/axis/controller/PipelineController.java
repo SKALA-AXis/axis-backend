@@ -28,7 +28,7 @@ public class PipelineController {
     @Value("${axis.scheduler.cron-internal-token:}")
     private String cronInternalToken;
 
-    private static final Set<String> SUPPORTED_TRACKS = Set.of("A", "B", "C", "ALL");
+    private static final Set<String> SUPPORTED_TRACKS = Set.of("A", "B", "C", "D", "ALL");
 
     @GetMapping("/status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getStatus() {
