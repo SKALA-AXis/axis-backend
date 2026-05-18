@@ -398,7 +398,6 @@ public class ApiContractFixtureService {
                 .findFirst()
                 .orElseGet(() -> rawArticles().get(0));
         article.put("content", "AXIS가 수집한 원문 기사 본문 예시입니다. 실제 본문 저장소 연동 전까지 계약 검증용 fixture를 반환합니다.");
-        article.put("credibilityScore", 0.91);
         article.put("qualityScore", 0.88);
         article.put("rawTextAvailable", true);
         return article;

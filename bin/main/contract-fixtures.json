@@ -89,7 +89,6 @@
       "sector": "ax",
       "exposure_band": "high",
       "exposure_score": 0.87,
-      "trust_score": 91.0,
       "implication": {
         "why_important": "고객 운영 자동화 수요와 직접 연결됩니다.",
         "potential_impact": "AX 제안 경쟁의 속도가 빨라질 수 있습니다.",
@@ -105,8 +104,6 @@
           "archive_url": null,
           "source_name": "AXIS News",
           "published_at": "{{now}}",
-          "credibility_grade": "High",
-          "credibility_score": 0.91,
           "link_status": "ok"
         }
       ],
@@ -116,8 +113,7 @@
           {
             "title": "원문 기사",
             "source_name": "AXIS News",
-            "url": "https://example.com/news/1",
-            "credibility_score": 0.91
+            "url": "https://example.com/news/1"
           }
         ],
         "provenance": {
@@ -264,7 +260,6 @@
       "sector": "ax",
       "exposure_band": "high",
       "exposure_score": 0.81,
-      "trust_score": 88.0,
       "implication": {
         "why_important": "금융 고객군의 AX 예산 흐름을 가늠할 수 있습니다.",
         "potential_impact": "동종 고객 제안 경쟁이 빨라질 수 있습니다.",

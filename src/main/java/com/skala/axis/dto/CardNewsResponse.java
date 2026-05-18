@@ -28,7 +28,7 @@ public class CardNewsResponse {
     private List<String> summaryLines;
 
     /**
-     * 카드의 대표 source URL — sources[0] (가장 높은 credibility). 이메일에서 카드 클릭 시 원문 이동용.
+     * 카드의 대표 source URL — sources[0]. 이메일에서 카드 클릭 시 원문 이동용.
      */
     private String primarySourceUrl;
 

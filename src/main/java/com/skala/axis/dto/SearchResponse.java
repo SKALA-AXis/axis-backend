@@ -19,6 +19,5 @@ public class SearchResponse {
         private String title;
         private String sourceName;
         private String url;
-        private Float credibilityScore;
     }
 }
