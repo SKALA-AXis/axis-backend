@@ -69,9 +69,9 @@ public class CardNewsService {
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
                 .createdAt(card.getCreatedAt())
-                .imageUrl(image.map(i -> "/api/images/" + i.getId()).orElse(null))
-                .imageAttribution(image.map(ArticleImage::getAttribution).orElse(null))
-                .imageAlt(image.map(ArticleImage::getAltText).orElse(null))
+                .coverImageUrl(image.map(i -> "/api/images/" + i.getId()).orElse(null))
+                .coverImageAttribution(image.map(ArticleImage::getAttribution).orElse(null))
+                .coverImageAlt(image.map(ArticleImage::getAltText).orElse(null))
                 .build();
     }
 

@@ -32,12 +32,18 @@ public class CardNewsResponse {
      */
     private String primarySourceUrl;
 
-    /** 카드 대표 이미지 URL (예: "/api/images/123"). 이미지 없으면 null. */
-    private String imageUrl;
+    /**
+     * 카드 대표 이미지 URL (예: "/api/images/123"). 크롤링된 이미지가 없으면 null —
+     * frontend 가 peer 로고로 fallback.
+     *
+     * <p>필드명은 OpenAPI 계약 (axis-infra/api/openapi.yaml CardNewsResponse) 의
+     * coverImageUrl 과 정렬. frontend 가 직접 읽는 키.
+     */
+    private String coverImageUrl;
 
     /** 이미지 출처 표기 (예: "제공: 한경"). null 이면 미표기. */
-    private String imageAttribution;
+    private String coverImageAttribution;
 
     /** 이미지 alt 텍스트 (접근성 + 이메일 클라이언트가 이미지 차단 시 노출). */
-    private String imageAlt;
+    private String coverImageAlt;
 }
