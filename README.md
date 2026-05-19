@@ -42,17 +42,51 @@ chmod +x ./gradlew
 
 ## 로컬 실행
 
-PostgreSQL이 떠 있어야 애플리케이션을 정상 실행할 수 있습니다. 로컬 DB는 `axis-infra`의 docker compose 구성을 사용합니다.
+전체 스택 (backend + ai + frontend) 을 한 번에 띄우는 권장 방법은 [`axis-infra/README.md`](../axis-infra/README.md) 의 *로컬 개발 3 모드* 가이드를 참고. 가장 빠른 진입:
 
 ```bash
 cd ../axis-infra
-docker compose --profile local --env-file .env.local up -d postgres
+make up-cluster          # cluster DB + docker compose (port-forward 자동)
+```
 
+backend 만 host 에서 빠르게 iterate (HMR / debugger 등) 하는 경우:
+
+```bash
+# 1. DB 준비 — cluster (Mode A) 또는 로컬 docker (Mode B)
+cd ../axis-infra
+docker compose --profile local --env-file .env.local up -d postgres   # Mode B 만
+
+# 2. backend host 실행
 cd ../axis-backend
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-`local` profile의 host 실행 기본값은 `jdbc:postgresql://localhost:5432/axis`, `axuser`, `axpass`입니다. 다른 DB나 Cloud DB에 붙을 때만 `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`를 환경 변수로 넘깁니다.
+`local` profile 의 host 실행 기본값은 `jdbc:postgresql://localhost:5432/axis`, `axuser`, `axpass`. 다른 DB 에 붙을 때만 `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` 환경 변수로 override.
+
+### ⚠️ Flyway 자동 차단 (PR #20 부터)
+
+`local` profile 로 실행 시 Flyway 가 **자동 비활성** — backend 시작 시 schema migrate 안 함. cluster DB 를 port-forward 로 보면서 dev 하는 중 새 migration 파일이 silent 적용되는 사고 방지.
+
+| Profile | Flyway | 사용 |
+|---|---|---|
+| `local` (host bootRun, default) | **비활성** | 일상 dev — schema 안 건드림 |
+| `prod` (cluster pod) | 활성 | 정상 CI/CD 경로 |
+
+**새 migration 검증 워크플로** (반드시 Mode B = 로컬 docker DB 에서):
+
+```bash
+# 1. 격리 docker postgres 띄움
+cd ../axis-infra
+docker compose --profile local --env-file .env.local up -d postgres
+
+# 2. backend 를 명시 Flyway enable 로 실행 (local profile 의 차단 우회)
+cd ../axis-backend
+./gradlew bootRun --args='--spring.profiles.active=local --spring.flyway.enabled=true'
+
+# 3. 검증 후 PR → 머지 → ArgoCD 자동 sync → cluster pod 가 prod profile 로 자동 migrate
+```
+
+**절대 금지**: cluster DB 가 port-forward 로 연결된 상태에서 위의 `--spring.flyway.enabled=true` override 실행. cluster DB 에 silent migrate → PR 없이 schema 변경 → 다음 정상 deploy 시 checksum mismatch 사고 (`010226e` 의 V1/V11 충돌 사례 참조).
 
 확인 URL:
 
