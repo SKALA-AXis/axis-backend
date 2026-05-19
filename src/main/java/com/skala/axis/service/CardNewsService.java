@@ -1,17 +1,15 @@
 package com.skala.axis.service;
 
-import com.skala.axis.domain.ArticleImage;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.dto.CardNewsResponse;
-import com.skala.axis.repository.ArticleImageRepository;
 import com.skala.axis.repository.CardNewsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -19,7 +17,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CardNewsService {
     private final CardNewsRepository cardNewsRepository;
-    private final ArticleImageRepository articleImageRepository;
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
         LocalDateTime since = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0);
@@ -47,14 +44,19 @@ public class CardNewsService {
     }
 
     private CardNewsResponse toResponse(CardNews card) {
-        Optional<ArticleImage> image = articleImageRepository
-                .findFirstByCardNewsIdOrderByCreatedAtDesc(card.getId());
         Map<String, Object> implication = card.getImplication() == null ? Map.of() : card.getImplication();
+        Map<String, Object> coverImage = firstImageAsset(card.getImageAssets());
         String sector = stringValue(implication.get("sector"), "other");
         List<String> sectors = stringList(implication.get("sectors"));
         if (sectors.isEmpty()) {
             sectors = List.of(sector);
         }
+        List<String> keywords = card.getKeywords() == null
+                ? List.of()
+                : Arrays.stream(card.getKeywords())
+                    .filter(item -> item != null && !item.isBlank())
+                    .distinct()
+                    .toList();
 
         return CardNewsResponse.builder()
                 .id(card.getId())
@@ -66,13 +68,42 @@ public class CardNewsService {
                 .sectors(sectors)
                 .exposureBand(stringValue(implication.get("exposure_band"), card.getImportance()))
                 .exposureScore(floatValue(implication.get("exposure_score"), card.getImportanceScore()))
+                .primaryKeywordCategory(stringValue(card.getPrimaryKeywordCategory(), sector))
+                .keywords(keywords)
+                .keywordCategories(card.getKeywordCategories() == null ? List.of() : card.getKeywordCategories())
+                .keywordFrequency(card.getKeywordFrequency() == null ? Map.of() : card.getKeywordFrequency())
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
                 .createdAt(card.getCreatedAt())
-                .coverImageUrl(image.map(i -> "/api/images/" + i.getId()).orElse(null))
-                .coverImageAttribution(image.map(ArticleImage::getAttribution).orElse(null))
-                .coverImageAlt(image.map(ArticleImage::getAltText).orElse(null))
+                .coverImageUrl(imageUrl(coverImage))
+                .coverImageAttribution(stringValue(coverImage.get("attribution"), null))
+                .coverImageAlt(stringValue(coverImage.get("alt_text"), stringValue(coverImage.get("caption"), null)))
                 .build();
+    }
+
+    private Map<String, Object> firstImageAsset(List<Map<String, Object>> imageAssets) {
+        if (imageAssets == null || imageAssets.isEmpty()) {
+            return Map.of();
+        }
+        return imageAssets.stream()
+                .filter(item -> item != null && !item.isEmpty())
+                .findFirst()
+                .orElse(Map.of());
+    }
+
+    private String imageUrl(Map<String, Object> image) {
+        if (image.isEmpty()) {
+            return null;
+        }
+        String direct = stringValue(image.get("image_url"), null);
+        if (direct != null) {
+            return direct;
+        }
+        String asset = stringValue(image.get("asset_url"), null);
+        if (asset != null) {
+            return asset;
+        }
+        return stringValue(image.get("source_url"), null);
     }
 
     private String stringValue(Object value, String defaultValue) {
