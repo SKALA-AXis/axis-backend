@@ -1,7 +1,7 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.RawArticleQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,15 +16,15 @@ import java.util.Map;
 @RequestMapping("/api/raw-articles")
 @RequiredArgsConstructor
 public class RawArticleController {
-    private final ApiContractFixtureService fixture;
+    private final RawArticleQueryService rawArticleQueryService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listRawArticles(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.rawArticleList(params)));
+        return ResponseEntity.ok(ApiResponse.success(rawArticleQueryService.rawArticleList(params)));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getRawArticle(@PathVariable int id) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.rawArticleDetail(id)));
+        return ResponseEntity.ok(ApiResponse.success(rawArticleQueryService.rawArticleDetail(id)));
     }
 }
