@@ -1,4 +1,9 @@
 spring:
+  # cluster pod (SPRING_PROFILES_ACTIVE=prod from axis-config ConfigMap) 에서 Flyway 가
+  # 시작 시 자동 migrate 수행. application.yml 의 default 상속이 아닌 명시 보강 —
+  # 누가 default 를 false 로 바꿔도 cluster 는 안전 (defense in depth).
+  flyway:
+    enabled: true
   jpa:
     show-sql: false
 logging:
