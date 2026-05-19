@@ -3,6 +3,12 @@ spring:
     url: ${SPRING_DATASOURCE_URL:${DATABASE_URL:jdbc:postgresql://localhost:5432/axis}}
     username: ${SPRING_DATASOURCE_USERNAME:${DB_USERNAME:axuser}}
     password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:axpass}}
+  # 로컬 backend 가 cluster DB 에 port-forward 로 연결된 상태에서 새 migration 파일을
+  # 작업 트리에 가지고 bootRun 하면 Flyway 가 cluster DB 에 silent 자동 적용 → 사고.
+  # 일상 dev 는 flyway 비활성으로 보호. 스키마 실험 (Mode 2, docker postgres) 시
+  # 명시 override: ./gradlew bootRun --args='--spring.profiles.active=local --spring.flyway.enabled=true'
+  flyway:
+    enabled: false
   jpa:
     show-sql: true
 logging:
