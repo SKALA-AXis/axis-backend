@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Getter;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Getter
 @Builder
@@ -17,6 +18,10 @@ public class CardNewsResponse {
     private List<String> sectors;
     private String exposureBand;
     private Float exposureScore;
+    private String primaryKeywordCategory;
+    private List<String> keywords;
+    private List<Object> keywordCategories;
+    private Map<String, Object> keywordFrequency;
     private String importance;
     private Float importanceScore;
     private LocalDateTime createdAt;
@@ -33,7 +38,7 @@ public class CardNewsResponse {
     private String primarySourceUrl;
 
     /**
-     * 카드 대표 이미지 URL (예: "/api/images/123"). 크롤링된 이미지가 없으면 null —
+     * 카드 대표 이미지 URL. 크롤링된 이미지가 없으면 null —
      * frontend 가 peer 로고로 fallback.
      *
      * <p>필드명은 OpenAPI 계약 (axis-infra/api/openapi.yaml CardNewsResponse) 의

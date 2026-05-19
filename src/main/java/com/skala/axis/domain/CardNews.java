@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Entity
@@ -18,6 +19,9 @@ public class CardNews {
 
     @Column(name = "company", nullable = false, length = 50)
     private String peerId;
+
+    @Column(name = "peer_company_id", length = 50)
+    private String peerCompanyId;
 
     @Column(name = "cluster_id")
     private Long clusterId;
@@ -37,6 +41,39 @@ public class CardNews {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "implication", columnDefinition = "jsonb")
     private Map<String, Object> implication;
+
+    @Column(name = "primary_keyword_category", length = 80)
+    private String primaryKeywordCategory;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "keyword_categories", columnDefinition = "jsonb")
+    private List<Object> keywordCategories;
+
+    @Column(name = "keywords")
+    private String[] keywords;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "keyword_frequency", columnDefinition = "jsonb")
+    private Map<String, Object> keywordFrequency;
+
+    @Column(name = "source_raw_article_ids")
+    private Long[] sourceRawArticleIds;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "source_articles", columnDefinition = "jsonb")
+    private List<Map<String, Object>> sourceArticles;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "evidence_payload", columnDefinition = "jsonb")
+    private Map<String, Object> evidencePayload;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "image_assets", columnDefinition = "jsonb")
+    private List<Map<String, Object>> imageAssets;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "legacy_payload", columnDefinition = "jsonb")
+    private Map<String, Object> legacyPayload;
 
     @Column(name = "validation_pass")
     private Boolean validationPass;
