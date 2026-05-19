@@ -2,7 +2,7 @@
 --
 -- 담당 agent: axis-ai/design/50-weak-signal/weak-signal.md (WeakSignalAgent, 3-phase)
 -- Trigger: Spring @Scheduled 월 09:00 KST → POST /weak-signal/run → 감지된 signal 저장
--- 산식: cluster_size_norm × peer_mention_rate (자세히는 design 의 §6)
+-- 산식: cluster_size_norm × credibility_max × peer_mention_rate (자세히는 design 의 §6)
 -- 부착: alert_rules (별도 spec) 와 매칭하여 alerts 테이블 (이미 존재) 에 발송 row 생성
 
 CREATE TABLE weak_signal_cards (

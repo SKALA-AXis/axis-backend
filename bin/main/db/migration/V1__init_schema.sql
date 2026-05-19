@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS raw_articles (
     url                 TEXT         NOT NULL UNIQUE,
     published_at        TIMESTAMPTZ  NOT NULL,
     collected_at        TIMESTAMPTZ  DEFAULT NOW(),
+    credibility_score   FLOAT,
+    credibility_grade   VARCHAR(20),                  -- High/Medium/Low/Unverified
     cluster_id          BIGINT,
     is_representative   BOOLEAN      DEFAULT FALSE,
     processing_status   VARCHAR(30)  DEFAULT 'RAW',   -- RAW/EMBEDDED/SKIPPED_QUALITY/SKIPPED_CREDIBILITY/CLUSTERED_DUPE/ERROR
