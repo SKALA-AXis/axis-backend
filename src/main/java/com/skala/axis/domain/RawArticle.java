@@ -2,7 +2,10 @@ package com.skala.axis.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "raw_articles")
@@ -13,8 +16,9 @@ public class RawArticle {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "company", nullable = false, length = 50)
-    private String peerId;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "company", nullable = false, columnDefinition = "jsonb")
+    private List<String> company;
 
     @Column(nullable = false)
     private String title;
