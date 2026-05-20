@@ -63,8 +63,8 @@ public class PipelineController {
         )));
     }
 
-    @PostMapping("/briefing")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> triggerBriefing(
+    @PostMapping("/delivery")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> triggerDelivery(
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         if (!isCronAuthorized(authorization)) {
