@@ -309,7 +309,8 @@ public class AuthService {
             throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_EMAIL_FORMAT", "이메일 형식이 올바르지 않습니다.");
         }
         String domain = email.substring(email.indexOf('@') + 1);
-        if (!authProperties.allowedEmailDomainSet().contains(domain)) {
+        var allowedDomains = authProperties.allowedEmailDomainSet();
+        if (!allowedDomains.contains("*") && !allowedDomains.contains(domain)) {
             throw new AuthException(HttpStatus.BAD_REQUEST, "NOT_ALLOWED_EMAIL_DOMAIN", "허용되지 않은 이메일 도메인입니다.");
         }
     }
@@ -326,10 +327,6 @@ public class AuthService {
     }
 
     private void sendVerificationMail(User user, String rawToken) {
-        if (!authProperties.isEmailVerificationMailEnabled()) {
-            log.info("Email verification mail disabled. user={} tokenHash={}", user.getEmail(), hashToken(rawToken));
-            return;
-        }
         String encodedToken = URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
         String link = trimTrailingSlash(authProperties.getAppBaseUrl()) + "/auth/email-verifications/confirm?token=" + encodedToken;
         sesMailService.sendTextMail(

@@ -37,7 +37,7 @@ ai:
 
 axis:
   auth:
-    enforce: ${AXIS_AUTH_ENFORCE:false}
+    enforce: ${AXIS_AUTH_ENFORCE:true}
     allowed-email-domains: ${AXIS_AUTH_ALLOWED_EMAIL_DOMAINS:sk.com}
     jwt-secret: ${AXIS_AUTH_JWT_SECRET:axis-local-dev-secret-change-me-32-bytes-minimum}
     access-token-minutes: ${AXIS_AUTH_ACCESS_TOKEN_MINUTES:15}
@@ -49,7 +49,6 @@ axis:
     refresh-cookie-secure: ${AXIS_AUTH_REFRESH_COOKIE_SECURE:false}
     refresh-cookie-same-site: ${AXIS_AUTH_REFRESH_COOKIE_SAME_SITE:Lax}
     app-base-url: ${AXIS_APP_BASE_URL:http://localhost:3100}
-    email-verification-mail-enabled: ${AXIS_AUTH_EMAIL_VERIFICATION_MAIL_ENABLED:false}
     bootstrap-admin-emails: ${BOOTSTRAP_ADMIN_EMAILS:}
   cors:
     allowed-origins: ${AXIS_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3100}
