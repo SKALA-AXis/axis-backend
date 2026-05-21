@@ -10,6 +10,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(AuthException.class)
+    public ResponseEntity<ApiResponse<?>> handleAuth(AuthException e) {
+        log.warn("인증/인가 오류: {} {}", e.getCode(), e.getMessage());
+        return ResponseEntity.status(e.getStatus()).body(ApiResponse.error(e.getCode(), e.getMessage()));
+    }
+
     @ExceptionHandler(AiServerException.class)
     public ResponseEntity<ApiResponse<?>> handleAiServer(AiServerException e) {
         log.warn("AI 서버 오류: {}", e.getMessage());
