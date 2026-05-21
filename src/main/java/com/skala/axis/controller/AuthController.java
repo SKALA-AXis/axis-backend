@@ -1,51 +1,209 @@
 package com.skala.axis.controller;
 
+import com.skala.axis.config.AuthProperties;
+import com.skala.axis.config.AuthPrincipal;
+import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.dto.auth.EmailVerificationRequest;
+import com.skala.axis.dto.auth.LoginRequest;
+import com.skala.axis.dto.auth.RefreshRequest;
+import com.skala.axis.dto.auth.SignupRequest;
 import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.AuthService;
+import com.skala.axis.service.RequestMetadata;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
     private final ApiContractFixtureService fixture;
+    private final AuthProperties authProperties;
+    private final AuthService authService;
 
     @PostMapping("/signup")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> signup(@RequestBody(required = false) Map<String, Object> request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(fixture.userProfile(request)));
+    public ResponseEntity<ApiResponse<Object>> signup(
+            @RequestBody(required = false) Map<String, Object> request,
+            HttpServletRequest servletRequest
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(fixture.userProfile(request)));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(
+                authService.signup(toSignupRequest(request), RequestMetadata.from(servletRequest))
+        ));
     }
 
     @PostMapping("/verify-email")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> verifyEmail(@RequestBody(required = false) Map<String, Object> request) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+    public ResponseEntity<ApiResponse<Object>> verifyEmail(
+            @RequestBody(required = false) Map<String, Object> request,
+            HttpServletRequest servletRequest
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+        }
+        return ResponseEntity.ok(ApiResponse.success(authService.confirmEmail(stringValue(request, "token"), RequestMetadata.from(servletRequest))));
+    }
+
+    @GetMapping("/email-verifications/confirm")
+    public ResponseEntity<ApiResponse<Object>> confirmEmail(
+            @RequestParam String token,
+            HttpServletRequest servletRequest
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+        }
+        return ResponseEntity.ok(ApiResponse.success(authService.confirmEmail(token, RequestMetadata.from(servletRequest))));
+    }
+
+    @PostMapping("/email-verifications/resend")
+    public ResponseEntity<ApiResponse<Object>> resendEmailVerification(
+            @RequestBody(required = false) EmailVerificationRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+        }
+        return ResponseEntity.ok(ApiResponse.success(authService.resendEmailVerification(request == null ? "" : request.email(), RequestMetadata.from(servletRequest))));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> login(@RequestBody(required = false) Map<String, Object> request) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.login(request)));
+    public ResponseEntity<ApiResponse<Object>> login(
+            @RequestBody(required = false) Map<String, Object> request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.login(request)));
+        }
+        LoginRequest loginRequest = toLoginRequest(request);
+        AuthService.AuthLoginResult result = authService.login(loginRequest, RequestMetadata.from(servletRequest));
+        addRefreshCookie(servletResponse, result.refreshToken(), Boolean.TRUE.equals(loginRequest.rememberMe()));
+        return ResponseEntity.ok(ApiResponse.success(result.response()));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> logout() {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> logout(
+            @RequestBody(required = false) RefreshRequest request,
+            Authentication authentication,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.logoutResult()));
+        }
+        UUID userId = authentication != null && authentication.getPrincipal() instanceof AuthPrincipal principal
+                ? principal.userId()
+                : null;
+        authService.logout(resolveRefreshToken(request, servletRequest), userId, RequestMetadata.from(servletRequest));
+        clearRefreshCookie(servletResponse);
         return ResponseEntity.ok(ApiResponse.success(fixture.logoutResult()));
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> refreshToken(@RequestBody(required = false) Map<String, Object> request) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.refreshTokenResult()));
+    public ResponseEntity<ApiResponse<Object>> refreshToken(
+            @RequestBody(required = false) RefreshRequest request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.refreshTokenResult()));
+        }
+        AuthService.AuthLoginResult result = authService.refresh(resolveRefreshToken(request, servletRequest), RequestMetadata.from(servletRequest));
+        addRefreshCookie(servletResponse, result.refreshToken(), true);
+        return ResponseEntity.ok(ApiResponse.success(result.response()));
     }
 
     @GetMapping("/me")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getMe() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(Map.of())));
+    public ResponseEntity<ApiResponse<Object>> getMe(Authentication authentication) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(Map.of())));
+        }
+        return ResponseEntity.ok(ApiResponse.success(authService.me(AuthSecurity.requireUserId(authentication))));
     }
+
+    private void addRefreshCookie(HttpServletResponse response, String refreshToken, boolean persistent) {
+        ResponseCookie.ResponseCookieBuilder cookie = ResponseCookie.from(authProperties.getRefreshCookieName(), refreshToken)
+                .httpOnly(true)
+                .secure(authProperties.isRefreshCookieSecure())
+                .sameSite(authProperties.getRefreshCookieSameSite())
+                .path("/api/auth");
+        if (persistent) {
+            cookie.maxAge(Duration.ofDays(authProperties.getRefreshTokenDays()));
+        }
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.build().toString());
+    }
+
+    private void clearRefreshCookie(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from(authProperties.getRefreshCookieName(), "")
+                .httpOnly(true)
+                .secure(authProperties.isRefreshCookieSecure())
+                .sameSite(authProperties.getRefreshCookieSameSite())
+                .path("/api/auth")
+                .maxAge(Duration.ZERO)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+
+    private String resolveRefreshToken(RefreshRequest request, HttpServletRequest servletRequest) {
+        if (request != null && request.refreshToken() != null && !request.refreshToken().isBlank()) {
+            return request.refreshToken();
+        }
+        Cookie[] cookies = servletRequest.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        return Arrays.stream(cookies)
+                .filter(cookie -> authProperties.getRefreshCookieName().equals(cookie.getName()))
+                .map(Cookie::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private SignupRequest toSignupRequest(Map<String, Object> request) {
+        return new SignupRequest(
+                stringValue(request, "email"),
+                stringValue(request, "password"),
+                stringValue(request, "name"),
+                stringValue(request, "department"),
+                stringValue(request, "role")
+        );
+    }
+
+    private LoginRequest toLoginRequest(Map<String, Object> request) {
+        Object remember = request == null ? null : request.get("remember_me");
+        if (remember == null && request != null) {
+            remember = request.get("rememberMe");
+        }
+        return new LoginRequest(
+                stringValue(request, "email"),
+                stringValue(request, "password"),
+                remember instanceof Boolean value ? value : Boolean.FALSE
+        );
+    }
+
+    private String stringValue(Map<String, Object> request, String key) {
+        Object value = request == null ? null : request.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
 }

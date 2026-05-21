@@ -14,3 +14,9 @@ spring:
 logging:
   level:
     com.skala.axis: DEBUG
+
+axis:
+  auth:
+    enforce: ${AXIS_AUTH_ENFORCE:false}
+    refresh-cookie-secure: false
+    email-verification-mail-enabled: ${AXIS_AUTH_EMAIL_VERIFICATION_MAIL_ENABLED:false}
