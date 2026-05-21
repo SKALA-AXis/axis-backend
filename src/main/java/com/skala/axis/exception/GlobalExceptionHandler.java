@@ -3,6 +3,7 @@ package com.skala.axis.exception;
 import com.skala.axis.dto.ApiResponse;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -31,6 +32,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<?>> handleBadRequest(IllegalArgumentException e) {
         log.warn("잘못된 요청: {}", e.getMessage());
         return ResponseEntity.status(400).body(ApiResponse.error("COMMON_BAD_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(CannotAcquireLockException.class)
+    public ResponseEntity<ApiResponse<?>> handleLockFailure(CannotAcquireLockException e) {
+        log.warn("동시 요청 처리 중 DB lock 획득 실패", e);
+        return ResponseEntity.status(409).body(ApiResponse.error("COMMON_CONCURRENT_REQUEST", "동시에 처리 중인 요청이 있습니다. 잠시 후 다시 시도하세요."));
     }
 
     @ExceptionHandler(Exception.class)

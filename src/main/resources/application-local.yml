@@ -19,4 +19,5 @@ axis:
   auth:
     enforce: ${AXIS_AUTH_ENFORCE:true}
     allowed-email-domains: ${AXIS_AUTH_ALLOWED_EMAIL_DOMAINS:*}
+    email-verification-delivery: ${AXIS_AUTH_EMAIL_VERIFICATION_DELIVERY:log}
     refresh-cookie-secure: false

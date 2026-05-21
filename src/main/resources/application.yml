@@ -43,6 +43,7 @@ axis:
     access-token-minutes: ${AXIS_AUTH_ACCESS_TOKEN_MINUTES:15}
     refresh-token-days: ${AXIS_AUTH_REFRESH_TOKEN_DAYS:14}
     email-verification-minutes: ${AXIS_AUTH_EMAIL_VERIFICATION_MINUTES:60}
+    email-verification-delivery: ${AXIS_AUTH_EMAIL_VERIFICATION_DELIVERY:ses}
     max-failed-login-count: ${AXIS_AUTH_MAX_FAILED_LOGIN_COUNT:5}
     lock-minutes: ${AXIS_AUTH_LOCK_MINUTES:10}
     refresh-cookie-name: ${AXIS_AUTH_REFRESH_COOKIE_NAME:axis_refresh}
