@@ -17,6 +17,6 @@ logging:
 
 axis:
   auth:
-    enforce: ${AXIS_AUTH_ENFORCE:false}
+    enforce: ${AXIS_AUTH_ENFORCE:true}
+    allowed-email-domains: ${AXIS_AUTH_ALLOWED_EMAIL_DOMAINS:*}
     refresh-cookie-secure: false
-    email-verification-mail-enabled: ${AXIS_AUTH_EMAIL_VERIFICATION_MAIL_ENABLED:false}

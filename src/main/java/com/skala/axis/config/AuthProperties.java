@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 @Component
 @ConfigurationProperties(prefix = "axis.auth")
 public class AuthProperties {
-    private boolean enforce = false;
+    private boolean enforce = true;
     private String allowedEmailDomains = "sk.com";
     private String jwtSecret = "axis-local-dev-secret-change-me-32-bytes-minimum";
     private long accessTokenMinutes = 15;
@@ -26,7 +26,6 @@ public class AuthProperties {
     private boolean refreshCookieSecure = false;
     private String refreshCookieSameSite = "Lax";
     private String appBaseUrl = "http://localhost:3100";
-    private boolean emailVerificationMailEnabled = false;
     private String bootstrapAdminEmails = "";
 
     public Set<String> allowedEmailDomainSet() {

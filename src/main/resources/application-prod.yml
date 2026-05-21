@@ -21,4 +21,4 @@ axis:
     enforce: ${AXIS_AUTH_ENFORCE:true}
     refresh-cookie-secure: ${AXIS_AUTH_REFRESH_COOKIE_SECURE:true}
     refresh-cookie-same-site: ${AXIS_AUTH_REFRESH_COOKIE_SAME_SITE:Lax}
-    email-verification-mail-enabled: ${AXIS_AUTH_EMAIL_VERIFICATION_MAIL_ENABLED:true}
+    app-base-url: ${AXIS_APP_BASE_URL:${VITE_API_BASE_URL:https://axis.skala.ai}}
