@@ -4,6 +4,42 @@ plugins {
     id 'java'
 }
 
+def loadEnvFile = { String path ->
+    def envMap = [:]
+    def envFile = file(path)
+
+    if (!envFile.exists()) {
+        return envMap
+    }
+
+    envFile.eachLine('UTF-8') { rawLine ->
+        def line = rawLine?.trim()
+        if (!line || line.startsWith('#')) {
+            return
+        }
+
+        def separatorIndex = line.indexOf('=')
+        if (separatorIndex <= 0) {
+            return
+        }
+
+        def key = line.substring(0, separatorIndex).trim()
+        def value = line.substring(separatorIndex + 1).trim()
+
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.substring(1, value.length() - 1)
+        }
+
+        envMap[key] = value
+    }
+
+    return envMap
+}
+
+def bootRunEnv = [:]
+bootRunEnv.putAll(loadEnvFile('.env'))
+bootRunEnv.putAll(loadEnvFile('.env.local'))
+
 group = 'com.skala'
 version = '0.0.1-SNAPSHOT'
 description = 'AXIS Spring Boot REST API server'
@@ -83,4 +119,12 @@ tasks.named('test') {
 
 tasks.named('bootJar') {
     archiveFileName = 'axis-backend.jar'
+}
+
+tasks.named('bootRun') {
+    bootRunEnv.each { key, value ->
+        if (!System.getenv().containsKey(key)) {
+            environment key, value
+        }
+    }
 }
