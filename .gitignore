@@ -7,6 +7,9 @@ target/
 build/
 .env
 .env.local
+# macOS Finder duplicates ('.env 2', '.env.local 3' …) — 실값 누출 방지.
+.env\ [0-9]*
+.env.*\ [0-9]*
 *.log
 .idea/
 *.iml
