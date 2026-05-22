@@ -36,7 +36,10 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.trends[0].title").exists())
-                .andExpect(jsonPath("$.data.keywordSeries[0].key").exists());
+                .andExpect(jsonPath("$.data.keywordSeries").isArray())
+                .andExpect(jsonPath("$.data.keywordSearchPoints").isArray())
+                .andExpect(jsonPath("$.data.stockRatePoints[0].date").exists())
+                .andExpect(jsonPath("$.data.stockSource.basis").value("day_over_day_pct"));
 
         mockMvc.perform(get("/briefings"))
                 .andExpect(status().isOk())
@@ -80,7 +83,8 @@ class FrontendCompatibilitySmokeTests {
     void canonicalFrontendApiEndpointsReturnCurrentUiShapes() throws Exception {
         mockMvc.perform(get("/api/dashboard/summary"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.trends[0].peer").exists());
+                .andExpect(jsonPath("$.data.trends[0].peer").exists())
+                .andExpect(jsonPath("$.data.stockRatePoints[0].date").exists());
 
         mockMvc.perform(get("/api/briefings/summary?briefing_type=daily"))
                 .andExpect(status().isOk())
