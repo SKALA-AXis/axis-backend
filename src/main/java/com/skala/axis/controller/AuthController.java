@@ -6,6 +6,10 @@ import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.auth.EmailVerificationRequest;
 import com.skala.axis.dto.auth.LoginRequest;
+import com.skala.axis.dto.auth.PasswordResetConfirmRequest;
+import com.skala.axis.dto.auth.PasswordResetConfirmResponse;
+import com.skala.axis.dto.auth.PasswordResetRequest;
+import com.skala.axis.dto.auth.PasswordResetRequestResponse;
 import com.skala.axis.dto.auth.RefreshRequest;
 import com.skala.axis.dto.auth.SignupRequest;
 import com.skala.axis.service.ApiContractFixtureService;
@@ -84,6 +88,32 @@ public class AuthController {
             return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
         }
         return ResponseEntity.ok(ApiResponse.success(authService.resendEmailVerification(request == null ? "" : request.email(), RequestMetadata.from(servletRequest))));
+    }
+
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<ApiResponse<PasswordResetRequestResponse>> requestPasswordReset(
+            @RequestBody(required = false) PasswordResetRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(new PasswordResetRequestResponse(
+                    true,
+                    "입력한 이메일로 비밀번호 재설정 안내를 보냈습니다. 메일이 도착하지 않았다면 입력한 주소를 확인하세요.",
+                    authProperties.getPasswordResetMinutes()
+            )));
+        }
+        return ResponseEntity.ok(ApiResponse.success(authService.requestPasswordReset(request, RequestMetadata.from(servletRequest))));
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<ApiResponse<PasswordResetConfirmResponse>> confirmPasswordReset(
+            @RequestBody(required = false) PasswordResetConfirmRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        if (!authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(new PasswordResetConfirmResponse(true)));
+        }
+        return ResponseEntity.ok(ApiResponse.success(authService.confirmPasswordReset(request, RequestMetadata.from(servletRequest))));
     }
 
     @PostMapping("/login")

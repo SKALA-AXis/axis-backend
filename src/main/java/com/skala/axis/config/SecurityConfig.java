@@ -57,7 +57,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/health", "/actuator/health", "/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/password-reset/request", "/api/auth/password-reset/confirm").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/auth/email-verifications/confirm").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/email-verifications/resend", "/api/auth/verify-email").permitAll()
                     .requestMatchers("/api/admin/**").hasRole("ADMIN")

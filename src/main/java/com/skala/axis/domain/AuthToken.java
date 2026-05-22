@@ -74,6 +74,18 @@ public class AuthToken {
         return token;
     }
 
+    public static AuthToken passwordReset(User user, String tokenHash, Instant expiresAt, String userAgent, String ipAddress) {
+        AuthToken token = new AuthToken();
+        token.user = user;
+        token.type = AuthTokenType.PASSWORD_RESET;
+        token.tokenHash = tokenHash;
+        token.userAgent = userAgent;
+        token.ipAddress = ipAddress;
+        token.expiresAt = expiresAt;
+        token.createdAt = Instant.now();
+        return token;
+    }
+
     public static AuthToken refresh(
             User user,
             String tokenHash,
