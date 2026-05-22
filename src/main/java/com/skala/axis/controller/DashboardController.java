@@ -2,6 +2,8 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.DashboardKeywordTrendChartService;
+import com.skala.axis.service.DashboardStockChartService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,9 +18,14 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DashboardController {
     private final ApiContractFixtureService fixture;
+    private final DashboardStockChartService dashboardStockChartService;
+    private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
 
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardSummary(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.frontendDashboard()));
+        Map<String, Object> dashboardSummary = fixture.frontendDashboard();
+        dashboardStockChartService.applyDailyRateChart(dashboardSummary);
+        dashboardKeywordTrendChartService.applyKeywordTrendChart(dashboardSummary);
+        return ResponseEntity.ok(ApiResponse.success(dashboardSummary));
     }
 }
