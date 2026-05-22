@@ -36,6 +36,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -241,6 +242,18 @@ public class AuthService {
     }
 
     public void recordAccessLog(User user, String actionType, boolean success, RequestMetadata metadata, UUID sessionId, Map<String, Object> extra) {
+        Map<String, Object> logMetadata = new LinkedHashMap<>();
+        if (extra != null) {
+            logMetadata.putAll(extra);
+        }
+        if (metadata != null) {
+            if (metadata.countryCode() != null && !metadata.countryCode().isBlank()) {
+                logMetadata.putIfAbsent("countryCode", metadata.countryCode());
+            }
+            if (metadata.countryName() != null && !metadata.countryName().isBlank()) {
+                logMetadata.putIfAbsent("country", metadata.countryName());
+            }
+        }
         userAccessLogRepository.save(UserAccessLog.create(
                 user,
                 actionType,
@@ -248,7 +261,7 @@ public class AuthService {
                 metadata == null ? null : metadata.ipAddress(),
                 metadata == null ? null : metadata.userAgent(),
                 sessionId,
-                extra
+                logMetadata
         ));
     }
 

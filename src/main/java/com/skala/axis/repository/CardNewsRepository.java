@@ -12,4 +12,6 @@ public interface CardNewsRepository extends JpaRepository<CardNews, String> {
     List<CardNews> findTodayCards(@Param("since") LocalDateTime since);
 
     List<CardNews> findByPeerIdOrderByCreatedAtDesc(String peerId);
+
+    List<CardNews> findTop50ByOrderByCreatedAtDesc();
 }

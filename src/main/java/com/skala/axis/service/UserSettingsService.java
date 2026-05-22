@@ -94,14 +94,27 @@ public class UserSettingsService {
     }
 
     private Map<String, Object> toAccessLogItem(UserAccessLog log) {
-        return new LinkedHashMap<>(Map.of(
-                "id", log.getId(),
-                "action", log.getActionType(),
-                "success", log.isSuccess(),
-                "ipAddress", log.getIpAddress() == null ? "" : log.getIpAddress(),
-                "userAgent", log.getUserAgent() == null ? "" : log.getUserAgent(),
-                "occurredAt", log.getOccurredAt().toString()
-        ));
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", log.getId());
+        item.put("action", log.getActionType());
+        item.put("success", log.isSuccess());
+        item.put("country", accessLogCountry(log));
+        item.put("ipAddress", log.getIpAddress() == null ? "" : log.getIpAddress());
+        item.put("userAgent", log.getUserAgent() == null ? "" : log.getUserAgent());
+        item.put("occurredAt", log.getOccurredAt().toString());
+        return item;
+    }
+
+    private String accessLogCountry(UserAccessLog log) {
+        Object country = log.getMetadata() == null ? null : log.getMetadata().get("country");
+        if (country instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        Object countryCode = log.getMetadata() == null ? null : log.getMetadata().get("countryCode");
+        return RequestMetadata.inferCountryName(
+                log.getIpAddress(),
+                countryCode instanceof String value ? value : null
+        );
     }
 
     private UserSetting setting(UUID userId) {

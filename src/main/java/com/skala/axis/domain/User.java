@@ -11,8 +11,13 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -62,6 +67,10 @@ public class User {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "notification_preferences", columnDefinition = "jsonb", nullable = false)
+    private Map<String, Object> notificationPreferences;
+
     public static User pending(String email, String passwordHash) {
         Instant now = Instant.now();
         User user = new User();
@@ -72,6 +81,7 @@ public class User {
         user.role = UserRole.USER;
         user.emailVerified = false;
         user.failedLoginCount = 0;
+        user.notificationPreferences = defaultNotificationPreferences();
         user.createdAt = now;
         user.updatedAt = now;
         return user;
@@ -122,7 +132,22 @@ public class User {
         touch();
     }
 
+    public void updateNotificationPreferences(Map<String, Object> preferences) {
+        this.notificationPreferences = preferences == null
+                ? defaultNotificationPreferences()
+                : new LinkedHashMap<>(preferences);
+        touch();
+    }
+
     public void touch() {
         this.updatedAt = Instant.now();
+    }
+
+    public static Map<String, Object> defaultNotificationPreferences() {
+        Map<String, Object> preferences = new LinkedHashMap<>();
+        preferences.put("enabled", true);
+        preferences.put("importantEnabled", true);
+        preferences.put("keywords", List.of());
+        return preferences;
     }
 }
