@@ -2,8 +2,11 @@ package com.skala.axis.service;
 
 import com.skala.axis.config.AuthProperties;
 import com.skala.axis.domain.AuthToken;
+import com.skala.axis.domain.AuthTokenType;
 import com.skala.axis.domain.User;
 import com.skala.axis.dto.auth.LoginRequest;
+import com.skala.axis.dto.auth.PasswordResetConfirmRequest;
+import com.skala.axis.dto.auth.PasswordResetRequest;
 import com.skala.axis.dto.auth.SignupRequest;
 import com.skala.axis.exception.AuthException;
 import com.skala.axis.repository.AuthTokenRepository;
@@ -18,6 +21,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -122,6 +127,56 @@ class AuthServiceTest {
                 });
     }
 
+    @Test
+    void passwordResetRequestDoesNotRevealMissingEmailAndDoesNotSendMail() {
+        AuthService authService = authService(authProperties());
+        when(userRepository.findByEmailForUpdate("missing@sk.com")).thenReturn(Optional.empty());
+
+        var response = authService.requestPasswordReset(new PasswordResetRequest("missing@sk.com"), null);
+
+        assertThat(response.accepted()).isTrue();
+        assertThat(response.message()).contains("비밀번호 재설정 안내");
+        verify(sesMailService, never()).sendTextMail(any(), any(), any());
+    }
+
+    @Test
+    void passwordResetRequestSendsResetMailThroughExistingSesMailer() {
+        AuthProperties authProperties = authProperties();
+        authProperties.setAppBaseUrl("https://axis.skala.ai/");
+        AuthService authService = authService(authProperties);
+        User user = activeUser("owner@sk.com");
+        when(userRepository.findByEmailForUpdate("owner@sk.com")).thenReturn(Optional.of(user));
+        when(authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.PASSWORD_RESET)).thenReturn(List.of());
+        when(authTokenRepository.save(any(AuthToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        authService.requestPasswordReset(new PasswordResetRequest("owner@sk.com"), null);
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(sesMailService).sendTextMail(eq("owner@sk.com"), eq("[AXIS] 비밀번호 재설정"), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue())
+                .contains("https://axis.skala.ai/auth/password-reset/confirm?token=")
+                .contains("30분");
+    }
+
+    @Test
+    void passwordResetConfirmChangesPasswordAndRevokesRefreshTokens() {
+        AuthService authService = authService(authProperties());
+        User user = activeUser("owner@sk.com");
+        AuthToken resetToken = AuthToken.passwordReset(user, "reset-hash", Instant.now().plusSeconds(600), null, null);
+        AuthToken refreshToken = AuthToken.refresh(user, "refresh-hash", UUID.randomUUID(), null, Instant.now().plusSeconds(3600), null, null);
+        when(authTokenRepository.findByTokenHash(any())).thenReturn(Optional.of(resetToken));
+        when(passwordEncoder.encode("newpassword123")).thenReturn("encoded-new-password");
+        when(authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.PASSWORD_RESET)).thenReturn(List.of(resetToken));
+        when(authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.REFRESH)).thenReturn(List.of(refreshToken));
+
+        var response = authService.confirmPasswordReset(new PasswordResetConfirmRequest("raw-reset-token", "newpassword123"), null);
+
+        assertThat(response.passwordReset()).isTrue();
+        assertThat(user.getPasswordHash()).isEqualTo("encoded-new-password");
+        assertThat(resetToken.isUsed()).isTrue();
+        assertThat(refreshToken.isRevoked()).isTrue();
+    }
+
     private AuthService authService(AuthProperties authProperties) {
         return new AuthService(
                 authProperties,
@@ -159,5 +214,11 @@ class AuthServiceTest {
 
     private SignupRequest signupRequest(String email) {
         return new SignupRequest(email, "password123", "Owner", "DX", "USER");
+    }
+
+    private User activeUser(String email) {
+        User user = User.pending(email, "encoded-password");
+        user.activateEmail();
+        return user;
     }
 }

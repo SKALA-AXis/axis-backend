@@ -12,6 +12,10 @@ import com.skala.axis.dto.auth.AuthResponse;
 import com.skala.axis.dto.auth.EmailVerificationResponse;
 import com.skala.axis.dto.auth.LoginRequest;
 import com.skala.axis.dto.auth.PasswordChangeRequest;
+import com.skala.axis.dto.auth.PasswordResetConfirmRequest;
+import com.skala.axis.dto.auth.PasswordResetConfirmResponse;
+import com.skala.axis.dto.auth.PasswordResetRequest;
+import com.skala.axis.dto.auth.PasswordResetRequestResponse;
 import com.skala.axis.dto.auth.SignupRequest;
 import com.skala.axis.dto.auth.SignupResponse;
 import com.skala.axis.dto.auth.UserProfileResponse;
@@ -57,6 +61,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SesMailService sesMailService;
+
+    private static final String PASSWORD_RESET_ACCEPTED_MESSAGE = "입력한 이메일로 비밀번호 재설정 안내를 보냈습니다. 메일이 도착하지 않았다면 입력한 주소를 확인하세요.";
 
     @Transactional
     public SignupResponse signup(SignupRequest request, RequestMetadata metadata) {
@@ -112,6 +118,64 @@ public class AuthService {
         recordAccessLog(user, "EMAIL_VERIFICATION_RESENT", true, metadata, null, null);
         sendVerificationMail(user, tokenIssue.rawToken());
         return new EmailVerificationResponse(false);
+    }
+
+    @Transactional
+    public PasswordResetRequestResponse requestPasswordReset(PasswordResetRequest request, RequestMetadata metadata) {
+        String email = normalizeEmail(request == null ? null : request.email());
+        if (!email.isBlank() && !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_EMAIL_FORMAT", "이메일 형식이 올바르지 않습니다.");
+        }
+
+        User user = email.isBlank() ? null : userRepository.findByEmailForUpdate(email).orElse(null);
+        if (user == null) {
+            recordAccessLog(null, "PASSWORD_RESET_REQUESTED", true, metadata, null, Map.of("email", email, "matched", false));
+            return passwordResetAccepted();
+        }
+
+        if (user.getStatus() != UserStatus.ACTIVE || !user.isEmailVerified()) {
+            recordAccessLog(user, "PASSWORD_RESET_REQUESTED", true, metadata, null, Map.of("eligible", false));
+            return passwordResetAccepted();
+        }
+
+        revokeUnusedPasswordResetTokens(user);
+        TokenIssue tokenIssue = issuePasswordResetToken(user, metadata);
+        recordAccessLog(user, "PASSWORD_RESET_REQUESTED", true, metadata, null, null);
+        sendPasswordResetMail(user, tokenIssue.rawToken());
+        return passwordResetAccepted();
+    }
+
+    @Transactional
+    public PasswordResetConfirmResponse confirmPasswordReset(PasswordResetConfirmRequest request, RequestMetadata metadata) {
+        AuthToken token = findToken(
+                request == null ? null : request.token(),
+                "INVALID_OR_EXPIRED_PASSWORD_RESET_TOKEN",
+                "유효하지 않거나 만료된 비밀번호 재설정 링크입니다."
+        );
+        Instant now = Instant.now();
+        if (token.getType() != AuthTokenType.PASSWORD_RESET || token.isExpired(now) || token.isUsed() || token.isRevoked()) {
+            recordAccessLog(token.getUser(), "PASSWORD_RESET_FAILED", false, metadata, null, Map.of("reason", "invalid_token_state"));
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_OR_EXPIRED_PASSWORD_RESET_TOKEN", "유효하지 않거나 만료된 비밀번호 재설정 링크입니다.");
+        }
+
+        User user = token.getUser();
+        if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.WITHDRAWN) {
+            recordAccessLog(user, "PASSWORD_RESET_FAILED", false, metadata, null, Map.of("reason", "account_unavailable"));
+            throw new AuthException(HttpStatus.FORBIDDEN, "ACCOUNT_SUSPENDED", "사용할 수 없는 계정입니다.");
+        }
+        if (user.getStatus() != UserStatus.ACTIVE || !user.isEmailVerified()) {
+            recordAccessLog(user, "PASSWORD_RESET_FAILED", false, metadata, null, Map.of("reason", "email_verification_required"));
+            throw new AuthException(HttpStatus.FORBIDDEN, "EMAIL_VERIFICATION_REQUIRED", "이메일 인증이 필요합니다.");
+        }
+
+        validatePassword(request.newPassword());
+        user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
+        token.markUsed();
+        revokeUnusedPasswordResetTokens(user);
+        authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.REFRESH)
+                .forEach(AuthToken::revoke);
+        recordAccessLog(user, "PASSWORD_RESET_COMPLETED", true, metadata, null, null);
+        return new PasswordResetConfirmResponse(true);
     }
 
     @Transactional
@@ -278,6 +342,19 @@ public class AuthService {
         return new TokenIssue(rawToken, expiresAt, null, token.getId());
     }
 
+    private TokenIssue issuePasswordResetToken(User user, RequestMetadata metadata) {
+        String rawToken = newRawToken();
+        Instant expiresAt = Instant.now().plus(Duration.ofMinutes(authProperties.getPasswordResetMinutes()));
+        AuthToken token = authTokenRepository.save(AuthToken.passwordReset(
+                user,
+                hashToken(rawToken),
+                expiresAt,
+                metadata == null ? null : metadata.userAgent(),
+                metadata == null ? null : metadata.ipAddress()
+        ));
+        return new TokenIssue(rawToken, expiresAt, null, token.getId());
+    }
+
     private TokenIssue issueRefreshToken(User user, UUID tokenFamilyId, UUID previousTokenId, RequestMetadata metadata) {
         UUID familyId = tokenFamilyId == null ? UUID.randomUUID() : tokenFamilyId;
         String rawToken = newRawToken();
@@ -296,6 +373,13 @@ public class AuthService {
 
     private void revokeUnusedEmailTokens(User user) {
         authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.EMAIL_VERIFICATION)
+                .stream()
+                .filter(token -> !token.isUsed())
+                .forEach(AuthToken::revoke);
+    }
+
+    private void revokeUnusedPasswordResetTokens(User user) {
+        authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.PASSWORD_RESET)
                 .stream()
                 .filter(token -> !token.isUsed())
                 .forEach(AuthToken::revoke);
@@ -365,6 +449,39 @@ public class AuthService {
             log.warn("이메일 인증 메일 발송 실패 email={}", user.getEmail(), e);
             throw new AuthException(HttpStatus.SERVICE_UNAVAILABLE, "EMAIL_DELIVERY_FAILED", "인증 메일 발송에 실패했습니다. 메일 발송 설정을 확인하세요.");
         }
+    }
+
+    private void sendPasswordResetMail(User user, String rawToken) {
+        String encodedToken = URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
+        String link = trimTrailingSlash(authProperties.getAppBaseUrl()) + "/auth/password-reset/confirm?token=" + encodedToken;
+        String delivery = nullToEmpty(authProperties.getEmailVerificationDelivery()).trim().toLowerCase();
+        if ("log".equals(delivery)) {
+            log.info("개발용 비밀번호 재설정 링크 생성 email={} tokenHash={} link={}", user.getEmail(), hashToken(rawToken), link);
+            return;
+        }
+        if (!delivery.isBlank() && !"ses".equals(delivery)) {
+            log.warn("알 수 없는 비밀번호 재설정 발송 방식입니다. SES로 발송합니다. delivery={}", delivery);
+        }
+
+        try {
+            sesMailService.sendTextMail(
+                    user.getEmail(),
+                    "[AXIS] 비밀번호 재설정",
+                    "AXIS 비밀번호를 재설정하려면 아래 링크를 열어주세요.\n\n"
+                            + link
+                            + "\n\n이 링크는 "
+                            + authProperties.getPasswordResetMinutes()
+                            + "분 동안만 사용할 수 있습니다. 요청하지 않았다면 이 메일을 무시하세요."
+            );
+        } catch (Exception e) {
+            log.warn("비밀번호 재설정 메일 발송 실패 email={}", user.getEmail(), e);
+            recordAccessLog(user, "PASSWORD_RESET_FAILED", false, null, null, Map.of("reason", "email_delivery_failed"));
+            throw new AuthException(HttpStatus.SERVICE_UNAVAILABLE, "PASSWORD_RESET_EMAIL_DELIVERY_FAILED", "비밀번호 재설정 메일 발송에 실패했습니다. 메일 발송 설정을 확인하세요.");
+        }
+    }
+
+    private PasswordResetRequestResponse passwordResetAccepted() {
+        return new PasswordResetRequestResponse(true, PASSWORD_RESET_ACCEPTED_MESSAGE, authProperties.getPasswordResetMinutes());
     }
 
     private String newRawToken() {

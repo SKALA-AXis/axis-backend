@@ -2,8 +2,12 @@ package com.skala.axis.service;
 
 import com.skala.axis.domain.User;
 import com.skala.axis.domain.UserCardNewsBookmark;
+import com.skala.axis.dto.CardNewsResponse;
+import com.skala.axis.exception.AuthException;
+import com.skala.axis.repository.CardNewsRepository;
 import com.skala.axis.repository.UserCardNewsBookmarkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,24 +15,30 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class BookmarkService {
     private final AuthService authService;
     private final UserCardNewsBookmarkRepository bookmarkRepository;
-    private final ApiContractFixtureService fixture;
+    private final CardNewsRepository cardNewsRepository;
+    private final CardNewsService cardNewsService;
 
     @Transactional(readOnly = true)
     public Map<String, Object> list(UUID userId, Map<String, String> params) {
-        List<String> bookmarkedIds = bookmarkRepository.findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
+        List<UserCardNewsBookmark> bookmarks = bookmarkRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        List<String> bookmarkedIds = bookmarks.stream()
                 .map(UserCardNewsBookmark::getCardNewsId)
                 .toList();
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> cards = (List<Map<String, Object>>) fixture.todayCards(params).get("items");
-        List<Map<String, Object>> items = cards.stream()
-                .filter(card -> bookmarkedIds.contains(String.valueOf(card.get("id"))))
+        Map<String, CardNewsResponse> cardsById = cardNewsRepository.findAllById(bookmarkedIds)
+                .stream()
+                .map(cardNewsService::toResponse)
+                .collect(Collectors.toMap(CardNewsResponse::getId, Function.identity(), (left, right) -> left));
+        List<CardNewsResponse> items = bookmarkedIds.stream()
+                .map(cardsById::get)
+                .filter(card -> card != null)
                 .toList();
         return Map.of("items", items, "total", items.size());
     }
@@ -37,6 +47,9 @@ public class BookmarkService {
     public Map<String, Object> add(UUID userId, Map<String, Object> request) {
         User user = authService.requireUser(userId);
         String cardId = cardId(request);
+        if (!cardNewsRepository.existsById(cardId)) {
+            throw new AuthException(HttpStatus.NOT_FOUND, "CARD_NEWS_NOT_FOUND", "존재하지 않는 카드뉴스입니다.");
+        }
         if (!bookmarkRepository.existsByUserIdAndCardNewsId(userId, cardId)) {
             bookmarkRepository.save(UserCardNewsBookmark.create(user, cardId, stringValue(request, "note")));
         }

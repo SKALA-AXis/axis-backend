@@ -43,7 +43,7 @@ public class CardNewsService {
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
     }
 
-    private CardNewsResponse toResponse(CardNews card) {
+    public CardNewsResponse toResponse(CardNews card) {
         Map<String, Object> implication = card.getImplication() == null ? Map.of() : card.getImplication();
         Map<String, Object> coverImage = firstImageAsset(card.getImageAssets());
         String sector = stringValue(implication.get("sector"), "other");

@@ -66,6 +66,8 @@ class OpenApiContractSmokeTests {
                 e("001-400", "GET", "/health", status().isOk()),
                 e("001-400", "POST", "/api/auth/signup", status().isCreated(), "{\"email\":\"axis.user@sk.com\",\"password\":\"password123\",\"name\":\"AXIS 사용자\",\"department\":\"사업전략팀\",\"role\":\"strategist\"}"),
                 e("001-400", "POST", "/api/auth/verify-email", status().isOk(), "{\"token\":\"verify-token\"}"),
+                e("001-400", "POST", "/api/auth/password-reset/request", status().isOk(), "{\"email\":\"axis.user@sk.com\"}"),
+                e("001-400", "POST", "/api/auth/password-reset/confirm", status().isOk(), "{\"token\":\"reset-token\",\"new_password\":\"password456\"}"),
                 e("001-400", "POST", "/api/auth/login", status().isOk(), "{\"email\":\"axis.user@sk.com\",\"password\":\"password123\"}"),
                 e("401-800", "POST", "/api/auth/logout", status().isOk()),
                 e("401-800", "POST", "/api/auth/refresh", status().isOk(), "{\"refresh_token\":\"axis-refresh-token\"}"),

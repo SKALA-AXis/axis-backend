@@ -58,6 +58,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/health", "/actuator/health", "/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/auth/password-reset/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/auth/email-verifications/confirm").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/email-verifications/resend", "/api/auth/verify-email").permitAll()
                     // CronJob entrypoints — Bearer ${CRON_INTERNAL_TOKEN} 검증은 PipelineController.isCronAuthorized 에서 수행.
