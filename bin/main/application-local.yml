@@ -10,6 +10,11 @@ spring:
   flyway:
     enabled: false
   jpa:
+    hibernate:
+      # local profile 은 종종 port-forward / 외부 dev DB 에 붙는다.
+      # 이 경우 코드가 새 migration 을 기대해도, Flyway 는 보호 차원에서 꺼져 있으므로
+      # validate 가 부팅을 막기 쉽다. 스키마 검증은 격리 docker DB + Flyway enable 경로에서 수행한다.
+      ddl-auto: none
     show-sql: true
 logging:
   level:
