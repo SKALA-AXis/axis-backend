@@ -20,6 +20,7 @@ public class AuthProperties {
     private long accessTokenMinutes = 15;
     private long refreshTokenDays = 14;
     private long emailVerificationMinutes = 60;
+    private String emailVerificationDelivery = "ses";
     private int maxFailedLoginCount = 5;
     private long lockMinutes = 10;
     private String refreshCookieName = "axis_refresh";

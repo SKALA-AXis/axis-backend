@@ -36,6 +36,21 @@ ai:
     base-url: ${AI_SERVER_URL:http://localhost:8001}
 
 axis:
+  auth:
+    enforce: ${AXIS_AUTH_ENFORCE:true}
+    allowed-email-domains: ${AXIS_AUTH_ALLOWED_EMAIL_DOMAINS:sk.com}
+    jwt-secret: ${AXIS_AUTH_JWT_SECRET:axis-local-dev-secret-change-me-32-bytes-minimum}
+    access-token-minutes: ${AXIS_AUTH_ACCESS_TOKEN_MINUTES:15}
+    refresh-token-days: ${AXIS_AUTH_REFRESH_TOKEN_DAYS:14}
+    email-verification-minutes: ${AXIS_AUTH_EMAIL_VERIFICATION_MINUTES:60}
+    email-verification-delivery: ${AXIS_AUTH_EMAIL_VERIFICATION_DELIVERY:ses}
+    max-failed-login-count: ${AXIS_AUTH_MAX_FAILED_LOGIN_COUNT:5}
+    lock-minutes: ${AXIS_AUTH_LOCK_MINUTES:10}
+    refresh-cookie-name: ${AXIS_AUTH_REFRESH_COOKIE_NAME:axis_refresh}
+    refresh-cookie-secure: ${AXIS_AUTH_REFRESH_COOKIE_SECURE:false}
+    refresh-cookie-same-site: ${AXIS_AUTH_REFRESH_COOKIE_SAME_SITE:Lax}
+    app-base-url: ${AXIS_APP_BASE_URL:http://localhost:3100}
+    bootstrap-admin-emails: ${BOOTSTRAP_ADMIN_EMAILS:}
   cors:
     allowed-origins: ${AXIS_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3100}
   share:
@@ -49,6 +64,10 @@ axis:
     # axis-ai (ImageFetchAgent) 가 쓰고, axis-backend 가 read-only 로 서빙.
     # 컨테이너에서는 IMAGE_STORAGE_PATH 환경변수가 주입되며, 기본값은 /data/images.
     storage-path: ${IMAGE_STORAGE_PATH:/data/images}
+  notification:
+    important-keywords: ${AXIS_NOTIFICATION_IMPORTANT_KEYWORDS:수주,계약,대량 발주,실적,매출,영업이익,적자,흑자전환,투자,인수,합병,철수,공급망,경쟁사,PoC,상용화}
+    max-keywords: ${AXIS_NOTIFICATION_MAX_KEYWORDS:20}
+    max-keyword-length: ${AXIS_NOTIFICATION_MAX_KEYWORD_LENGTH:30}
 
 # 이메일 발송 — AWS SES V2 SDK + IRSA (ses-mailer-sa) — Slack 폐기 (v4).
 # 자세한 spec: axis-infra/docs/SES_INTEGRATION.md

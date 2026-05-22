@@ -36,6 +36,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -116,7 +117,11 @@ public class AuthService {
     @Transactional
     public AuthLoginResult login(LoginRequest request, RequestMetadata metadata) {
         String email = normalizeEmail(request.email());
-        User user = userRepository.findByEmail(email).orElse(null);
+        if (email.isBlank() || nullToEmpty(request.password()).isBlank()) {
+            recordAccessLog(null, "LOGIN_FAILURE", false, metadata, null, Map.of("reason", "missing_credentials", "email", email));
+            throw invalidCredentials();
+        }
+        User user = userRepository.findByEmailForUpdate(email).orElse(null);
         if (user == null) {
             recordAccessLog(null, "LOGIN_FAILURE", false, metadata, null, Map.of("reason", "not_found", "email", email));
             throw invalidCredentials();
@@ -237,6 +242,18 @@ public class AuthService {
     }
 
     public void recordAccessLog(User user, String actionType, boolean success, RequestMetadata metadata, UUID sessionId, Map<String, Object> extra) {
+        Map<String, Object> logMetadata = new LinkedHashMap<>();
+        if (extra != null) {
+            logMetadata.putAll(extra);
+        }
+        if (metadata != null) {
+            if (metadata.countryCode() != null && !metadata.countryCode().isBlank()) {
+                logMetadata.putIfAbsent("countryCode", metadata.countryCode());
+            }
+            if (metadata.countryName() != null && !metadata.countryName().isBlank()) {
+                logMetadata.putIfAbsent("country", metadata.countryName());
+            }
+        }
         userAccessLogRepository.save(UserAccessLog.create(
                 user,
                 actionType,
@@ -244,7 +261,7 @@ public class AuthService {
                 metadata == null ? null : metadata.ipAddress(),
                 metadata == null ? null : metadata.userAgent(),
                 sessionId,
-                extra
+                logMetadata
         ));
     }
 
@@ -329,11 +346,25 @@ public class AuthService {
     private void sendVerificationMail(User user, String rawToken) {
         String encodedToken = URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
         String link = trimTrailingSlash(authProperties.getAppBaseUrl()) + "/auth/email-verifications/confirm?token=" + encodedToken;
-        sesMailService.sendTextMail(
-                user.getEmail(),
-                "[AXIS] 이메일 인증",
-                "AXIS 가입을 완료하려면 아래 링크를 열어주세요.\n\n" + link
-        );
+        String delivery = nullToEmpty(authProperties.getEmailVerificationDelivery()).trim().toLowerCase();
+        if ("log".equals(delivery)) {
+            log.info("개발용 이메일 인증 링크 생성 email={} tokenHash={} link={}", user.getEmail(), hashToken(rawToken), link);
+            return;
+        }
+        if (!delivery.isBlank() && !"ses".equals(delivery)) {
+            log.warn("알 수 없는 이메일 인증 발송 방식입니다. SES로 발송합니다. delivery={}", delivery);
+        }
+
+        try {
+            sesMailService.sendTextMail(
+                    user.getEmail(),
+                    "[AXIS] 이메일 인증",
+                    "AXIS 가입을 완료하려면 아래 링크를 열어주세요.\n\n" + link
+            );
+        } catch (Exception e) {
+            log.warn("이메일 인증 메일 발송 실패 email={}", user.getEmail(), e);
+            throw new AuthException(HttpStatus.SERVICE_UNAVAILABLE, "EMAIL_DELIVERY_FAILED", "인증 메일 발송에 실패했습니다. 메일 발송 설정을 확인하세요.");
+        }
     }
 
     private String newRawToken() {

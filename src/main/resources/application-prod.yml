@@ -19,6 +19,7 @@ logging:
 axis:
   auth:
     enforce: ${AXIS_AUTH_ENFORCE:true}
+    email-verification-delivery: ${AXIS_AUTH_EMAIL_VERIFICATION_DELIVERY:ses}
     refresh-cookie-secure: ${AXIS_AUTH_REFRESH_COOKIE_SECURE:true}
     refresh-cookie-same-site: ${AXIS_AUTH_REFRESH_COOKIE_SAME_SITE:Lax}
     app-base-url: ${AXIS_APP_BASE_URL:${VITE_API_BASE_URL:https://axis.skala.ai}}
