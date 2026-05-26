@@ -183,6 +183,72 @@ public class ApiContractFixtureService {
         );
     }
 
+    public Map<String, Object> peerOverviewTable() {
+        return mapOf(
+                "periodLabel", "2025Q4",
+                "coverageLabel", "Peer 공통 분기 기준",
+                "financialSourceLabel", "DART 공시 기반 목업",
+                "supplementalSourceLabel", "목업 보조값",
+                "rows", List.of(
+                        mapOf(
+                                "id", "sk_ax",
+                                "label", "SK AX",
+                                "revenueKrwBn", 12200.0,
+                                "operatingProfitKrwBn", 910.0,
+                                "operatingMarginPct", 7.4,
+                                "axRevenueSharePct", 34.0,
+                                "contractCount", null,
+                                "topKeyword", "운영형 AX",
+                                "dartRceptNo", null
+                        ),
+                        mapOf(
+                                "id", "samsung_sds",
+                                "label", "삼성 SDS",
+                                "revenueKrwBn", 35368.0,
+                                "operatingProfitKrwBn", 2261.0,
+                                "operatingMarginPct", 6.39,
+                                "axRevenueSharePct", null,
+                                "contractCount", null,
+                                "topKeyword", "FabriX",
+                                "dartRceptNo", null
+                        ),
+                        mapOf(
+                                "id", "lg_cns",
+                                "label", "LG CNS",
+                                "revenueKrwBn", 19356.0,
+                                "operatingProfitKrwBn", 2119.0,
+                                "operatingMarginPct", 10.95,
+                                "axRevenueSharePct", null,
+                                "contractCount", null,
+                                "topKeyword", "금융",
+                                "dartRceptNo", null
+                        ),
+                        mapOf(
+                                "id", "hyundai_autoever",
+                                "label", "현대 오토에버",
+                                "revenueKrwBn", 13227.0,
+                                "operatingProfitKrwBn", 764.0,
+                                "operatingMarginPct", 5.78,
+                                "axRevenueSharePct", null,
+                                "contractCount", null,
+                                "topKeyword", "커넥티드카",
+                                "dartRceptNo", null
+                        ),
+                        mapOf(
+                                "id", "posco_dx",
+                                "label", "포스코 DX",
+                                "revenueKrwBn", 2608.0,
+                                "operatingProfitKrwBn", -13.0,
+                                "operatingMarginPct", -0.5,
+                                "axRevenueSharePct", null,
+                                "contractCount", null,
+                                "topKeyword", "산업DX",
+                                "dartRceptNo", null
+                        )
+                )
+        );
+    }
+
     public Map<String, Object> peerStrategy(String peerId) {
         Map<String, Object> strategy = fixtureMap("peer_strategy");
         strategy.put("peer_id", peerId);
