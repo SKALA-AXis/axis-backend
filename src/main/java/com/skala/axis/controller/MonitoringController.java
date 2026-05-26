@@ -4,6 +4,7 @@ import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.PeerOverviewTableService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,7 @@ import java.util.Map;
 public class MonitoringController {
     private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
+    private final PeerOverviewTableService peerOverviewTableService;
 
     @GetMapping("/overview")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringOverview(@RequestParam Map<String, String> params) {
@@ -47,7 +49,7 @@ public class MonitoringController {
         return ResponseEntity.ok(ApiResponse.success(fixture.monitoringPeers()));
     }
 
-    @GetMapping("/{peerId}")
+    @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerDetail(
             @PathVariable String peerId,
             @RequestParam Map<String, String> params
@@ -55,12 +57,12 @@ public class MonitoringController {
         return ResponseEntity.ok(ApiResponse.success(fixture.monitoringPeerDetail(peerId, params)));
     }
 
-    @GetMapping("/{peerId}/cards")
+    @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}/cards")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerCardTimeline(@PathVariable String peerId) {
         return ResponseEntity.ok(ApiResponse.success(fixture.monitoringPeerCards(peerId)));
     }
 
-    @GetMapping("/{peerId}/financials")
+    @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}/financials")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerFinancials(
             @PathVariable String peerId,
             @RequestParam(defaultValue = "8") int quarters
@@ -76,6 +78,11 @@ public class MonitoringController {
         return ResponseEntity.ok(ApiResponse.success(fixture.monitoringComparison(metric, quarters)));
     }
 
+    @GetMapping("/overview/peer-table")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerOverview() {
+        return ResponseEntity.ok(ApiResponse.success(peerOverviewTableService.getPeerOverviewTable()));
+    }
+
     /**
      * Peer 전략 분석 — axis-ai PeerComparisonAgent 위임.
      *
@@ -86,7 +93,7 @@ public class MonitoringController {
      * reasoning_steps / langfuse_trace_id / confidence / sources_used / analysis_period /
      * provenance / warning).
      */
-    @GetMapping("/{peerId}/strategy")
+    @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}/strategy")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerStrategy(
             @PathVariable String peerId,
             @RequestParam(name = "window_days", required = false) Integer windowDays,
