@@ -273,10 +273,11 @@ public class AuthService {
 
     @Transactional
     public UserProfileResponse changePassword(UUID userId, PasswordChangeRequest request, RequestMetadata metadata) {
+        validatePasswordChangeRequest(request);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AuthException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다."));
         if (!passwordEncoder.matches(nullToEmpty(request.currentPassword()), user.getPasswordHash())) {
-            throw invalidCredentials();
+            throw new AuthException(HttpStatus.UNAUTHORIZED, "INVALID_CURRENT_PASSWORD", "현재 비밀번호가 올바르지 않습니다.");
         }
         validatePassword(request.newPassword());
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
@@ -420,6 +421,18 @@ public class AuthService {
         String value = nullToEmpty(password);
         if (value.length() < 8 || value.length() > 64) {
             throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_PASSWORD_POLICY", "비밀번호는 8자 이상 64자 이하로 입력하세요.");
+        }
+    }
+
+    private void validatePasswordChangeRequest(PasswordChangeRequest request) {
+        if (request == null) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_PASSWORD_CHANGE_REQUEST", "현재 비밀번호와 새 비밀번호를 입력하세요.");
+        }
+        if (nullToEmpty(request.currentPassword()).isBlank()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "MISSING_CURRENT_PASSWORD", "현재 비밀번호를 입력하세요.");
+        }
+        if (nullToEmpty(request.newPassword()).isBlank()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "MISSING_NEW_PASSWORD", "새 비밀번호를 입력하세요.");
         }
     }
 

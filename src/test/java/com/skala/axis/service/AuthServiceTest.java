@@ -5,6 +5,7 @@ import com.skala.axis.domain.AuthToken;
 import com.skala.axis.domain.AuthTokenType;
 import com.skala.axis.domain.User;
 import com.skala.axis.dto.auth.LoginRequest;
+import com.skala.axis.dto.auth.PasswordChangeRequest;
 import com.skala.axis.dto.auth.PasswordResetConfirmRequest;
 import com.skala.axis.dto.auth.PasswordResetRequest;
 import com.skala.axis.dto.auth.SignupRequest;
@@ -174,6 +175,55 @@ class AuthServiceTest {
         assertThat(response.passwordReset()).isTrue();
         assertThat(user.getPasswordHash()).isEqualTo("encoded-new-password");
         assertThat(resetToken.isUsed()).isTrue();
+        assertThat(refreshToken.isRevoked()).isTrue();
+    }
+
+    @Test
+    void changePasswordRejectsMissingRequestWithKoreanValidation() {
+        AuthService authService = authService(authProperties());
+
+        assertThatThrownBy(() -> authService.changePassword(UUID.randomUUID(), null, null))
+                .isInstanceOfSatisfying(AuthException.class, exception -> {
+                    assertThat(exception.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(exception.getCode()).isEqualTo("INVALID_PASSWORD_CHANGE_REQUEST");
+                    assertThat(exception.getMessage()).isEqualTo("현재 비밀번호와 새 비밀번호를 입력하세요.");
+                });
+
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void changePasswordRejectsWrongCurrentPassword() {
+        AuthService authService = authService(authProperties());
+        UUID userId = UUID.randomUUID();
+        User user = activeUser("owner@sk.com");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("wrongpassword", "encoded-password")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changePassword(userId, new PasswordChangeRequest("wrongpassword", "newpassword123"), null))
+                .isInstanceOfSatisfying(AuthException.class, exception -> {
+                    assertThat(exception.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(exception.getCode()).isEqualTo("INVALID_CURRENT_PASSWORD");
+                    assertThat(exception.getMessage()).isEqualTo("현재 비밀번호가 올바르지 않습니다.");
+                });
+    }
+
+    @Test
+    void changePasswordChangesPasswordAndRevokesRefreshTokens() {
+        AuthService authService = authService(authProperties());
+        UUID userId = UUID.randomUUID();
+        User user = activeUser("owner@sk.com");
+        AuthToken refreshToken = AuthToken.refresh(user, "refresh-hash", UUID.randomUUID(), null, Instant.now().plusSeconds(3600), null, null);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("password123", "encoded-password")).thenReturn(true);
+        when(passwordEncoder.encode("newpassword123")).thenReturn("encoded-new-password");
+        when(authTokenRepository.findByUserAndTypeAndRevokedAtIsNull(user, AuthTokenType.REFRESH)).thenReturn(List.of(refreshToken));
+        when(userSettingRepository.findByUserId(nullable(UUID.class))).thenReturn(Optional.empty());
+
+        var response = authService.changePassword(userId, new PasswordChangeRequest("password123", "newpassword123"), null);
+
+        assertThat(response.email()).isEqualTo("owner@sk.com");
+        assertThat(user.getPasswordHash()).isEqualTo("encoded-new-password");
         assertThat(refreshToken.isRevoked()).isTrue();
     }
 
