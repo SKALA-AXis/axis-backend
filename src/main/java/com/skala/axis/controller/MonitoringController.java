@@ -83,6 +83,11 @@ public class MonitoringController {
         return ResponseEntity.ok(ApiResponse.success(peerOverviewTableService.getPeerOverviewTable()));
     }
 
+    @GetMapping("/overview/positioning")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerPositioning() {
+        return ResponseEntity.ok(ApiResponse.success(peerOverviewTableService.getPeerPositioningChart()));
+    }
+
     /**
      * Peer 전략 분석 — axis-ai PeerComparisonAgent 위임.
      *

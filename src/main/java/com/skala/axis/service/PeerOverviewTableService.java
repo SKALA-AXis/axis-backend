@@ -36,6 +36,7 @@ public class PeerOverviewTableService {
     );
 
     private final JdbcTemplate jdbcTemplate;
+
     public Map<String, Object> getPeerOverviewTable() {
         String period = resolveCommonPeriod();
         Map<String, SupplementalRow> supplementalRows = loadSupplementalRows();
@@ -46,6 +47,24 @@ public class PeerOverviewTableService {
                 "financialSourceLabel", "raw_article_financial_metrics 기준 (SK AX는 IR 우선, 타사는 DART 우선, 영업이익률은 DB 원값 우선)",
                 "supplementalSourceLabel", "peer_companies 보조값 사용, 없으면 -",
                 "rows", rows
+        );
+    }
+
+    public Map<String, Object> getPeerPositioningChart() {
+        String period = resolvePositioningCommonPeriod();
+        boolean mixedPeriods = period == null;
+        List<Map<String, Object>> points = mixedPeriods ? loadLatestPositioningPoints() : loadPositioningPoints(period);
+        return mapOf(
+                "periodLabel", mixedPeriods ? "peer별 최신 분기" : period,
+                "coverageLabel", mixedPeriods
+                        ? "매출 + 매출 YoY 공통 분기가 없어 peer별 최신 가용 분기 기준으로 표시"
+                        : "SK AX · 삼성 SDS · LG CNS · 현대 오토에버 · 포스코 DX 공통 분기 기준",
+                "financialSourceLabel", "raw_article_financial_metrics 기준 (company_total / revenue_total / revenue_total_yoy, SK AX는 IR 우선, 타사는 DART 우선)",
+                "xAxisLabel", "사업 규모 (매출, 억원)",
+                "yAxisLabel", "매출 성장률 (YoY, %)",
+                "referenceRevenueKrwBn", 30000,
+                "referenceGrowthPct", 5,
+                "points", points
         );
     }
 
@@ -108,6 +127,105 @@ public class PeerOverviewTableService {
                 FROM period_coverage
                 WHERE revenue_total IS NOT NULL
                   AND operating_profit IS NOT NULL
+                GROUP BY period
+                HAVING COUNT(DISTINCT peer_id) = ?
+                ORDER BY
+                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
+                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
+                    period DESC
+                LIMIT 1
+                """;
+
+        return jdbcTemplate.query(
+                sql,
+                ps -> {
+                    bindFinancialPeerIds(ps, 1);
+                    ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
+                },
+                rs -> rs.next() ? rs.getString("period") : null
+        );
+    }
+
+    private String resolvePositioningCommonPeriod() {
+        String sql = """
+                WITH source_rows AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        metric_name,
+                        value_krwbn,
+                        CASE
+                            WHEN metric_name <> 'revenue_total_yoy' THEN value_numeric
+                            WHEN value_numeric IS NULL THEN NULL
+                            WHEN ABS(value_numeric) <= 200 THEN value_numeric
+                            WHEN regexp_match(COALESCE(evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%') IS NOT NULL THEN
+                                (
+                                    CASE
+                                        WHEN (regexp_match(COALESCE(evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[1] IN ('△', '-') THEN -1
+                                        ELSE 1
+                                    END
+                                ) * ((regexp_match(COALESCE(evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[2])::numeric
+                            ELSE NULL
+                        END AS normalized_value_numeric,
+                        source_type,
+                        confidence,
+                        updated_at,
+                        id,
+                        evidence_text
+                    FROM raw_article_financial_metrics
+                    WHERE metric_scope = 'company_total'
+                      AND business_area = 'company_total'
+                      AND source_type IN ('dart', 'ir', 'securities_report')
+                      AND peer_id IN (?, ?, ?, ?, ?)
+                      AND period ~ '^[0-9]{4}Q[1-4]$'
+                      AND metric_name IN ('revenue_total', 'revenue_total_yoy')
+                ),
+                metric_rows AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        metric_name,
+                        value_krwbn,
+                        normalized_value_numeric,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY peer_id, period, metric_name
+                            ORDER BY
+                                CASE
+                                    WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
+                                    ELSE 0
+                                END,
+                                CASE
+                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
+                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
+                                    WHEN source_type = 'dart' THEN 1
+                                    WHEN source_type = 'ir' THEN 2
+                                    WHEN source_type = 'securities_report' THEN 3
+                                    ELSE 99
+                                END,
+                                confidence DESC NULLS LAST,
+                                updated_at DESC NULLS LAST,
+                                id DESC
+                        ) AS row_rank
+                    FROM source_rows
+                ),
+                latest_metric_rows AS (
+                    SELECT *
+                    FROM metric_rows
+                    WHERE row_rank = 1
+                ),
+                period_coverage AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) AS revenue_total_krwbn,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS revenue_total_yoy
+                    FROM latest_metric_rows
+                    GROUP BY peer_id, period
+                )
+                SELECT period
+                FROM period_coverage
+                WHERE revenue_total_krwbn IS NOT NULL
+                  AND revenue_total_yoy IS NOT NULL
                 GROUP BY period
                 HAVING COUNT(DISTINCT peer_id) = ?
                 ORDER BY
@@ -339,6 +457,252 @@ public class PeerOverviewTableService {
         );
     }
 
+    private List<Map<String, Object>> loadPositioningPoints(String period) {
+        if (period == null || period.isBlank()) {
+            return List.of();
+        }
+
+        String sql = """
+                WITH source_rows AS (
+                    SELECT
+                        rfm.peer_id,
+                        rfm.period,
+                        rfm.metric_name,
+                        rfm.value_krwbn,
+                        CASE
+                            WHEN rfm.metric_name <> 'revenue_total_yoy' THEN rfm.value_numeric
+                            WHEN rfm.value_numeric IS NULL THEN NULL
+                            WHEN ABS(rfm.value_numeric) <= 200 THEN rfm.value_numeric
+                            WHEN regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%') IS NOT NULL THEN
+                                (
+                                    CASE
+                                        WHEN (regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[1] IN ('△', '-') THEN -1
+                                        ELSE 1
+                                    END
+                                ) * ((regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[2])::numeric
+                            ELSE NULL
+                        END AS normalized_value_numeric,
+                        rfm.source_type,
+                        rfm.confidence,
+                        rfm.raw_article_id,
+                        rfm.updated_at,
+                        rfm.id
+                    FROM raw_article_financial_metrics rfm
+                    WHERE rfm.metric_scope = 'company_total'
+                      AND rfm.business_area = 'company_total'
+                      AND rfm.source_type IN ('dart', 'ir', 'securities_report')
+                      AND rfm.period = ?
+                      AND rfm.peer_id IN (?, ?, ?, ?, ?)
+                      AND rfm.metric_name IN ('revenue_total', 'revenue_total_yoy')
+                ),
+                metric_rows AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        metric_name,
+                        value_krwbn,
+                        normalized_value_numeric,
+                        source_type,
+                        confidence,
+                        raw_article_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY peer_id, period, metric_name
+                            ORDER BY
+                                CASE
+                                    WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
+                                    ELSE 0
+                                END,
+                                CASE
+                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
+                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
+                                    WHEN source_type = 'dart' THEN 1
+                                    WHEN source_type = 'ir' THEN 2
+                                    WHEN source_type = 'securities_report' THEN 3
+                                    ELSE 99
+                                END,
+                                confidence DESC NULLS LAST,
+                                updated_at DESC NULLS LAST,
+                                id DESC
+                        ) AS row_rank
+                    FROM source_rows
+                ),
+                latest_metric_rows AS (
+                    SELECT *
+                    FROM metric_rows
+                    WHERE row_rank = 1
+                )
+                SELECT
+                    peer_id AS id,
+                    period,
+                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END)::numeric, 2) AS revenue_krwbn,
+                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END)::numeric, 2) AS revenue_yoy_pct,
+                    MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
+                    MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS revenue_yoy_source_type,
+                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END)::numeric, 3) AS revenue_confidence,
+                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END)::numeric, 3) AS revenue_yoy_confidence,
+                    MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
+                    MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS revenue_yoy_article_id
+                FROM latest_metric_rows
+                GROUP BY peer_id, period
+                ORDER BY CASE peer_id
+                    WHEN 'sk_ax' THEN 0
+                    WHEN 'samsung_sds' THEN 1
+                    WHEN 'lg_cns' THEN 2
+                    WHEN 'hyundai_autoever' THEN 3
+                    WHEN 'posco_dx' THEN 4
+                    ELSE 99
+                END
+                """;
+
+        Map<String, DisplayPeer> displayPeerById = new HashMap<>();
+        for (DisplayPeer displayPeer : DISPLAY_PEERS) {
+            displayPeerById.put(displayPeer.id(), displayPeer);
+        }
+
+        return jdbcTemplate.query(
+                sql,
+                ps -> {
+                    ps.setString(1, period);
+                    bindFinancialPeerIds(ps, 2);
+                },
+                (rs, rowNum) -> mapPositioningPoint(rs, displayPeerById)
+        );
+    }
+
+    private List<Map<String, Object>> loadLatestPositioningPoints() {
+        String sql = """
+                WITH source_rows AS (
+                    SELECT
+                        rfm.peer_id,
+                        rfm.period,
+                        rfm.metric_name,
+                        rfm.value_krwbn,
+                        CASE
+                            WHEN rfm.metric_name <> 'revenue_total_yoy' THEN rfm.value_numeric
+                            WHEN rfm.value_numeric IS NULL THEN NULL
+                            WHEN ABS(rfm.value_numeric) <= 200 THEN rfm.value_numeric
+                            WHEN regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%') IS NOT NULL THEN
+                                (
+                                    CASE
+                                        WHEN (regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[1] IN ('△', '-') THEN -1
+                                        ELSE 1
+                                    END
+                                ) * ((regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[2])::numeric
+                            ELSE NULL
+                        END AS normalized_value_numeric,
+                        rfm.source_type,
+                        rfm.confidence,
+                        rfm.raw_article_id,
+                        rfm.updated_at,
+                        rfm.id
+                    FROM raw_article_financial_metrics rfm
+                    WHERE rfm.metric_scope = 'company_total'
+                      AND rfm.business_area = 'company_total'
+                      AND rfm.source_type IN ('dart', 'ir', 'securities_report')
+                      AND rfm.peer_id IN (?, ?, ?, ?, ?)
+                      AND rfm.period ~ '^[0-9]{4}Q[1-4]$'
+                      AND rfm.metric_name IN ('revenue_total', 'revenue_total_yoy')
+                ),
+                metric_rows AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        metric_name,
+                        value_krwbn,
+                        normalized_value_numeric,
+                        source_type,
+                        confidence,
+                        raw_article_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY peer_id, period, metric_name
+                            ORDER BY
+                                CASE
+                                    WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
+                                    ELSE 0
+                                END,
+                                CASE
+                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
+                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
+                                    WHEN source_type = 'dart' THEN 1
+                                    WHEN source_type = 'ir' THEN 2
+                                    WHEN source_type = 'securities_report' THEN 3
+                                    ELSE 99
+                                END,
+                                confidence DESC NULLS LAST,
+                                updated_at DESC NULLS LAST,
+                                id DESC
+                        ) AS row_rank
+                    FROM source_rows
+                ),
+                latest_metric_rows AS (
+                    SELECT *
+                    FROM metric_rows
+                    WHERE row_rank = 1
+                ),
+                pivoted AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END)::numeric, 2) AS revenue_krwbn,
+                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END)::numeric, 2) AS revenue_yoy_pct,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS revenue_yoy_source_type,
+                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END)::numeric, 3) AS revenue_confidence,
+                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END)::numeric, 3) AS revenue_yoy_confidence,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS revenue_yoy_article_id
+                    FROM latest_metric_rows
+                    GROUP BY peer_id, period
+                    HAVING MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) IS NOT NULL
+                       AND MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) IS NOT NULL
+                ),
+                ranked_periods AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY peer_id
+                            ORDER BY
+                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) DESC,
+                                COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) DESC,
+                                period DESC
+                        ) AS period_rank
+                    FROM pivoted
+                )
+                SELECT
+                    peer_id AS id,
+                    period,
+                    revenue_krwbn,
+                    revenue_yoy_pct,
+                    revenue_source_type,
+                    revenue_yoy_source_type,
+                    revenue_confidence,
+                    revenue_yoy_confidence,
+                    revenue_article_id,
+                    revenue_yoy_article_id
+                FROM ranked_periods
+                WHERE period_rank = 1
+                ORDER BY CASE peer_id
+                    WHEN 'sk_ax' THEN 0
+                    WHEN 'samsung_sds' THEN 1
+                    WHEN 'lg_cns' THEN 2
+                    WHEN 'hyundai_autoever' THEN 3
+                    WHEN 'posco_dx' THEN 4
+                    ELSE 99
+                END
+                """;
+
+        Map<String, DisplayPeer> displayPeerById = new HashMap<>();
+        for (DisplayPeer displayPeer : DISPLAY_PEERS) {
+            displayPeerById.put(displayPeer.id(), displayPeer);
+        }
+
+        return jdbcTemplate.query(
+                sql,
+                ps -> bindFinancialPeerIds(ps, 1),
+                (rs, rowNum) -> mapPositioningPoint(rs, displayPeerById)
+        );
+    }
+
     private Map<String, SupplementalRow> loadSupplementalRows() {
         try {
             String sql = """
@@ -384,6 +748,28 @@ public class PeerOverviewTableService {
         row.put("operatingMarginQoqDeltaPctp", nullableDouble(rs.getObject("operating_margin_qoq_delta_pctp")));
         row.put("dartRceptNo", rs.getString("dart_rcept_no"));
         return row;
+    }
+
+    private Map<String, Object> mapPositioningPoint(ResultSet rs, Map<String, DisplayPeer> displayPeerById) throws SQLException {
+        String id = rs.getString("id");
+        DisplayPeer displayPeer = displayPeerById.get(id);
+
+        Map<String, Object> point = new LinkedHashMap<>();
+        point.put("id", id);
+        point.put("label", displayPeer == null ? id : displayPeer.label());
+        point.put("periodLabel", rs.getString("period"));
+        point.put("x", nullableDouble(rs.getObject("revenue_krwbn")));
+        point.put("y", nullableDouble(rs.getObject("revenue_yoy_pct")));
+        point.put("revenueKrwBn", nullableDouble(rs.getObject("revenue_krwbn")));
+        point.put("revenueYoyPct", nullableDouble(rs.getObject("revenue_yoy_pct")));
+        point.put("revenueSourceType", rs.getString("revenue_source_type"));
+        point.put("revenueYoySourceType", rs.getString("revenue_yoy_source_type"));
+        point.put("revenueConfidence", nullableDouble(rs.getObject("revenue_confidence")));
+        point.put("revenueYoyConfidence", nullableDouble(rs.getObject("revenue_yoy_confidence")));
+        point.put("revenueArticleId", nullableLong(rs.getObject("revenue_article_id")));
+        point.put("revenueYoyArticleId", nullableLong(rs.getObject("revenue_yoy_article_id")));
+        point.put("isSelf", "sk_ax".equals(id));
+        return point;
     }
 
     private void bindFinancialPeerIds(java.sql.PreparedStatement statement, int startIndex) throws SQLException {
