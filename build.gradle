@@ -128,29 +128,3 @@ tasks.named('bootRun') {
         }
     }
 }
-
-tasks.register('runPeerFinancialMetricsDebug', JavaExec) {
-    group = 'application'
-    description = 'Prints raw_article_financial_metrics coverage for Peer+ table debugging.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.skala.axis.tools.PeerFinancialMetricsDebugMain'
-
-    bootRunEnv.each { key, value ->
-        if (!System.getenv().containsKey(key)) {
-            environment key, value
-        }
-    }
-}
-
-tasks.register('runPeerOverviewPayloadDebug', JavaExec) {
-    group = 'application'
-    description = 'Prints the final Peer+ overview payload as produced by PeerOverviewTableService.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.skala.axis.tools.PeerOverviewPayloadDebugMain'
-
-    bootRunEnv.each { key, value ->
-        if (!System.getenv().containsKey(key)) {
-            environment key, value
-        }
-    }
-}
