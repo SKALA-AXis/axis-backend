@@ -1,0 +1,202 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.springframework.security",
+    "module": "spring-security-core",
+    "version": "6.3.3",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.10"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework.security",
+          "module": "spring-security-crypto",
+          "version": {
+            "requires": "6.3.3"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-aop",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-beans",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-context",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-core",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-expression",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "io.micrometer",
+          "module": "micrometer-observation",
+          "version": {
+            "requires": "1.12.9"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-security-core-6.3.3.jar",
+          "url": "spring-security-core-6.3.3.jar",
+          "size": 560200,
+          "sha512": "df1bb8f824ecdb001f3bd49c6d9a6802692d12e874673f27a90a8c019eb6d7d229cb9a509c0183dc35a5cecdafd8b69925dfd27809a309bfa0b1e8b3e5ec2227",
+          "sha256": "d6ceaad3709cc7e303f22ba55b57933e7787bdadfd171a80ffe95ab6eebff9b8",
+          "sha1": "2bf159e3db212d61408a2f728d6d7252dfaf4710",
+          "md5": "efd4066bb8d53e2ce1fb0ebc3dc8aa06"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework.security",
+          "module": "spring-security-crypto",
+          "version": {
+            "requires": "6.3.3"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-aop",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-beans",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-context",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-core",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-expression",
+          "version": {
+            "requires": "6.1.12"
+          }
+        },
+        {
+          "group": "io.micrometer",
+          "module": "micrometer-observation",
+          "version": {
+            "requires": "1.12.9"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-security-core-6.3.3.jar",
+          "url": "spring-security-core-6.3.3.jar",
+          "size": 560200,
+          "sha512": "df1bb8f824ecdb001f3bd49c6d9a6802692d12e874673f27a90a8c019eb6d7d229cb9a509c0183dc35a5cecdafd8b69925dfd27809a309bfa0b1e8b3e5ec2227",
+          "sha256": "d6ceaad3709cc7e303f22ba55b57933e7787bdadfd171a80ffe95ab6eebff9b8",
+          "sha1": "2bf159e3db212d61408a2f728d6d7252dfaf4710",
+          "md5": "efd4066bb8d53e2ce1fb0ebc3dc8aa06"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "spring-security-core-6.3.3-javadoc.jar",
+          "url": "spring-security-core-6.3.3-javadoc.jar",
+          "size": 1344290,
+          "sha512": "0af88d55ec0c47576076afce4cc33d50498e0dbb596f095a74661e8c499f6f912d0cebb56022e4ad6b6abb2e0f39ac88ed080d3bc1b5f1867598b74ea46cad75",
+          "sha256": "9502f42b7f1351aa7cf7a39bce94381e6effa25ddead8a2c17fb3ff725f2a023",
+          "sha1": "9ead13d3693a5c7666671a88a03b8b11996ad494",
+          "md5": "32879c8ff5d8f107848ea3bd92374f91"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "spring-security-core-6.3.3-sources.jar",
+          "url": "spring-security-core-6.3.3-sources.jar",
+          "size": 536758,
+          "sha512": "1ec87045bab02f58946184358d71b20913393872d85dc677429d7ed8bbb0a472620f475f1cee68be98164e1fef38b3984616a6672e97e6dffa2306f3f6ad5c9d",
+          "sha256": "41f6132b85576daa6a1138f74e733a5c32468ac22ac80ca1223492084510047a",
+          "sha1": "7283fefa752a2df6c36a786f8ce5d55669998fa6",
+          "md5": "d87fa9b387aac6789f4d11b17d970385"
+        }
+      ]
+    }
+  ]
+}

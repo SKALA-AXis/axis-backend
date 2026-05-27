@@ -29,6 +29,9 @@ public class CardNews {
     @Column(nullable = false)
     private String title;
 
+    @Column(name = "summary_lines")
+    private String[] summaryLines;
+
     @Column(name = "event_type", length = 50)
     private String eventType;
 
@@ -60,6 +63,10 @@ public class CardNews {
     private Long[] sourceRawArticleIds;
 
     @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "sources", columnDefinition = "jsonb")
+    private List<Map<String, Object>> sources;
+
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "source_articles", columnDefinition = "jsonb")
     private List<Map<String, Object>> sourceArticles;
 
@@ -80,6 +87,12 @@ public class CardNews {
 
     @Column(name = "validation_sc_score")
     private Float validationScScore;
+
+    @Column(name = "is_human_reviewed")
+    private Boolean isHumanReviewed;
+
+    @Column(name = "primary_raw_article_id")
+    private Long primaryRawArticleId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

@@ -1,0 +1,152 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.springframework",
+    "module": "spring-webmvc",
+    "version": "6.1.13",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.9"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework",
+          "module": "spring-aop",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-beans",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-context",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-core",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-expression",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-web",
+          "version": {
+            "requires": "6.1.13"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-webmvc-6.1.13.jar",
+          "url": "spring-webmvc-6.1.13.jar",
+          "size": 1047770,
+          "sha512": "d1d99968be914f466f5176703f83f6f254f70047598b65970ed76be96473101fdadbdf093661116fde7ff478fcf2176377a57183601f50565c952404060d467e",
+          "sha256": "ca2d637672d9b9eedeb743304a37182b4b6b89b2c224e8482b4827098119c05e",
+          "sha1": "ca5f025b133c69026bfe01daa6132d0ac2e4a59f",
+          "md5": "73575541f7d9bcab037c0c62207242ac"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.springframework",
+          "module": "spring-aop",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-beans",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-context",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-core",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-expression",
+          "version": {
+            "requires": "6.1.13"
+          }
+        },
+        {
+          "group": "org.springframework",
+          "module": "spring-web",
+          "version": {
+            "requires": "6.1.13"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "spring-webmvc-6.1.13.jar",
+          "url": "spring-webmvc-6.1.13.jar",
+          "size": 1047770,
+          "sha512": "d1d99968be914f466f5176703f83f6f254f70047598b65970ed76be96473101fdadbdf093661116fde7ff478fcf2176377a57183601f50565c952404060d467e",
+          "sha256": "ca2d637672d9b9eedeb743304a37182b4b6b89b2c224e8482b4827098119c05e",
+          "sha1": "ca5f025b133c69026bfe01daa6132d0ac2e4a59f",
+          "md5": "73575541f7d9bcab037c0c62207242ac"
+        }
+      ]
+    }
+  ]
+}
