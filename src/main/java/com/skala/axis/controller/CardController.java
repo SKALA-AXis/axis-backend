@@ -8,6 +8,7 @@ import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.CardNewsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,33 +38,34 @@ public class CardController {
     private final AiClientService aiClientService;
     private final CardNewsService cardNewsService;
 
+    @Value("${spring.datasource.url:}")
+    private String datasourceUrl;
+
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listCards(@RequestParam Map<String, String> params) {
         String peerId = params.get("peer_id");
         String importance = params.get("importance");
         String eventType = params.get("event_type");
-        int limit = parseInt(params.get("limit"), 30);
+        int limit = parseInt(params.get("limit"), -1);
         int offset = parseInt(params.get("offset"), 0);
 
         List<CardNewsResponse> all = cardNewsService.getAll(peerId, importance, eventType);
-        if (all.isEmpty()) {
-            // DB 비어있으면 fixture stub fallback — test 환경 (H2 in-memory) + 운영
-            // 초기 (ingestion 이전) 호환 + contract test schema 보존
-            log.info("listCards | DB empty — fixture fallback");
+        if (all.isEmpty() && shouldUseFixtureFallback()) {
+            log.info("listCards | DB empty on in-memory datasource — fixture fallback");
             return ResponseEntity.ok(ApiResponse.success(fixture.cardList(params)));
         }
         int total = all.size();
-        List<CardNewsResponse> page = all.stream()
-                .skip(Math.max(offset, 0))
-                .limit(Math.max(limit, 0))
-                .toList();
+        var stream = all.stream().skip(Math.max(offset, 0));
+        List<CardNewsResponse> page = limit > 0
+                ? stream.limit(limit).toList()
+                : stream.toList();
 
         log.info("listCards | total={} page={} peer={} importance={} event={}",
                 total, page.size(), peerId, importance, eventType);
         return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "items", page,
                 "total", total,
-                "limit", limit,
+                "limit", limit > 0 ? limit : total,
                 "offset", offset
         )));
     }
@@ -72,16 +74,22 @@ public class CardController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayCards(@RequestParam Map<String, String> params) {
         String peerId = params.get("peer_id");
         String importance = params.get("importance");
-        List<CardNewsResponse> items = cardNewsService.getTodayCards(peerId, importance);
-        if (items.isEmpty()) {
-            log.info("todayCards | DB empty — fixture fallback");
+        int limit = parseInt(params.get("limit"), -1);
+        List<CardNewsResponse> all = cardNewsService.getTodayCards(peerId, importance);
+        if (all.isEmpty() && shouldUseFixtureFallback()) {
+            log.info("todayCards | DB empty on in-memory datasource — fixture fallback");
             return ResponseEntity.ok(ApiResponse.success(fixture.todayCards(params)));
         }
-        log.info("todayCards | count={} peer={} importance={}", items.size(), peerId, importance);
+        int total = all.size();
+        List<CardNewsResponse> items = all;
+        if (limit > 0) {
+            items = items.stream().limit(limit).toList();
+        }
+        log.info("todayCards | total={} page={} peer={} importance={}", total, items.size(), peerId, importance);
         return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "date", LocalDate.now().toString(),
                 "items", items,
-                "total", items.size()
+                "total", total
         )));
     }
 
@@ -91,9 +99,18 @@ public class CardController {
             CardNewsResponse card = cardNewsService.getById(id);
             return ResponseEntity.ok(ApiResponse.success(card));
         } catch (jakarta.persistence.EntityNotFoundException e) {
-            log.info("getCardById | DB miss — fixture fallback | id={}", id);
-            return ResponseEntity.ok(ApiResponse.success(fixture.card(id)));
+            if (shouldUseFixtureFallback()) {
+                log.info("getCardById | DB miss on in-memory datasource — fixture fallback | id={}", id);
+                return ResponseEntity.ok(ApiResponse.success(fixture.card(id)));
+            }
+            log.info("getCardById | DB miss | id={}", id);
+            return ResponseEntity.status(404)
+                    .body(ApiResponse.error("COMMON_NOT_FOUND", "카드뉴스를 찾을 수 없습니다."));
         }
+    }
+
+    private boolean shouldUseFixtureFallback() {
+        return datasourceUrl != null && datasourceUrl.startsWith("jdbc:h2:mem:");
     }
 
     private static int parseInt(String value, int defaultValue) {
