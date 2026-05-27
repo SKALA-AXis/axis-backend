@@ -160,7 +160,7 @@ public class UserNotificationService {
         @SuppressWarnings("unchecked")
         List<String> userKeywords = (List<String>) preferences.getOrDefault("keywords", List.of());
         List<String> systemKeywords = Boolean.TRUE.equals(preferences.get("importantEnabled"))
-                ? normalizeConfiguredKeywords(importantKeywords)
+                ? normalizedKeywordList(preferences.get("importantKeywords"))
                 : List.of();
         if (userKeywords.isEmpty() && systemKeywords.isEmpty()) {
             return;
@@ -263,6 +263,11 @@ public class UserNotificationService {
                 .replaceAll("\\s+", " ");
     }
 
+    private List<String> defaultImportantKeywords() {
+        List<String> configured = normalizeConfiguredKeywords(importantKeywords);
+        return configured.isEmpty() ? User.DEFAULT_IMPORTANT_KEYWORDS : configured;
+    }
+
     private List<String> normalizeConfiguredKeywords(List<String> values) {
         if (values == null) {
             return List.of();
@@ -317,8 +322,27 @@ public class UserNotificationService {
         Map<String, Object> normalized = new LinkedHashMap<>();
         normalized.put("enabled", booleanValue(source, "enabled", true));
         normalized.put("importantEnabled", booleanValue(source, "importantEnabled", true));
+        normalized.put("importantKeywords", normalizeImportantKeywords(source == null ? null : source.get("importantKeywords")));
         normalized.put("keywords", normalizeKeywords(source == null ? null : source.get("keywords")));
         return normalized;
+    }
+
+    private List<String> normalizeImportantKeywords(Object value) {
+        if (value == null) {
+            return defaultImportantKeywords();
+        }
+        return normalizeKeywords(value);
+    }
+
+    private List<String> normalizedKeywordList(Object value) {
+        if (value instanceof List<?> values) {
+            return values.stream()
+                    .map(item -> Objects.toString(item, "").trim().replaceAll("\\s+", " "))
+                    .filter(item -> !item.isBlank())
+                    .distinct()
+                    .toList();
+        }
+        return List.of();
     }
 
     private List<String> normalizeKeywords(Object value) {
