@@ -1,4 +1,4 @@
--- V38: allow users to customize important-signal keywords.
+-- V39: allow users to customize important-signal keywords.
 
 ALTER TABLE users
     ALTER COLUMN notification_preferences SET DEFAULT '{

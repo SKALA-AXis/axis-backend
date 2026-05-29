@@ -1,4 +1,4 @@
--- V39: storage for IssueIntegrationAgent output.
+-- V40: storage for IssueIntegrationAgent output.
 --
 -- The integrated issue payload is kept as JSONB for replay/debug compatibility,
 -- while the fields downstream agents query frequently are normalized into
