@@ -1,13 +1,13 @@
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;
+import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.RawArticle;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.repository.CardNewsRepository;
 import com.skala.axis.repository.RawArticleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -37,22 +37,17 @@ public class CardNewsService {
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
         LocalDateTime since = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).withNano(0);
-        List<CardNews> cards = cardNewsRepository.findTodayCards(since);
+        List<CardNews> cards = cardNewsRepository.findTodayCards(since, CardNewsStatus.ACTIVE);
         return mapCards(cards, peerId, importance, null);
     }
 
     public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
-        List<CardNews> cards = cardNewsRepository.findAll(
-                Sort.by(
-                        Sort.Order.desc("createdAt"),
-                        Sort.Order.desc("id")
-                )
-        );
+        List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
         return mapCards(cards, peerId, importance, eventType);
     }
 
     public CardNewsResponse getById(String id) {
-        CardNews card = cardNewsRepository.findById(id)
+        CardNews card = cardNewsRepository.findByIdAndStatus(id, CardNewsStatus.ACTIVE)
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
         return toResponse(card, rawArticleById(List.of(card)));
     }

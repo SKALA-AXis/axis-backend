@@ -141,7 +141,7 @@ public class GlobalSearchService {
                     END AS score
                 FROM card_news cn
                 LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
-                WHERE %s
+                WHERE cn.status = 'ACTIVE' AND %s
                 ORDER BY score DESC, cn.created_at DESC
                 LIMIT ?
                 """.formatted(parts.whereSql());
@@ -170,7 +170,7 @@ public class GlobalSearchService {
                 FROM card_news cn
                 LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
                 CROSS JOIN LATERAL unnest(COALESCE(cn.keywords, ARRAY[]::text[])) AS keyword
-                WHERE %s
+                WHERE cn.status = 'ACTIVE' AND %s
                 GROUP BY keyword
                 ORDER BY score DESC, hit_count DESC, item_date DESC
                 LIMIT ?

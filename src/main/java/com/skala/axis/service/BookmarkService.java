@@ -2,6 +2,7 @@ package com.skala.axis.service;
 
 import com.skala.axis.domain.User;
 import com.skala.axis.domain.UserCardNewsBookmark;
+import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.exception.AuthException;
 import com.skala.axis.repository.CardNewsRepository;
@@ -34,6 +35,7 @@ public class BookmarkService {
                 .toList();
         Map<String, CardNewsResponse> cardsById = cardNewsRepository.findAllById(bookmarkedIds)
                 .stream()
+                .filter(card -> card.getStatusOrDefault() == CardNewsStatus.ACTIVE)
                 .map(cardNewsService::toResponse)
                 .collect(Collectors.toMap(CardNewsResponse::getId, Function.identity(), (left, right) -> left));
         List<CardNewsResponse> items = bookmarkedIds.stream()
@@ -47,7 +49,7 @@ public class BookmarkService {
     public Map<String, Object> add(UUID userId, Map<String, Object> request) {
         User user = authService.requireUser(userId);
         String cardId = cardId(request);
-        if (!cardNewsRepository.existsById(cardId)) {
+        if (!cardNewsRepository.existsByIdAndStatus(cardId, CardNewsStatus.ACTIVE)) {
             throw new AuthException(HttpStatus.NOT_FOUND, "CARD_NEWS_NOT_FOUND", "존재하지 않는 카드뉴스입니다.");
         }
         if (!bookmarkRepository.existsByUserIdAndCardNewsId(userId, cardId)) {

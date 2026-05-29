@@ -1,6 +1,7 @@
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;
+import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.User;
 import com.skala.axis.domain.UserNotification;
 import com.skala.axis.repository.CardNewsRepository;
@@ -165,7 +166,7 @@ public class UserNotificationService {
             return;
         }
 
-        for (CardNews card : cardNewsRepository.findTop50ByOrderByCreatedAtDesc()) {
+        for (CardNews card : cardNewsRepository.findTop50ByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE)) {
             createNotificationIfMatched(user, card, userKeywords, systemKeywords);
         }
     }
