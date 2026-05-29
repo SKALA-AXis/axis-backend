@@ -11,6 +11,19 @@ ALTER TABLE card_news
 ALTER TABLE card_news
     ALTER COLUMN status SET DEFAULT 'ACTIVE';
 
+-- card_news.status 허용값 가드. 앱(enum) 밖에서 직접 INSERT 하는 axis-ai 경로까지
+-- 보호하기 위해 DB 레벨 CHECK 를 둔다. 선언적 스키마(db/schema.sql)와 정합.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_card_news_status'
+    ) THEN
+        ALTER TABLE card_news
+            ADD CONSTRAINT chk_card_news_status
+            CHECK (status IN ('ACTIVE', 'PENDING', 'DELETED'));
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_card_news_status_created_at
     ON card_news (status, created_at DESC);
 
