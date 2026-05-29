@@ -25,6 +25,8 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
+    public static final List<String> DEFAULT_IMPORTANT_KEYWORDS = List.of("수주", "계약", "실적", "투자");
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -147,6 +149,7 @@ public class User {
         Map<String, Object> preferences = new LinkedHashMap<>();
         preferences.put("enabled", true);
         preferences.put("importantEnabled", true);
+        preferences.put("importantKeywords", DEFAULT_IMPORTANT_KEYWORDS);
         preferences.put("keywords", List.of());
         return preferences;
     }
