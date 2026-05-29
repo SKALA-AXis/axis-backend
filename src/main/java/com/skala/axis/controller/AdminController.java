@@ -1,12 +1,17 @@
 package com.skala.axis.controller;
 
+import com.skala.axis.config.AuthPrincipal;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.auth.UserStatusUpdateRequest;
+import com.skala.axis.dto.admin.AdminCardNewsStatusUpdateRequest;
 import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.AdminAuditLogService;
+import com.skala.axis.service.AdminCardNewsService;
 import com.skala.axis.service.AdminUserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -27,6 +32,8 @@ import java.util.UUID;
 public class AdminController {
     private final ApiContractFixtureService fixture;
     private final AdminUserService adminUserService;
+    private final AdminCardNewsService adminCardNewsService;
+    private final AdminAuditLogService adminAuditLogService;
 
     @GetMapping("/users")
     public ResponseEntity<ApiResponse<Map<String, Object>>> adminListUsers() {
@@ -106,8 +113,25 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success(fixture.updatedResult()));
     }
 
+    @GetMapping("/cards")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> adminListCards(@RequestParam(required = false) String status) {
+        return ResponseEntity.ok(ApiResponse.success(adminCardNewsService.listCards(status)));
+    }
+
+    @PatchMapping("/cards/{cardId}/status")
+    public ResponseEntity<ApiResponse<Object>> adminUpdateCardStatus(
+            @PathVariable String cardId,
+            @RequestBody AdminCardNewsStatusUpdateRequest request,
+            Authentication authentication
+    ) {
+        AuthPrincipal principal = (AuthPrincipal) authentication.getPrincipal();
+        return ResponseEntity.ok(ApiResponse.success(
+                adminCardNewsService.updateStatus(cardId, request.status(), request.reason(), principal)
+        ));
+    }
+
     @GetMapping("/audit-logs")
     public ResponseEntity<ApiResponse<Map<String, Object>>> adminGetAuditLogs(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.auditLogs()));
+        return ResponseEntity.ok(ApiResponse.success(adminAuditLogService.listLogs()));
     }
 }

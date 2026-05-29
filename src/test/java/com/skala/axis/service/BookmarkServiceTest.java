@@ -1,6 +1,7 @@
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;
+import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.User;
 import com.skala.axis.domain.UserCardNewsBookmark;
 import com.skala.axis.dto.CardNewsResponse;
@@ -50,6 +51,8 @@ class BookmarkServiceTest {
                 .thenReturn(List.of(secondBookmark, firstBookmark));
         when(cardNewsRepository.findAllById(List.of("CARD-2", "CARD-1")))
                 .thenReturn(List.of(firstCard, secondCard));
+        when(firstCard.getStatusOrDefault()).thenReturn(CardNewsStatus.ACTIVE);
+        when(secondCard.getStatusOrDefault()).thenReturn(CardNewsStatus.ACTIVE);
         when(cardNewsService.toResponse(firstCard))
                 .thenReturn(CardNewsResponse.builder().id("CARD-1").title("첫 번째 카드").build());
         when(cardNewsService.toResponse(secondCard))
@@ -69,7 +72,7 @@ class BookmarkServiceTest {
         User user = User.pending("owner@sk.com", "hash");
         BookmarkService service = bookmarkService();
         when(authService.requireUser(userId)).thenReturn(user);
-        when(cardNewsRepository.existsById("CARD-1")).thenReturn(true);
+        when(cardNewsRepository.existsByIdAndStatus("CARD-1", CardNewsStatus.ACTIVE)).thenReturn(true);
         when(bookmarkRepository.existsByUserIdAndCardNewsId(userId, "CARD-1")).thenReturn(false);
 
         Map<String, Object> result = service.add(userId, Map.of("card_id", "CARD-1"));
@@ -86,7 +89,7 @@ class BookmarkServiceTest {
         User user = User.pending("owner@sk.com", "hash");
         BookmarkService service = bookmarkService();
         when(authService.requireUser(userId)).thenReturn(user);
-        when(cardNewsRepository.existsById("MISSING")).thenReturn(false);
+        when(cardNewsRepository.existsByIdAndStatus("MISSING", CardNewsStatus.ACTIVE)).thenReturn(false);
 
         assertThatThrownBy(() -> service.add(userId, Map.of("card_id", "MISSING")))
                 .isInstanceOfSatisfying(AuthException.class, exception -> {

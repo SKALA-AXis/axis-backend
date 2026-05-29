@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -94,6 +95,18 @@ public class CardNews {
     @Column(name = "primary_raw_article_id")
     private Long primaryRawArticleId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private CardNewsStatus status;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    public CardNewsStatus getStatusOrDefault() {
+        return status == null ? CardNewsStatus.ACTIVE : status;
+    }
+
+    public void updateStatus(CardNewsStatus status) {
+        this.status = status == null ? CardNewsStatus.ACTIVE : status;
+    }
 }

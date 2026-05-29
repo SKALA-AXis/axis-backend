@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -23,6 +24,18 @@ public class AdminUserService {
     public Map<String, Object> listUsers() {
         List<UserProfileResponse> items = userRepository.findAll()
                 .stream()
+                .sorted((left, right) -> {
+                    if (left.getLastLoginAt() == null && right.getLastLoginAt() == null) {
+                        return left.getEmail().compareToIgnoreCase(right.getEmail());
+                    }
+                    if (left.getLastLoginAt() == null) {
+                        return 1;
+                    }
+                    if (right.getLastLoginAt() == null) {
+                        return -1;
+                    }
+                    return right.getLastLoginAt().compareTo(left.getLastLoginAt());
+                })
                 .map(authService::toProfile)
                 .toList();
         return Map.of("items", items, "total", items.size());
@@ -38,7 +51,19 @@ public class AdminUserService {
     public UserProfileResponse changeStatus(UUID userId, String status) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("user not found"));
-        user.changeStatus(UserStatus.valueOf(status));
+        user.changeStatus(parseStatus(status));
         return authService.toProfile(user);
+    }
+
+    private UserStatus parseStatus(String status) {
+        if (status == null || status.isBlank()) {
+            throw new IllegalArgumentException("status is required");
+        }
+
+        try {
+            return UserStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("unsupported user status: " + status);
+        }
     }
 }
