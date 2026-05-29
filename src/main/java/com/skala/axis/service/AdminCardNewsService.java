@@ -59,6 +59,11 @@ public class AdminCardNewsService {
         if (nextStatus == CardNewsStatus.DELETED && (reason == null || reason.isBlank())) {
             throw new AuthException(HttpStatus.BAD_REQUEST, "CARD_DELETE_REASON_REQUIRED", "삭제 사유를 입력해주세요.");
         }
+        if (currentStatus == CardNewsStatus.DELETED
+                && nextStatus == CardNewsStatus.ACTIVE
+                && (reason == null || reason.isBlank())) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "CARD_RESTORE_REASON_REQUIRED", "복구 사유를 입력해주세요.");
+        }
 
         card.updateStatus(nextStatus);
         CardNews saved = cardNewsRepository.save(card);
@@ -131,6 +136,7 @@ public class AdminCardNewsService {
         item.put("deletion_reason", deleteLog == null ? null : deleteLog.getReason());
         item.put("restored_at", restoreLog == null ? null : restoreLog.getCreatedAt());
         item.put("restored_by", restoreLog == null ? null : restoreLog.getActorEmail());
+        item.put("restored_reason", restoreLog == null ? null : restoreLog.getReason());
         return item;
     }
 
