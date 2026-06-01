@@ -51,7 +51,7 @@ public class CardNews {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "keyword_categories", columnDefinition = "jsonb")
-    private List<Object> keywordCategories;
+    private Object keywordCategories;
 
     @Column(name = "keywords")
     private String[] keywords;
