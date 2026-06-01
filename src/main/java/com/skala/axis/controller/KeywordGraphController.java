@@ -1,7 +1,7 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.KeywordGraphService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,11 +16,11 @@ import java.util.Map;
 @RequestMapping("/api/keyword-graph")
 @RequiredArgsConstructor
 public class KeywordGraphController {
-    private final ApiContractFixtureService fixture;
+    private final KeywordGraphService keywordGraphService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> getKeywordGraph(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.keywordGraph()));
+        return ResponseEntity.ok(ApiResponse.success(keywordGraphService.keywordGraph()));
     }
 
     @GetMapping("/{nodeId}/cards")
@@ -28,6 +28,6 @@ public class KeywordGraphController {
             @PathVariable String nodeId,
             @RequestParam Map<String, String> params
     ) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.keywordGraphCards(nodeId, params)));
+        return ResponseEntity.ok(ApiResponse.success(keywordGraphService.keywordGraphCards(nodeId, params)));
     }
 }
