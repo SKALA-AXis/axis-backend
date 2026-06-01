@@ -150,7 +150,7 @@ public class CardNewsService {
                 .trustScore(trustScore)
                 .primaryKeywordCategory(stringValue(card.getPrimaryKeywordCategory(), sector))
                 .keywords(keywords(card.getKeywords()))
-                .keywordCategories(card.getKeywordCategories() == null ? List.of() : card.getKeywordCategories())
+                .keywordCategories(keywordCategories(card.getKeywordCategories()))
                 .keywordFrequency(card.getKeywordFrequency() == null ? Map.of() : card.getKeywordFrequency())
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
@@ -229,6 +229,19 @@ public class CardNewsService {
                 .filter(item -> !item.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private List<Object> keywordCategories(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            return new ArrayList<>(list);
+        }
+        if (value instanceof Map<?, ?> map) {
+            return new ArrayList<>(map.values());
+        }
+        return List.of(value);
     }
 
     private List<Map<String, Object>> effectiveSources(CardNews card) {
