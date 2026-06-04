@@ -44,7 +44,7 @@ public class PeerOverviewTableService {
         return mapOf(
                 "periodLabel", period,
                 "coverageLabel", period == null ? "공통 분기 미확보" : "SK AX · 삼성 SDS · LG CNS · 현대 오토에버 · 포스코 DX 공통 분기 기준",
-                "financialSourceLabel", "raw_article_financial_metrics 기준 (SK AX는 IR 우선, 타사는 DART 우선, 영업이익률은 DB 원값 우선)",
+                "financialSourceLabel", "raw_article_financial_metrics IR 기준 (영업이익률은 IR 원값 우선, 없으면 매출·영업이익으로 계산)",
                 "supplementalSourceLabel", "peer_companies 보조값 사용, 없으면 -",
                 "rows", rows
         );
@@ -59,7 +59,7 @@ public class PeerOverviewTableService {
                 "coverageLabel", mixedPeriods
                         ? "매출 + 매출 YoY 공통 분기가 없어 peer별 최신 가용 분기 기준으로 표시"
                         : "SK AX · 삼성 SDS · LG CNS · 현대 오토에버 · 포스코 DX 공통 분기 기준",
-                "financialSourceLabel", "raw_article_financial_metrics 기준 (company_total / revenue_total / revenue_total_yoy, SK AX는 IR 우선, 타사는 DART 우선)",
+                "financialSourceLabel", "raw_article_financial_metrics IR 기준 (company_total / revenue_total / revenue_total_yoy, YoY 없으면 전년 동분기 매출로 계산)",
                 "xAxisLabel", "사업 규모 (매출, 억원)",
                 "yAxisLabel", "매출 성장률 (YoY, %)",
                 "referenceRevenueKrwBn", 30000,
@@ -91,21 +91,13 @@ public class PeerOverviewTableService {
                                     ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
                                 END
                             ORDER BY
-                                CASE
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
-                                    WHEN source_type = 'dart' THEN 1
-                                    WHEN source_type = 'ir' THEN 2
-                                    WHEN source_type = 'securities_report' THEN 3
-                                    ELSE 99
-                                END,
                                 confidence DESC NULLS LAST,
                                 updated_at DESC NULLS LAST,
                                 id DESC
                         ) AS row_rank
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
-                      AND source_type IN ('dart', 'ir', 'securities_report')
+                      AND source_type = 'ir'
                       AND peer_id IN (?, ?, ?, ?, ?)
                       AND period IS NOT NULL
                 ),
@@ -175,7 +167,7 @@ public class PeerOverviewTableService {
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
                       AND business_area = 'company_total'
-                      AND source_type IN ('dart', 'ir', 'securities_report')
+                      AND source_type = 'ir'
                       AND peer_id IN (?, ?, ?, ?, ?)
                       AND period ~ '^[0-9]{4}Q[1-4]$'
                       AND metric_name IN ('revenue_total', 'revenue_total_yoy')
@@ -194,14 +186,6 @@ public class PeerOverviewTableService {
                                     WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
                                     ELSE 0
                                 END,
-                                CASE
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
-                                    WHEN source_type = 'dart' THEN 1
-                                    WHEN source_type = 'ir' THEN 2
-                                    WHEN source_type = 'securities_report' THEN 3
-                                    ELSE 99
-                                END,
                                 confidence DESC NULLS LAST,
                                 updated_at DESC NULLS LAST,
                                 id DESC
@@ -213,7 +197,7 @@ public class PeerOverviewTableService {
                     FROM metric_rows
                     WHERE row_rank = 1
                 ),
-                period_coverage AS (
+                revenue_periods AS (
                     SELECT
                         peer_id,
                         period,
@@ -221,6 +205,31 @@ public class PeerOverviewTableService {
                         MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS revenue_total_yoy
                     FROM latest_metric_rows
                     GROUP BY peer_id, period
+                ),
+                period_coverage AS (
+                    SELECT
+                        current_rows.peer_id,
+                        current_rows.period,
+                        current_rows.revenue_total_krwbn,
+                        COALESCE(
+                            current_rows.revenue_total_yoy,
+                            CASE
+                                WHEN previous_rows.revenue_total_krwbn IS NOT NULL
+                                 AND previous_rows.revenue_total_krwbn <> 0
+                                 AND current_rows.revenue_total_krwbn IS NOT NULL
+                                THEN ((current_rows.revenue_total_krwbn - previous_rows.revenue_total_krwbn)
+                                    / previous_rows.revenue_total_krwbn * 100)
+                                ELSE NULL
+                            END
+                        ) AS revenue_total_yoy
+                    FROM revenue_periods current_rows
+                    LEFT JOIN revenue_periods previous_rows
+                      ON previous_rows.peer_id = current_rows.peer_id
+                     AND previous_rows.period = (
+                         (COALESCE(NULLIF(SUBSTRING(current_rows.period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text
+                         || 'Q'
+                         || COALESCE(NULLIF(SUBSTRING(current_rows.period FROM 'Q([1-4])$'), ''), '')
+                     )
                 )
                 SELECT period
                 FROM period_coverage
@@ -316,32 +325,13 @@ public class PeerOverviewTableService {
                                     ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
                                 END
                             ORDER BY
-                                CASE
-                                    WHEN metric_name IN ('operating_margin') OR metric_label = '영업이익률' THEN
-                                        CASE
-                                            WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
-                                            WHEN source_type = 'dart' THEN 1
-                                            WHEN source_type = 'ir' THEN 2
-                                            WHEN source_type = 'securities_report' THEN 3
-                                            ELSE 99
-                                        END
-                                    ELSE
-                                        CASE
-                                            WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
-                                            WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
-                                            WHEN source_type = 'dart' THEN 1
-                                            WHEN source_type = 'ir' THEN 2
-                                            WHEN source_type = 'securities_report' THEN 3
-                                            ELSE 99
-                                        END
-                                END,
                                 confidence DESC NULLS LAST,
                                 updated_at DESC NULLS LAST,
                                 id DESC
                         ) AS row_rank
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
-                      AND source_type IN ('dart', 'ir', 'securities_report')
+                      AND source_type = 'ir'
                       AND period IS NOT NULL
                       AND peer_id IN (?, ?, ?, ?, ?)
                 ),
@@ -367,6 +357,14 @@ public class PeerOverviewTableService {
                     SELECT
                         peer_id,
                         period,
+                        CASE
+                            WHEN COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) = 1 THEN
+                                (COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text || 'Q4'
+                            ELSE
+                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), ''), '')
+                                    || 'Q'
+                                    || (COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) - 1)::text
+                        END AS previous_period,
                         revenue_total_krwbn,
                         operating_profit_krwbn,
                         CASE
@@ -383,31 +381,19 @@ public class PeerOverviewTableService {
                 ),
                 period_series AS (
                     SELECT
-                        peer_id,
-                        period,
-                        revenue_total_krwbn,
-                        operating_profit_krwbn,
-                        operating_margin_pct,
-                        raw_article_id,
-                        LAG(revenue_total_krwbn) OVER (
-                            PARTITION BY peer_id
-                            ORDER BY
-                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0),
-                                COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)
-                        ) AS prev_revenue_total_krwbn,
-                        LAG(operating_profit_krwbn) OVER (
-                            PARTITION BY peer_id
-                            ORDER BY
-                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0),
-                                COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)
-                        ) AS prev_operating_profit_krwbn,
-                        LAG(operating_margin_pct) OVER (
-                            PARTITION BY peer_id
-                            ORDER BY
-                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0),
-                                COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)
-                        ) AS prev_operating_margin_pct
-                    FROM normalized_periods
+                        current_period.peer_id,
+                        current_period.period,
+                        current_period.revenue_total_krwbn,
+                        current_period.operating_profit_krwbn,
+                        current_period.operating_margin_pct,
+                        current_period.raw_article_id,
+                        previous_period.revenue_total_krwbn AS prev_revenue_total_krwbn,
+                        previous_period.operating_profit_krwbn AS prev_operating_profit_krwbn,
+                        previous_period.operating_margin_pct AS prev_operating_margin_pct
+                    FROM normalized_periods current_period
+                    LEFT JOIN normalized_periods previous_period
+                      ON previous_period.peer_id = current_period.peer_id
+                     AND previous_period.period = current_period.previous_period
                 )
                 SELECT
                     peer_id AS id,
@@ -416,7 +402,7 @@ public class PeerOverviewTableService {
                         WHEN prev_revenue_total_krwbn IS NOT NULL
                          AND prev_revenue_total_krwbn <> 0
                          AND revenue_total_krwbn IS NOT NULL
-                        THEN ROUND(((revenue_total_krwbn - prev_revenue_total_krwbn) / prev_revenue_total_krwbn * 100)::numeric, 2)
+                        THEN ROUND(((revenue_total_krwbn - prev_revenue_total_krwbn) / ABS(prev_revenue_total_krwbn) * 100)::numeric, 2)
                         ELSE NULL
                     END AS revenue_qoq_pct,
                     operating_profit_krwbn,
@@ -424,7 +410,7 @@ public class PeerOverviewTableService {
                         WHEN prev_operating_profit_krwbn IS NOT NULL
                          AND prev_operating_profit_krwbn <> 0
                          AND operating_profit_krwbn IS NOT NULL
-                        THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / prev_operating_profit_krwbn * 100)::numeric, 2)
+                        THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / ABS(prev_operating_profit_krwbn) * 100)::numeric, 2)
                         ELSE NULL
                     END AS operating_profit_qoq_pct,
                     operating_margin_pct,
@@ -490,9 +476,9 @@ public class PeerOverviewTableService {
                     FROM raw_article_financial_metrics rfm
                     WHERE rfm.metric_scope = 'company_total'
                       AND rfm.business_area = 'company_total'
-                      AND rfm.source_type IN ('dart', 'ir', 'securities_report')
-                      AND rfm.period = ?
+                      AND rfm.source_type = 'ir'
                       AND rfm.peer_id IN (?, ?, ?, ?, ?)
+                      AND rfm.period ~ '^[0-9]{4}Q[1-4]$'
                       AND rfm.metric_name IN ('revenue_total', 'revenue_total_yoy')
                 ),
                 metric_rows AS (
@@ -512,14 +498,6 @@ public class PeerOverviewTableService {
                                     WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
                                     ELSE 0
                                 END,
-                                CASE
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
-                                    WHEN source_type = 'dart' THEN 1
-                                    WHEN source_type = 'ir' THEN 2
-                                    WHEN source_type = 'securities_report' THEN 3
-                                    ELSE 99
-                                END,
                                 confidence DESC NULLS LAST,
                                 updated_at DESC NULLS LAST,
                                 id DESC
@@ -530,20 +508,74 @@ public class PeerOverviewTableService {
                     SELECT *
                     FROM metric_rows
                     WHERE row_rank = 1
+                ),
+                revenue_periods AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) AS revenue_krwbn,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END) AS revenue_confidence,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS explicit_yoy_pct,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS explicit_yoy_source_type,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END) AS explicit_yoy_confidence,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS explicit_yoy_article_id
+                    FROM latest_metric_rows
+                    GROUP BY peer_id, period
+                ),
+                positioning_rows AS (
+                    SELECT
+                        current_rows.peer_id,
+                        current_rows.period,
+                        current_rows.revenue_krwbn,
+                        COALESCE(
+                            current_rows.explicit_yoy_pct,
+                            CASE
+                                WHEN previous_rows.revenue_krwbn IS NOT NULL
+                                 AND previous_rows.revenue_krwbn <> 0
+                                 AND current_rows.revenue_krwbn IS NOT NULL
+                                THEN ((current_rows.revenue_krwbn - previous_rows.revenue_krwbn)
+                                    / previous_rows.revenue_krwbn * 100)
+                                ELSE NULL
+                            END
+                        ) AS revenue_yoy_pct,
+                        current_rows.revenue_source_type,
+                        CASE
+                            WHEN current_rows.explicit_yoy_pct IS NOT NULL THEN current_rows.explicit_yoy_source_type
+                            ELSE 'calculated'
+                        END AS revenue_yoy_source_type,
+                        current_rows.revenue_confidence,
+                        COALESCE(
+                            current_rows.explicit_yoy_confidence,
+                            LEAST(current_rows.revenue_confidence, previous_rows.revenue_confidence)
+                        ) AS revenue_yoy_confidence,
+                        current_rows.revenue_article_id,
+                        COALESCE(current_rows.explicit_yoy_article_id, previous_rows.revenue_article_id) AS revenue_yoy_article_id
+                    FROM revenue_periods current_rows
+                    LEFT JOIN revenue_periods previous_rows
+                      ON previous_rows.peer_id = current_rows.peer_id
+                     AND previous_rows.period = (
+                         (COALESCE(NULLIF(SUBSTRING(current_rows.period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text
+                         || 'Q'
+                         || COALESCE(NULLIF(SUBSTRING(current_rows.period FROM 'Q([1-4])$'), ''), '')
+                     )
                 )
                 SELECT
                     peer_id AS id,
                     period,
-                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END)::numeric, 2) AS revenue_krwbn,
-                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END)::numeric, 2) AS revenue_yoy_pct,
-                    MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
-                    MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS revenue_yoy_source_type,
-                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END)::numeric, 3) AS revenue_confidence,
-                    ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END)::numeric, 3) AS revenue_yoy_confidence,
-                    MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
-                    MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS revenue_yoy_article_id
-                FROM latest_metric_rows
-                GROUP BY peer_id, period
+                    ROUND(revenue_krwbn::numeric, 2) AS revenue_krwbn,
+                    ROUND(revenue_yoy_pct::numeric, 2) AS revenue_yoy_pct,
+                    revenue_source_type,
+                    revenue_yoy_source_type,
+                    ROUND(revenue_confidence::numeric, 3) AS revenue_confidence,
+                    ROUND(revenue_yoy_confidence::numeric, 3) AS revenue_yoy_confidence,
+                    revenue_article_id,
+                    revenue_yoy_article_id
+                FROM positioning_rows
+                WHERE period = ?
+                  AND revenue_krwbn IS NOT NULL
+                  AND revenue_yoy_pct IS NOT NULL
                 ORDER BY CASE peer_id
                     WHEN 'sk_ax' THEN 0
                     WHEN 'samsung_sds' THEN 1
@@ -562,8 +594,8 @@ public class PeerOverviewTableService {
         return jdbcTemplate.query(
                 sql,
                 ps -> {
-                    ps.setString(1, period);
-                    bindFinancialPeerIds(ps, 2);
+                    bindFinancialPeerIds(ps, 1);
+                    ps.setString(FINANCIAL_PEER_IDS.size() + 1, period);
                 },
                 (rs, rowNum) -> mapPositioningPoint(rs, displayPeerById)
         );
@@ -598,7 +630,7 @@ public class PeerOverviewTableService {
                     FROM raw_article_financial_metrics rfm
                     WHERE rfm.metric_scope = 'company_total'
                       AND rfm.business_area = 'company_total'
-                      AND rfm.source_type IN ('dart', 'ir', 'securities_report')
+                      AND rfm.source_type = 'ir'
                       AND rfm.peer_id IN (?, ?, ?, ?, ?)
                       AND rfm.period ~ '^[0-9]{4}Q[1-4]$'
                       AND rfm.metric_name IN ('revenue_total', 'revenue_total_yoy')
@@ -620,14 +652,6 @@ public class PeerOverviewTableService {
                                     WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
                                     ELSE 0
                                 END,
-                                CASE
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'ir' THEN 1
-                                    WHEN peer_id = 'sk_ax' AND source_type = 'securities_report' THEN 2
-                                    WHEN source_type = 'dart' THEN 1
-                                    WHEN source_type = 'ir' THEN 2
-                                    WHEN source_type = 'securities_report' THEN 3
-                                    ELSE 99
-                                END,
                                 confidence DESC NULLS LAST,
                                 updated_at DESC NULLS LAST,
                                 id DESC
@@ -639,22 +663,58 @@ public class PeerOverviewTableService {
                     FROM metric_rows
                     WHERE row_rank = 1
                 ),
-                pivoted AS (
+                revenue_periods AS (
                     SELECT
                         peer_id,
                         period,
-                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END)::numeric, 2) AS revenue_krwbn,
-                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END)::numeric, 2) AS revenue_yoy_pct,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) AS revenue_krwbn,
                         MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS revenue_yoy_source_type,
-                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END)::numeric, 3) AS revenue_confidence,
-                        ROUND(MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END)::numeric, 3) AS revenue_yoy_confidence,
+                        MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END) AS revenue_confidence,
                         MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS revenue_yoy_article_id
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS explicit_yoy_pct,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS explicit_yoy_source_type,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END) AS explicit_yoy_confidence,
+                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS explicit_yoy_article_id
                     FROM latest_metric_rows
                     GROUP BY peer_id, period
-                    HAVING MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) IS NOT NULL
-                       AND MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) IS NOT NULL
+                ),
+                positioning_rows AS (
+                    SELECT
+                        current_rows.peer_id,
+                        current_rows.period,
+                        ROUND(current_rows.revenue_krwbn::numeric, 2) AS revenue_krwbn,
+                        ROUND(COALESCE(
+                            current_rows.explicit_yoy_pct,
+                            CASE
+                                WHEN previous_rows.revenue_krwbn IS NOT NULL
+                                 AND previous_rows.revenue_krwbn <> 0
+                                 AND current_rows.revenue_krwbn IS NOT NULL
+                                THEN ((current_rows.revenue_krwbn - previous_rows.revenue_krwbn)
+                                    / previous_rows.revenue_krwbn * 100)
+                                ELSE NULL
+                            END
+                        )::numeric, 2) AS revenue_yoy_pct,
+                        current_rows.revenue_source_type,
+                        CASE
+                            WHEN current_rows.explicit_yoy_pct IS NOT NULL THEN current_rows.explicit_yoy_source_type
+                            ELSE 'calculated'
+                        END AS revenue_yoy_source_type,
+                        ROUND(current_rows.revenue_confidence::numeric, 3) AS revenue_confidence,
+                        ROUND(COALESCE(
+                            current_rows.explicit_yoy_confidence,
+                            LEAST(current_rows.revenue_confidence, previous_rows.revenue_confidence)
+                        )::numeric, 3) AS revenue_yoy_confidence,
+                        current_rows.revenue_article_id,
+                        COALESCE(current_rows.explicit_yoy_article_id, previous_rows.revenue_article_id) AS revenue_yoy_article_id
+                    FROM revenue_periods current_rows
+                    LEFT JOIN revenue_periods previous_rows
+                      ON previous_rows.peer_id = current_rows.peer_id
+                     AND previous_rows.period = (
+                         (COALESCE(NULLIF(SUBSTRING(current_rows.period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text
+                         || 'Q'
+                         || COALESCE(NULLIF(SUBSTRING(current_rows.period FROM 'Q([1-4])$'), ''), '')
+                     )
+                    WHERE current_rows.revenue_krwbn IS NOT NULL
                 ),
                 ranked_periods AS (
                     SELECT
@@ -666,7 +726,8 @@ public class PeerOverviewTableService {
                                 COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) DESC,
                                 period DESC
                         ) AS period_rank
-                    FROM pivoted
+                    FROM positioning_rows
+                    WHERE revenue_yoy_pct IS NOT NULL
                 )
                 SELECT
                     peer_id AS id,
