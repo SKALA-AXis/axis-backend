@@ -25,7 +25,12 @@ public class DashboardController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardSummary(@RequestParam Map<String, String> params) {
         Map<String, Object> dashboardSummary = fixture.frontendDashboard();
         dashboardStockChartService.applyDailyRateChart(dashboardSummary);
-        dashboardKeywordTrendChartService.applyKeywordTrendChart(dashboardSummary);
+        dashboardKeywordTrendChartService.removeKeywordTrendChart(dashboardSummary);
         return ResponseEntity.ok(ApiResponse.success(dashboardSummary));
+    }
+
+    @GetMapping("/keyword-trends")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardKeywordTrends() {
+        return ResponseEntity.ok(ApiResponse.success(dashboardKeywordTrendChartService.getCachedKeywordTrendChart()));
     }
 }

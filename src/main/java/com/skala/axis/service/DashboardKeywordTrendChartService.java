@@ -1,16 +1,21 @@
 package com.skala.axis.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -22,6 +27,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DashboardKeywordTrendChartService {
     private static final int CHART_DAYS = 7;
     private static final int MAX_GROUPS = 4;
@@ -153,6 +159,29 @@ public class DashboardKeywordTrendChartService {
     @Value("${axis.dashboard.keyword-spike-delta-threshold:40}")
     private BigDecimal spikeDeltaThreshold;
 
+    @Value("${axis.dashboard.keyword-trends-cache-ttl-seconds:900}")
+    private long cacheTtlSeconds;
+
+    private volatile CachedKeywordTrendPayload cachedPayload = new CachedKeywordTrendPayload(KeywordTrendPayload.empty(), Instant.EPOCH);
+
+    @PostConstruct
+    public void warmKeywordTrendChartCacheOnStartup() {
+        refreshKeywordTrendChartCache();
+    }
+
+    @Scheduled(fixedDelayString = "${axis.dashboard.keyword-trends-refresh-ms:900000}", initialDelayString = "${axis.dashboard.keyword-trends-initial-delay-ms:60000}")
+    public void refreshKeywordTrendChartCache() {
+        cachedPayload = new CachedKeywordTrendPayload(loadKeywordTrendChart(CHART_DAYS), Instant.now());
+        log.debug("Dashboard keyword trend chart cache refreshed | points={} series={}",
+                cachedPayload.payload().searchPoints().size(),
+                cachedPayload.payload().series().size());
+    }
+
+    public Map<String, Object> getCachedKeywordTrendChart() {
+        CachedKeywordTrendPayload current = cachedPayload;
+        return current.payload().toResponseMap(current.cachedAt(), isExpired(current.cachedAt()));
+    }
+
     public Map<String, Object> applyKeywordTrendChart(Map<String, Object> dashboardSummary) {
         try {
             KeywordTrendPayload livePayload = loadKeywordTrendChart(CHART_DAYS);
@@ -173,6 +202,20 @@ public class DashboardKeywordTrendChartService {
         dashboardSummary.put("keywordSeries", List.of());
         dashboardSummary.put("keywordInsights", List.of());
         return dashboardSummary;
+    }
+
+    public Map<String, Object> removeKeywordTrendChart(Map<String, Object> dashboardSummary) {
+        dashboardSummary.put("keywordSearchPoints", List.of());
+        dashboardSummary.put("keywordSeries", List.of());
+        dashboardSummary.put("keywordInsights", List.of());
+        return dashboardSummary;
+    }
+
+    private boolean isExpired(Instant cachedAt) {
+        if (cachedAt == null || Instant.EPOCH.equals(cachedAt)) {
+            return true;
+        }
+        return Duration.between(cachedAt, Instant.now()).getSeconds() >= cacheTtlSeconds;
     }
 
     private KeywordTrendPayload loadKeywordTrendChart(int chartDays) {
@@ -513,6 +556,31 @@ public class DashboardKeywordTrendChartService {
     ) {
         private static KeywordTrendPayload empty() {
             return new KeywordTrendPayload(List.of(), List.of(), List.of(), null);
+        }
+
+        private Map<String, Object> toResponseMap(Instant cachedAt, boolean stale) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("keywordSearchPoints", searchPoints);
+            response.put("keywordSeries", series);
+            response.put("keywordInsights", insights);
+            response.put("sourceName", sourceName);
+            response.put("cachedAt", cachedAt == null || Instant.EPOCH.equals(cachedAt) ? null : cachedAt.toString());
+            response.put("stale", stale);
+            return response;
+        }
+    }
+
+    private record CachedKeywordTrendPayload(
+            KeywordTrendPayload payload,
+            Instant cachedAt
+    ) {
+        private CachedKeywordTrendPayload {
+            if (payload == null) {
+                payload = KeywordTrendPayload.empty();
+            }
+            if (cachedAt == null) {
+                cachedAt = Instant.EPOCH;
+            }
         }
     }
 }
