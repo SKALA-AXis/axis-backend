@@ -118,14 +118,14 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<Object>> login(
-            @RequestBody(required = false) Map<String, Object> request,
+            @RequestBody(required = false) LoginRequest request,
             HttpServletRequest servletRequest,
             HttpServletResponse servletResponse
     ) {
+        LoginRequest loginRequest = normalizeLoginRequest(request);
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.login(request)));
+            return ResponseEntity.ok(ApiResponse.success(fixture.login(loginFixtureRequest(loginRequest))));
         }
-        LoginRequest loginRequest = toLoginRequest(request);
         AuthService.AuthLoginResult result = authService.login(loginRequest, RequestMetadata.from(servletRequest));
         addRefreshCookie(servletResponse, result.refreshToken(), Boolean.TRUE.equals(loginRequest.rememberMe()));
         return ResponseEntity.ok(ApiResponse.success(result.response()));
@@ -219,15 +219,22 @@ public class AuthController {
         );
     }
 
-    private LoginRequest toLoginRequest(Map<String, Object> request) {
-        Object remember = request == null ? null : request.get("remember_me");
-        if (remember == null && request != null) {
-            remember = request.get("rememberMe");
+    private LoginRequest normalizeLoginRequest(LoginRequest request) {
+        if (request == null) {
+            return new LoginRequest(null, null, Boolean.FALSE);
         }
         return new LoginRequest(
-                stringValue(request, "email"),
-                stringValue(request, "password"),
-                remember instanceof Boolean value ? value : Boolean.FALSE
+                request.email(),
+                request.password(),
+                Boolean.TRUE.equals(request.rememberMe())
+        );
+    }
+
+    private Map<String, Object> loginFixtureRequest(LoginRequest request) {
+        return Map.of(
+                "email", request.email() == null ? "" : request.email(),
+                "password", request.password() == null ? "" : request.password(),
+                "remember_me", Boolean.TRUE.equals(request.rememberMe())
         );
     }
 

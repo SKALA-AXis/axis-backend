@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
@@ -20,6 +21,41 @@ import java.util.concurrent.TimeoutException;
 @RequiredArgsConstructor
 public class AiClientService {
     private final WebClient aiWebClient;
+    private static final org.springframework.core.ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
+            new org.springframework.core.ParameterizedTypeReference<>() {};
+
+    public Mono<Map<String, Object>> getRaw(String uri, Duration timeout) {
+        return aiWebClient.get()
+                .uri(uri)
+                .retrieve()
+                .bodyToMono(MAP_TYPE)
+                .timeout(timeout)
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("axis-ai 호출 타임아웃: " + uri))
+                .onErrorResume(e -> rawAiError(uri, e));
+    }
+
+    public Mono<Map<String, Object>> postRaw(String uri, Object request, Duration timeout) {
+        Object body = request == null ? Map.of() : request;
+        return aiWebClient.post()
+                .uri(uri)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(MAP_TYPE)
+                .timeout(timeout)
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("axis-ai 호출 타임아웃: " + uri))
+                .onErrorResume(e -> rawAiError(uri, e));
+    }
+
+    private Mono<Map<String, Object>> rawAiError(String uri, Throwable e) {
+        String message = e.getMessage();
+        if (e instanceof WebClientResponseException responseException) {
+            String responseBody = responseException.getResponseBodyAsString();
+            message = "axis-ai " + responseException.getStatusCode() + " " + uri
+                    + (responseBody.isBlank() ? "" : " | " + responseBody);
+        }
+        log.warn("axis-ai raw 호출 실패 | uri={} error={}", uri, message);
+        return Mono.error(new AiServerException(message));
+    }
 
     public Mono<SearchResponse> search(SearchRequest request) {
         return aiWebClient.post()

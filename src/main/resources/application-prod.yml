@@ -17,6 +17,8 @@ logging:
     com.skala.axis.config.SchedulerConfig: INFO
 
 axis:
+  agent-test:
+    enabled: false
   auth:
     enforce: ${AXIS_AUTH_ENFORCE:true}
     email-verification-delivery: ${AXIS_AUTH_EMAIL_VERIFICATION_DELIVERY:ses}

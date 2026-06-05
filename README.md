@@ -98,6 +98,28 @@ cd ../axis-backend
 | `http://localhost:8080/swagger-ui` | Swagger UI |
 | `http://localhost:8080/api-docs` | SpringDoc JSON |
 
+### 에이전트 진단용 Swagger API
+
+`local` profile 에서는 `axis.agent-test.enabled=true`가 기본값이라 Swagger UI의
+`Agent Diagnostics` 태그에서 에이전트 동작을 직접 확인할 수 있습니다.
+`prod` profile 에서는 항상 비활성입니다.
+
+| URL | 용도 |
+|---|---|
+| `GET /api/dev/agents/health` | backend → axis-ai 연결 상태 확인 |
+| `POST /api/dev/agents/run` | `agent_type`에 따라 axis-ai 내부 endpoint 직접 호출 |
+| `POST /api/dev/agents/{agentType}/run` | path로 agent type 지정 후 직접 호출 |
+| `GET /api/dev/agents/results/types` | 조회 가능한 에이전트 결과 저장소 목록 |
+| `GET /api/dev/agents/results?type=all` | 최근 mixer/insight/global/briefing/integrated issue 결과 조회 |
+| `GET /api/dev/agents/results/{type}/{id}` | 저장된 결과 row 상세 조회 |
+
+지원 `agent_type`: `insight`, `mixer`, `global_trends`, `briefing`,
+`link_verify`, `pipeline`, `peer`, `chat`, `weak_signal`.
+
+요청 body에 `payload`를 넣으면 해당 JSON이 axis-ai 요청 body로 그대로 전달됩니다.
+`payload`가 없으면 Swagger schema의 `card_ids`, `integrated_issue_ids`,
+`company_ids`, `message` 같은 편의 필드로 axis-ai 요청 body를 구성합니다.
+
 ## Docker 실행
 
 이미지 빌드:
