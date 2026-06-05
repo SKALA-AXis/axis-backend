@@ -99,10 +99,13 @@ public class PeerOverviewTableService {
                         ) AS row_rank
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
-                      AND business_area = 'company_total'
                       AND source_type = 'ir'
                       AND peer_id IN (?, ?, ?, ?, ?)
                       AND period IS NOT NULL
+                      AND (
+                          COALESCE(NULLIF(metric_label, ''), metric_name) NOT IN ('순이익', '당기순이익', 'net_income', 'net_profit')
+                          OR business_area = 'company_total'
+                      )
                 ),
                 latest_metric_rows AS (
                     SELECT *
@@ -114,8 +117,7 @@ public class PeerOverviewTableService {
                         peer_id,
                         period,
                         MAX(CASE WHEN metric_name_canonical = 'revenue_total' THEN metric_value END) AS revenue_total,
-                        MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN metric_value END) AS operating_profit,
-                        MAX(CASE WHEN metric_name_canonical = 'net_income' THEN metric_value END) AS net_income
+                        MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN metric_value END) AS operating_profit
                     FROM latest_metric_rows
                     GROUP BY peer_id, period
                 )
@@ -123,7 +125,6 @@ public class PeerOverviewTableService {
                 FROM period_coverage
                 WHERE revenue_total IS NOT NULL
                   AND operating_profit IS NOT NULL
-                  AND net_income IS NOT NULL
                 GROUP BY period
                 HAVING COUNT(DISTINCT peer_id) = ?
                 ORDER BY
@@ -339,10 +340,13 @@ public class PeerOverviewTableService {
                         ) AS row_rank
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
-                      AND business_area = 'company_total'
                       AND source_type = 'ir'
                       AND period IS NOT NULL
                       AND peer_id IN (?, ?, ?, ?, ?)
+                      AND (
+                          COALESCE(NULLIF(metric_label, ''), metric_name) NOT IN ('순이익', '당기순이익', 'net_income', 'net_profit')
+                          OR business_area = 'company_total'
+                      )
                 ),
                 latest_metric_rows AS (
                     SELECT *
