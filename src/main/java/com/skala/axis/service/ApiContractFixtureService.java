@@ -366,6 +366,94 @@ public class ApiContractFixtureService {
         return fixtureMap("frontend_dashboard");
     }
 
+    public Map<String, Object> todayInsight() {
+        return mapOf(
+                "report_date", LocalDate.now().toString(),
+                "generated_at", now(),
+                "headline", "Today's Insight 생성 대기 중",
+                "executive_summary", "AI 분석 서버 또는 오늘의 통합 이슈 데이터가 아직 준비되지 않아 임원용 인사이트를 생성하지 못했습니다. 실제 시장 판단 대신 데이터 연결 상태와 재시도 필요 항목만 표시합니다.",
+                "executive_implication", "이 fallback은 전략 판단 근거가 아닙니다. 통합 이슈, 카드뉴스, SK AX 프로필 컨텍스트가 연결된 뒤 생성 결과를 기준으로 판단해야 합니다.",
+                "change_summary", List.of(
+                        mapOf("label", "분석 상태", "value", "대기"),
+                        mapOf("label", "비교 기준", "value", "데이터 준비 후 산정"),
+                        mapOf("label", "핵심 축", "value", "미확정")
+                ),
+                "signals", List.of(
+                        mapOf(
+                                "id", "fallback-signal-status",
+                                "label", "주요 신호",
+                                "value", "생성 가능한 신규 인사이트가 아직 없습니다",
+                                "reasoning", List.of(
+                                        mapOf("stage", "관찰", "detail", "axis-ai today-insight 생성 결과가 아직 전달되지 않았습니다."),
+                                        mapOf("stage", "판단", "detail", "현재 응답은 시장 변화 분석이 아니라 서비스 상태 안내로만 사용해야 합니다.")
+                                ),
+                                "evidence", mapOf(
+                                        "grounds", List.of("axis-ai today-insight 생성 실패 또는 데이터 미준비"),
+                                        "changes", List.of("실제 변화 분석 전 상태"),
+                                        "related_keywords", List.of("데이터 준비", "Today's Insight"),
+                                        "source_ids", List.of("fallback")
+                                )
+                        ),
+                        mapOf(
+                                "id", "fallback-signal-lookup",
+                                "label", "관찰 포인트",
+                                "value", "통합 이슈와 카드뉴스 적재 상태 확인 필요",
+                                "reasoning", List.of(
+                                        mapOf("stage", "관찰", "detail", "생성 입력에 필요한 integrated_issues와 card_news 조회 결과를 확인해야 합니다."),
+                                        mapOf("stage", "판단", "detail", "데이터 적재가 확인되기 전에는 변화량, 근거, 출처를 확정하지 않습니다.")
+                                ),
+                                "evidence", mapOf(
+                                        "grounds", List.of("DB lookup 상태 미확인"),
+                                        "changes", List.of("데이터 연결 복구 후 산정 필요"),
+                                        "related_keywords", List.of("integrated_issues", "card_news"),
+                                        "source_ids", List.of("fallback")
+                                )
+                        ),
+                        mapOf(
+                                "id", "fallback-signal-next",
+                                "label", "다음 판단",
+                                "value", "AI 서버와 DB lookup 복구 후 인사이트 재생성",
+                                "reasoning", List.of(
+                                        mapOf("stage", "관찰", "detail", "fallback 상태에서는 출처 기반 시사점이 제공되지 않습니다."),
+                                        mapOf("stage", "판단", "detail", "axis-ai 생성 경로가 회복되면 저장된 과거 JSON 컨텍스트와 오늘 소식을 다시 비교해야 합니다.")
+                                ),
+                                "evidence", mapOf(
+                                        "grounds", List.of("정상 생성 결과 필요"),
+                                        "changes", List.of("실제 변화 판단 보류"),
+                                        "related_keywords", List.of("재생성", "JSON 컨텍스트"),
+                                        "source_ids", List.of("fallback")
+                                )
+                        )
+                ),
+                "response_direction", List.of(
+                        mapOf(
+                                "action", "axis-ai /today-insight/generate 호출 상태와 integrated_issues/card_news 적재 여부를 먼저 확인합니다.",
+                                "decision_owner", "플랫폼 운영",
+                                "time_horizon", "즉시",
+                                "rationale", "정상 생성 결과 없이 임원용 시사점을 노출하지 않기 위함입니다.",
+                                "evidence_refs", List.of("fallback")
+                        ),
+                        mapOf(
+                                "action", "fallback 결과는 임원 판단 자료에서 제외하고, 생성 완료 시점의 출처 포함 결과로 교체합니다.",
+                                "decision_owner", "전략기획/서비스 운영",
+                                "time_horizon", "생성 복구 후",
+                                "rationale", "하드코딩된 예시가 시장 판단으로 오인되는 것을 막기 위함입니다.",
+                                "evidence_refs", List.of("fallback")
+                        )
+                ),
+                "sources", List.of(
+                        mapOf("id", "fallback", "title", "Today's Insight fallback response", "source_name", "AXIS Backend", "publisher", "AXIS", "url", "", "published_at", now())
+                ),
+                "source_integrated_issue_ids", List.of(),
+                "source_card_ids", List.of(),
+                "peer_ids", List.of(),
+                "sectors", List.of(),
+                "confidence", 0.0,
+                "provenance", mapOf("mode", "fixture_fallback", "reason", "axis-ai unavailable or data unavailable", "prompt_version", "today-insight-v1.0-executive-delta"),
+                "warning", "neutral fallback; not a market insight"
+        );
+    }
+
     public Map<String, Object> globalSearch(String query) {
         Map<String, Object> result = fixtureMap("global_search");
         result.put("query", query == null || query.isBlank() ? result.get("query") : query);

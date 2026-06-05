@@ -700,22 +700,22 @@
   },
   "frontend_insight": {
     "id": "INS-20260511-001",
-    "title": "과거와의 변화를 기반으로 오늘의 동향",
-    "summary": "Peer사의 수주 신호와 AI 인프라 투자가 함께 움직이고 있습니다.",
+    "title": "Today's Insight 생성 대기 중",
+    "summary": "실제 시장 인사이트가 생성되기 전까지 데이터 연결 상태만 표시합니다.",
     "flowSteps": [
-      {"id": "detect", "label": "감지", "description": "카드뉴스 노출과 IR 수치가 동시에 증가했습니다."},
-      {"id": "interpret", "label": "해석", "description": "운영형 AI 메시지가 고객 KPI 증명으로 이동하고 있습니다."},
-      {"id": "respond", "label": "대응", "description": "SK AX 제안서는 운영 안정성과 산업별 레퍼런스를 전면에 배치해야 합니다."}
+      {"id": "detect", "label": "감지", "description": "today-insight 생성 결과가 아직 준비되지 않았습니다."},
+      {"id": "interpret", "label": "해석", "description": "현재 fixture는 전략 판단 근거가 아니라 API 계약 확인용 상태 응답입니다."},
+      {"id": "respond", "label": "대응", "description": "통합 이슈와 카드뉴스 적재 상태를 확인한 뒤 실제 인사이트로 교체해야 합니다."}
     ],
     "evidence": [
-      "고노출 카드뉴스 2건에서 운영형 AI 메시지가 반복되었습니다.",
-      "금융 AX와 생성형 AI 운영 플랫폼 신호가 같은 날 관찰되었습니다."
+      "axis-ai today-insight 생성 결과가 fixture에 아직 반영되지 않았습니다.",
+      "실제 출처 기반 근거는 생성 완료 후 제공됩니다."
     ],
     "implications": [
-      "SK AX는 고객 KPI와 운영 안정성을 제안서 전면에 배치해야 합니다.",
-      "보안·감사 대응을 AX 제안의 기본 구성으로 끌어올릴 필요가 있습니다."
+      "이 응답은 임원 판단 자료에서 제외해야 합니다.",
+      "정상 생성 결과가 도착하면 출처와 과거 대비 변화가 포함된 결과로 대체해야 합니다."
     ],
-    "evidenceCards": ["CN-20260502-001", "CN-20260502-002"],
+    "evidenceCards": [],
     "generatedAt": "{{now}}"
   },
   "keyword_graph": {
@@ -932,6 +932,7 @@
     {"id": "prompt-summary-v1", "name": "본문 요약", "agent_type": "summary", "content": "카드 뉴스 생성을 위한 3줄 요약을 작성합니다.", "variables": ["title", "content", "sources"], "version": "v1", "updated_at": "{{now}}"}
   ],
   "scheduler_jobs": [
+    {"id": "today-insight-daily", "name": "Today's Insight 사전 생성", "cron_expression": "0 10 8 * * MON-FRI", "target_pipeline": "today-insight", "is_active": true, "last_run_at": "{{now}}", "next_run_at": "{{now}}"},
     {"id": "delivery-daily", "name": "데일리 브리핑", "cron_expression": "0 30 8 * * MON-FRI", "target_pipeline": "delivery", "is_active": true, "last_run_at": "{{now}}", "next_run_at": "{{now}}"}
   ],
   "usage": {

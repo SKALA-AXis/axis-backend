@@ -58,6 +58,7 @@ axis:
   scheduler:
     enabled: ${AXIS_SCHEDULER_ENABLED:false}
     ingestion-peer-ids: ${AXIS_SCHEDULER_INGESTION_PEER_IDS:samsung_sds,lg_cns,hyundai_autoever,posco_dx,nvidia,apple,microsoft,google,amazon,meta}
+    today-insight-cron: "${AXIS_SCHEDULER_TODAY_INSIGHT_CRON:0 10 8 * * MON-FRI}"
     cron-internal-token: ${CRON_INTERNAL_TOKEN:}
   agent-test:
     enabled: ${AXIS_AGENT_TEST_ENABLED:false}
