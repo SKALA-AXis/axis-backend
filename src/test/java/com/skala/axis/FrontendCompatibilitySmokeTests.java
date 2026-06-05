@@ -86,6 +86,19 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(jsonPath("$.data.trends[0].peer").exists())
                 .andExpect(jsonPath("$.data.stockRatePoints[0].date").exists());
 
+        mockMvc.perform(get("/api/dashboard/today-insight"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.signals[0].label").value("주요 신호"))
+                .andExpect(jsonPath("$.data.response_direction[0].action").exists())
+                .andExpect(jsonPath("$.data.sources[0].title").exists());
+
+        mockMvc.perform(post("/api/dashboard/today-insight/warmup"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.status").value("accepted"))
+                .andExpect(jsonPath("$.data.cache_only").value(true))
+                .andExpect(jsonPath("$.data.refresh_policy").value("cache_first"))
+                .andExpect(jsonPath("$.data.update_policy").value("daily_0810_kst"));
+
         mockMvc.perform(get("/api/briefings/summary?briefing_type=daily"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.briefingLead").exists())

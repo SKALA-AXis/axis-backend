@@ -169,6 +169,17 @@ public class AiClientService {
     }
 
     /**
+     * Home dashboard Today's Insight — axis-ai 의 {@code /today-insight/generate} 위임.
+     *
+     * <p>통합 이슈, 카드뉴스, profile context, prior today_insight_reports JSON memory 를
+     * 함께 사용하는 executive-facing 홈 인사이트. LLM 단일 호출 + DB lookup 이므로 timeout 90초.</p>
+     */
+    public Mono<Map<String, Object>> generateTodayInsight(Map<String, Object> request) {
+        Map<String, Object> body = request == null ? Map.of() : request;
+        return postRaw("/today-insight/generate", body, Duration.ofSeconds(90));
+    }
+
+    /**
      * PeerComparison Phase 1+2+4 분석 — axis-ai 의 {@code /peer/compare} 위임.
      *
      * <p>prototype (Walking Skeleton Phase 2). Phase 3 (Forecast) 는 Day 90+ deferred —
