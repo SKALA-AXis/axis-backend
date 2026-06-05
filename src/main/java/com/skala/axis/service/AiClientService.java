@@ -7,9 +7,11 @@ import com.skala.axis.dto.SearchResponse;
 import com.skala.axis.exception.AiServerException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
@@ -166,6 +168,42 @@ public class AiClientService {
                     log.warn("axis-ai /mixer/analyze 호출 실패: {}", e.getMessage());
                     return Mono.error(new AiServerException(e.getMessage()));
                 });
+    }
+
+    /**
+     * MixerAnalysis SSE 스트리밍 — axis-ai {@code /mixer/analyze/stream} 위임.
+     *
+     * <p>각 element 는 axis-ai 가 emit 한 SSE {@code data:} JSON 문자열
+     * ({@code {"type":"stage"|"result"|"error", ...}}). 메인 LLM 단계 사이 간격이
+     * 길 수 있어 element 간 timeout 은 120초로 둔다.</p>
+     */
+    public Flux<String> runMixerStream(
+            List<String> cardIds, Map<String, Object> ratios, String userContext) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("card_ids", cardIds);
+        if (ratios != null && !ratios.isEmpty()) {
+            body.put("ratios", ratios);
+        }
+        if (userContext != null && !userContext.isBlank()) {
+            body.put("user_context", userContext);
+        }
+        return aiWebClient.post()
+                .uri("/mixer/analyze/stream")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToFlux(String.class)
+                .timeout(Duration.ofSeconds(120))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /mixer/analyze/stream 호출 실패: {}", e.getMessage());
+                    return Flux.just(mixerStreamError(e.getMessage()));
+                });
+    }
+
+    private static String mixerStreamError(String rawMessage) {
+        String safe = rawMessage == null ? "Mixer 스트리밍 실패" : rawMessage;
+        safe = safe.replace("\\", " ").replace("\"", "'").replace("\n", " ").replace("\r", " ");
+        return "{\"type\":\"error\",\"message\":\"" + safe + "\"}";
     }
 
     /**

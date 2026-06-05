@@ -6,13 +6,16 @@ import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
@@ -82,6 +85,36 @@ public class MixerController {
             log.warn("Mixer | axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
             return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
         }
+    }
+
+    /**
+     * 카드 조합 분석 — SSE 스트리밍. axis-ai {@code /mixer/analyze/stream} 위임.
+     *
+     * <p>실행 중 실제 단계(prepare/analyze/synthesize/finalize)를 실시간 전달한 뒤
+     * 최종 결과를 {@code {"type":"result","data":{...}}} 로 보낸다. 프론트는 단계
+     * 이벤트로 진행 표시, result 이벤트로 화면 전환한다. 비동기 단일 호출 fallback
+     * ({@code POST /api/mixer}) 은 그대로 유지한다.</p>
+     */
+    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> runMixerStream(
+            @RequestBody(required = false) Map<String, Object> request) {
+        Map<String, Object> body = request != null ? request : Map.of();
+        List<String> cardIds = parseCardIds(body);
+        if (cardIds.isEmpty()) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .data("{\"type\":\"error\",\"message\":\"카드 2개 이상이 필요합니다.\"}")
+                    .build());
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> ratios = body.get("ratios") instanceof Map<?, ?> r
+                ? (Map<String, Object>) r
+                : Map.of();
+        String userContext = body.get("user_context") instanceof String s ? s : null;
+
+        log.info("Mixer stream | cards={}", cardIds.size());
+        return aiClientService.runMixerStream(cardIds, ratios, userContext)
+                .map(data -> ServerSentEvent.<String>builder().data(data).build());
     }
 
     @PostMapping("/{mixId}/share")
