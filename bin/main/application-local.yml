@@ -21,6 +21,8 @@ logging:
     com.skala.axis: DEBUG
 
 axis:
+  agent-test:
+    enabled: ${AXIS_AGENT_TEST_ENABLED:true}
   auth:
     enforce: ${AXIS_AUTH_ENFORCE:true}
     allowed-email-domains: ${AXIS_AUTH_ALLOWED_EMAIL_DOMAINS:*}
