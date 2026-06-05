@@ -44,8 +44,8 @@ public class PeerOverviewTableService {
         return mapOf(
                 "periodLabel", period,
                 "coverageLabel", period == null ? "공통 분기 미확보" : "SK AX · 삼성 SDS · LG CNS · 현대 오토에버 · 포스코 DX 공통 분기 기준",
-                "financialSourceLabel", "raw_article_financial_metrics IR 기준 (영업이익률은 IR 원값 우선, 없으면 매출·영업이익으로 계산)",
-                "supplementalSourceLabel", "peer_companies 보조값 사용, 없으면 -",
+                "financialSourceLabel", "각 사 IR·사업보고서 기반",
+                "supplementalSourceLabel", "기업 프로필·최근 카드뉴스 기반 보조 지표, 미확보 시 -",
                 "rows", rows
         );
     }
@@ -59,7 +59,7 @@ public class PeerOverviewTableService {
                 "coverageLabel", mixedPeriods
                         ? "매출 + 매출 YoY 공통 분기가 없어 peer별 최신 가용 분기 기준으로 표시"
                         : "SK AX · 삼성 SDS · LG CNS · 현대 오토에버 · 포스코 DX 공통 분기 기준",
-                "financialSourceLabel", "raw_article_financial_metrics IR 기준 (company_total / revenue_total / revenue_total_yoy, YoY 없으면 전년 동분기 매출로 계산)",
+                "financialSourceLabel", "각 사 IR·사업보고서 기반",
                 "xAxisLabel", "사업 규모 (매출, 억원)",
                 "yAxisLabel", "매출 성장률 (YoY, %)",
                 "referenceRevenueKrwBn", 30000,
@@ -79,6 +79,7 @@ public class PeerOverviewTableService {
                             WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
                             WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
                             WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
+                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
                             ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
                         END AS metric_name_canonical,
                         COALESCE(value_krwbn, value_numeric::double precision) AS metric_value,
@@ -88,6 +89,7 @@ public class PeerOverviewTableService {
                                     WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
                                     WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
                                     WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
+                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
                                     ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
                                 END
                             ORDER BY
@@ -97,6 +99,7 @@ public class PeerOverviewTableService {
                         ) AS row_rank
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
+                      AND business_area = 'company_total'
                       AND source_type = 'ir'
                       AND peer_id IN (?, ?, ?, ?, ?)
                       AND period IS NOT NULL
@@ -111,7 +114,8 @@ public class PeerOverviewTableService {
                         peer_id,
                         period,
                         MAX(CASE WHEN metric_name_canonical = 'revenue_total' THEN metric_value END) AS revenue_total,
-                        MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN metric_value END) AS operating_profit
+                        MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN metric_value END) AS operating_profit,
+                        MAX(CASE WHEN metric_name_canonical = 'net_income' THEN metric_value END) AS net_income
                     FROM latest_metric_rows
                     GROUP BY peer_id, period
                 )
@@ -119,6 +123,7 @@ public class PeerOverviewTableService {
                 FROM period_coverage
                 WHERE revenue_total IS NOT NULL
                   AND operating_profit IS NOT NULL
+                  AND net_income IS NOT NULL
                 GROUP BY period
                 HAVING COUNT(DISTINCT peer_id) = ?
                 ORDER BY
@@ -270,6 +275,7 @@ public class PeerOverviewTableService {
             baseRow.put("revenueQoqPct", null);
             baseRow.put("operatingProfitKrwBn", null);
             baseRow.put("operatingProfitQoqPct", null);
+            baseRow.put("netIncomeKrwBn", null);
             baseRow.put("operatingMarginPct", null);
             baseRow.put("operatingMarginQoqDeltaPctp", null);
             baseRow.put("axRevenueSharePct", null);
@@ -311,6 +317,7 @@ public class PeerOverviewTableService {
                             WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
                             WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
                             WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
+                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
                             ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
                         END AS metric_name_canonical,
                         value_krwbn,
@@ -322,6 +329,7 @@ public class PeerOverviewTableService {
                                     WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
                                     WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
                                     WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
+                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
                                     ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
                                 END
                             ORDER BY
@@ -331,6 +339,7 @@ public class PeerOverviewTableService {
                         ) AS row_rank
                     FROM raw_article_financial_metrics
                     WHERE metric_scope = 'company_total'
+                      AND business_area = 'company_total'
                       AND source_type = 'ir'
                       AND period IS NOT NULL
                       AND peer_id IN (?, ?, ?, ?, ?)
@@ -346,10 +355,11 @@ public class PeerOverviewTableService {
                         period,
                         MAX(CASE WHEN metric_name_canonical = 'revenue_total' THEN value_krwbn END) AS revenue_total_krwbn,
                         MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN value_krwbn END) AS operating_profit_krwbn,
+                        MAX(CASE WHEN metric_name_canonical = 'net_income' THEN value_krwbn END) AS net_income_krwbn,
                         MAX(CASE WHEN metric_name_canonical = 'operating_margin'
                             THEN COALESCE(value_numeric::double precision, value_krwbn::double precision)
                         END) AS operating_margin_pct,
-                        MAX(raw_article_id) FILTER (WHERE metric_name_canonical IN ('revenue_total', 'operating_profit', 'operating_margin')) AS raw_article_id
+                        MAX(raw_article_id) FILTER (WHERE metric_name_canonical IN ('revenue_total', 'operating_profit', 'operating_margin', 'net_income')) AS raw_article_id
                     FROM latest_metric_rows
                     GROUP BY peer_id, period
                 ),
@@ -367,6 +377,7 @@ public class PeerOverviewTableService {
                         END AS previous_period,
                         revenue_total_krwbn,
                         operating_profit_krwbn,
+                        net_income_krwbn,
                         CASE
                             WHEN operating_margin_pct IS NOT NULL THEN ROUND(operating_margin_pct::numeric, 2)::double precision
                             WHEN revenue_total_krwbn IS NOT NULL
@@ -385,6 +396,7 @@ public class PeerOverviewTableService {
                         current_period.period,
                         current_period.revenue_total_krwbn,
                         current_period.operating_profit_krwbn,
+                        current_period.net_income_krwbn,
                         current_period.operating_margin_pct,
                         current_period.raw_article_id,
                         previous_period.revenue_total_krwbn AS prev_revenue_total_krwbn,
@@ -413,6 +425,7 @@ public class PeerOverviewTableService {
                         THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / ABS(prev_operating_profit_krwbn) * 100)::numeric, 2)
                         ELSE NULL
                     END AS operating_profit_qoq_pct,
+                    net_income_krwbn,
                     operating_margin_pct,
                     CASE
                         WHEN prev_operating_margin_pct IS NOT NULL
@@ -805,6 +818,7 @@ public class PeerOverviewTableService {
         row.put("revenueQoqPct", nullableDouble(rs.getObject("revenue_qoq_pct")));
         row.put("operatingProfitKrwBn", nullableDouble(rs.getObject("operating_profit_krwbn")));
         row.put("operatingProfitQoqPct", nullableDouble(rs.getObject("operating_profit_qoq_pct")));
+        row.put("netIncomeKrwBn", nullableDouble(rs.getObject("net_income_krwbn")));
         row.put("operatingMarginPct", nullableDouble(rs.getObject("operating_margin_pct")));
         row.put("operatingMarginQoqDeltaPctp", nullableDouble(rs.getObject("operating_margin_qoq_delta_pctp")));
         row.put("dartRceptNo", rs.getString("dart_rcept_no"));
