@@ -19,6 +19,8 @@ logging:
 axis:
   agent-test:
     enabled: false
+  scheduler:
+    cron-auth-required: true
   auth:
     enforce: ${AXIS_AUTH_ENFORCE:true}
     email-verification-delivery: ${AXIS_AUTH_EMAIL_VERIFICATION_DELIVERY:ses}

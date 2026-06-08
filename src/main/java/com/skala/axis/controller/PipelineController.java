@@ -28,6 +28,9 @@ public class PipelineController {
     @Value("${axis.scheduler.cron-internal-token:}")
     private String cronInternalToken;
 
+    @Value("${axis.scheduler.cron-auth-required:false}")
+    private boolean cronAuthRequired;
+
     private static final Set<String> SUPPORTED_TRACKS = Set.of("A", "B", "C", "D", "ALL");
 
     @GetMapping("/status")
@@ -83,7 +86,8 @@ public class PipelineController {
 
     private boolean isCronAuthorized(String authorization) {
         if (cronInternalToken == null || cronInternalToken.isBlank()) {
-            return true;
+            // local: 토큰 없이 CronJob 테스트 허용. prod(cron-auth-required=true): fail-closed.
+            return !cronAuthRequired;
         }
         return ("Bearer " + cronInternalToken).equals(authorization);
     }
