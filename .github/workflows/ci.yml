@@ -8,6 +8,52 @@ on:
   workflow_dispatch:
 
 jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  schema-validate:
+    name: Hibernate validate (Postgres + Flyway)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: axis_test
+          POSTGRES_USER: axuser
+          POSTGRES_PASSWORD: axpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axuser -d axis_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Flyway migrate + Hibernate validate
+        run: ./gradlew test --tests PostgreSqlSchemaValidationIT --no-daemon
+
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
