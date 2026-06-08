@@ -55,6 +55,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Flyway migrate + Hibernate validate
+        env:
+          AXIS_CI_POSTGRES_VALIDATE: "true"
         run: ./gradlew test --tests PostgreSqlSchemaValidationIT --no-daemon
 
   build-and-test:

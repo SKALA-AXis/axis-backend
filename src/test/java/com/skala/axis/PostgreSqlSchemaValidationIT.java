@@ -1,13 +1,17 @@
 package com.skala.axis;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
 /**
  * CI 전용 — Flyway 마이그레이션 적용 후 Hibernate ddl-auto=validate 가 통과하는지 검증.
  * 운영(skala ConfigMap) 과 동일한 validate posture 를 Postgres 서비스에서 확인한다.
+ *
+ * <p>Postgres 서비스가 없는 기본 {@code ./gradlew test} 에서는 skip (AXIS_CI_POSTGRES_VALIDATE 미설정).
  */
+@EnabledIfEnvironmentVariable(named = "AXIS_CI_POSTGRES_VALIDATE", matches = "true")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(
         properties = {
