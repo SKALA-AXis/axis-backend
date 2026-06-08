@@ -334,6 +334,17 @@ public class AiClientService {
         if (history != null && !history.isEmpty()) {
             body.put("history", history);
         }
+        return chat(body);
+    }
+
+    /**
+     * ChatOrchestrator raw contract forwarder.
+     *
+     * <p>Preserves conversation_id, current_page, client_context, and future
+     * assistant fields so the backend does not strip page-aware CAG context.</p>
+     */
+    public Mono<Map<String, Object>> chat(Map<String, Object> request) {
+        Map<String, Object> body = request == null ? new java.util.HashMap<>() : request;
         return aiWebClient.post()
                 .uri("/chat")
                 .bodyValue(body)
