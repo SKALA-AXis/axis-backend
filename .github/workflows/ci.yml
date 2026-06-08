@@ -8,6 +8,57 @@ on:
   workflow_dispatch:
 
 jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=v8.21.2
+          curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+            "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+
+      - name: Run gitleaks
+        run: gitleaks detect --source . --config .gitleaks.toml --no-git --verbose
+
+  schema-validate:
+    name: Hibernate validate (Postgres + Flyway)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: axis_test
+          POSTGRES_USER: axuser
+          POSTGRES_PASSWORD: axpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axuser -d axis_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Flyway migrate + Hibernate validate
+        env:
+          AXIS_CI_POSTGRES_VALIDATE: "true"
+        run: ./gradlew test --tests PostgreSqlSchemaValidationIT --no-daemon
+
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
