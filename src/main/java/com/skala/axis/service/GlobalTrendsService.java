@@ -83,7 +83,7 @@ public class GlobalTrendsService {
                     """,
                     (rs, rowNum) -> rs.getString(1)
             );
-            String latestTrendDate = latestDates.isEmpty() ? "" : latestDates.getFirst();
+            String latestTrendDate = latestDates.isEmpty() ? "" : latestDates.get(0);
 
             return Map.of(
                     "items", items,
