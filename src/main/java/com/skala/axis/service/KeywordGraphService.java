@@ -4,11 +4,16 @@ import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.repository.CardNewsRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -17,6 +22,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -36,37 +46,73 @@ public class KeywordGraphService {
     private final JdbcTemplate jdbcTemplate;
     private final CardNewsRepository cardNewsRepository;
     private final CardNewsService cardNewsService;
+    private final AtomicReference<CachedPayload> graphCache = new AtomicReference<>();
+    private final ConcurrentMap<String, CachedPayload> cardsCache = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> keywordLabelsByNodeId = new ConcurrentHashMap<>();
+    private final AtomicBoolean refreshRunning = new AtomicBoolean(false);
 
-    public Map<String, Object> keywordGraph() {
+    @PostConstruct
+    void initializeKeywordGraphCache() {
+        graphCache.set(new CachedPayload(withCacheMetadata(buildGraph(List.of()), Instant.now(), "empty"), Instant.now()));
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void warmKeywordGraphCacheAfterStartup() {
+        CompletableFuture.runAsync(this::refreshKeywordGraphCache);
+    }
+
+    @Scheduled(cron = "${axis.keyword-graph.refresh-cron:0 10 * * * *}", zone = "Asia/Seoul")
+    public void refreshKeywordGraphCache() {
+        if (!refreshRunning.compareAndSet(false, true)) {
+            log.info("Keyword graph cache refresh already running. Skipping.");
+            return;
+        }
+        Instant startedAt = Instant.now();
         try {
             List<KeywordRelation> relations = loadKeywordRelations();
-            return buildGraph(relations);
+            Map<String, Object> graph = withCacheMetadata(buildGraph(relations), startedAt, "scheduled");
+            graphCache.set(new CachedPayload(graph, startedAt));
+            refreshKeywordLabelCache(graph);
+            cardsCache.clear();
+            warmKeywordGraphCardsCache(graph);
+            log.info("Keyword graph cache refreshed | nodes={} edges={} elapsed_ms={}",
+                    sizeOfList(graph.get("nodes")),
+                    sizeOfList(graph.get("edges")),
+                    java.time.Duration.between(startedAt, Instant.now()).toMillis());
         } catch (RuntimeException error) {
-            log.warn("Keyword graph DB query failed. Returning fixed company graph.", error);
-            return buildGraph(List.of());
+            log.warn("Keyword graph cache refresh failed. Keeping previous cache.", error);
+        } finally {
+            refreshRunning.set(false);
         }
+    }
+
+    public Map<String, Object> keywordGraph() {
+        CachedPayload cached = graphCache.get();
+        return cached == null ? withCacheMetadata(buildGraph(List.of()), Instant.now(), "empty") : cached.payload();
     }
 
     public Map<String, Object> keywordGraphCards(String nodeId, Map<String, String> params) {
         int limit = intValue(params, "limit", 6);
         int offset = intValue(params, "offset", 0);
+        CachedPayload cached = cardsCache.computeIfAbsent(nodeId, ignored ->
+                new CachedPayload(buildKeywordGraphCards(nodeId), Instant.now())
+        );
+        return paginateCachedCards(cached.payload(), limit, offset);
+    }
+
+    private Map<String, Object> buildKeywordGraphCards(String nodeId) {
         try {
             CompanyNode company = companyByNodeId(nodeId);
             String keyword = company == null ? resolveKeyword(nodeId).orElse(nodeId) : company.label();
             List<CardNewsResponse> relatedCards = company == null
                     ? relatedCards(keyword)
                     : relatedCompanyCards(company);
-            List<CardNewsResponse> items = relatedCards.stream()
-                    .skip(Math.max(0, offset))
-                    .limit(Math.max(1, limit))
-                    .toList();
             return Map.of(
                     "nodeId", nodeId,
                     "keyword", keyword,
-                    "items", items,
+                    "items", relatedCards,
                     "total", relatedCards.size(),
-                    "limit", limit,
-                    "offset", offset
+                    "cachedAt", Instant.now().toString()
             );
         } catch (RuntimeException error) {
             log.warn("Keyword graph card list failed for {}", nodeId, error);
@@ -75,10 +121,55 @@ public class KeywordGraphService {
                     "keyword", nodeId,
                     "items", List.of(),
                     "total", 0,
-                    "limit", limit,
-                    "offset", offset
+                    "cachedAt", Instant.now().toString()
             );
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> paginateCachedCards(Map<String, Object> cached, int limit, int offset) {
+        List<CardNewsResponse> relatedCards = (List<CardNewsResponse>) cached.getOrDefault("items", List.of());
+        List<CardNewsResponse> items = relatedCards.stream()
+                .skip(Math.max(0, offset))
+                .limit(Math.max(1, limit))
+                .toList();
+        return Map.of(
+                "nodeId", cached.getOrDefault("nodeId", ""),
+                "keyword", cached.getOrDefault("keyword", ""),
+                "items", items,
+                "total", relatedCards.size(),
+                "limit", limit,
+                "offset", offset,
+                "cachedAt", cached.getOrDefault("cachedAt", "")
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private void warmKeywordGraphCardsCache(Map<String, Object> graph) {
+        Object nodesValue = graph.get("nodes");
+        if (!(nodesValue instanceof List<?> nodes)) {
+            return;
+        }
+        for (Object value : nodes) {
+            if (!(value instanceof Map<?, ?> node)) {
+                continue;
+            }
+            Object id = node.get("id");
+            if (id instanceof String nodeId) {
+                cardsCache.put(nodeId, new CachedPayload(buildKeywordGraphCards(nodeId), Instant.now()));
+            }
+        }
+    }
+
+    private Map<String, Object> withCacheMetadata(Map<String, Object> payload, Instant cachedAt, String refreshMode) {
+        Map<String, Object> response = new LinkedHashMap<>(payload);
+        response.put("cachedAt", cachedAt.toString());
+        response.put("refreshMode", refreshMode);
+        return response;
+    }
+
+    private int sizeOfList(Object value) {
+        return value instanceof List<?> list ? list.size() : 0;
     }
 
     private List<CardNewsResponse> relatedCompanyCards(CompanyNode company) {
@@ -537,6 +628,10 @@ public class KeywordGraphService {
     }
 
     private Optional<String> resolveKeyword(String nodeId) {
+        String cachedKeyword = keywordLabelsByNodeId.get(nodeId);
+        if (cachedKeyword != null && !cachedKeyword.isBlank()) {
+            return Optional.of(cachedKeyword);
+        }
         try {
             return loadKeywordRelations().stream()
                     .filter(relation -> keywordNodeId(relation.keywordKey()).equals(nodeId))
@@ -545,6 +640,25 @@ public class KeywordGraphService {
         } catch (RuntimeException error) {
             log.warn("Keyword node lookup failed for {}", nodeId, error);
             return Optional.empty();
+        }
+    }
+
+    private void refreshKeywordLabelCache(Map<String, Object> graph) {
+        keywordLabelsByNodeId.clear();
+        Object nodesValue = graph.get("nodes");
+        if (!(nodesValue instanceof List<?> nodes)) {
+            return;
+        }
+        for (Object value : nodes) {
+            if (!(value instanceof Map<?, ?> node)) {
+                continue;
+            }
+            Object id = node.get("id");
+            Object label = node.get("label");
+            Object category = node.get("category");
+            if (id instanceof String nodeId && label instanceof String keyword && !"기업".equals(category)) {
+                keywordLabelsByNodeId.put(nodeId, keyword);
+            }
         }
     }
 
@@ -641,6 +755,9 @@ public class KeywordGraphService {
     }
 
     private record CompanyKeywordWeight(String keywordKey, int weight) {
+    }
+
+    private record CachedPayload(Map<String, Object> payload, Instant refreshedAt) {
     }
 
     private static final class KeywordAggregate {
