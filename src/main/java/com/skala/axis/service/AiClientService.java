@@ -218,6 +218,16 @@ public class AiClientService {
     }
 
     /**
+     * BriefingGenerationAgent — axis-ai {@code /briefing/generate} 위임.
+     *
+     * <p>ContextPackAssembler 기반 기간 브리핑. LLM + DB lookup 이므로 timeout 120초.</p>
+     */
+    public Mono<Map<String, Object>> generateBriefing(Map<String, Object> request) {
+        Map<String, Object> body = request == null ? Map.of() : request;
+        return postRaw("/briefing/generate", body, Duration.ofSeconds(120));
+    }
+
+    /**
      * PeerComparison Phase 1+2+4 분석 — axis-ai 의 {@code /peer/compare} 위임.
      *
      * <p>prototype (Walking Skeleton Phase 2). Phase 3 (Forecast) 는 Day 90+ deferred —

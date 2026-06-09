@@ -1,8 +1,11 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,11 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/briefings")
 @RequiredArgsConstructor
 public class BriefingController {
     private final ApiContractFixtureService fixture;
+    private final AiClientService aiClientService;
 
     @GetMapping("/today")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayBriefing() {
@@ -43,6 +48,15 @@ public class BriefingController {
 
     @PostMapping("/generate")
     public ResponseEntity<ApiResponse<Map<String, Object>>> generateBriefing(@RequestBody(required = false) Map<String, Object> request) {
+        Map<String, Object> body = request == null ? Map.of() : request;
+        try {
+            Map<String, Object> result = aiClientService.generateBriefing(body).block();
+            if (result != null && !result.isEmpty()) {
+                return ResponseEntity.ok(ApiResponse.success(result));
+            }
+        } catch (AiServerException e) {
+            log.warn("Briefing axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
+        }
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(fixture.briefingGenerationAccepted()));
     }
 
