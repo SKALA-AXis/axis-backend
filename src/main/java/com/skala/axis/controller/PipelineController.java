@@ -1,6 +1,7 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.security.CronInternalAuth;
 import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingService;
@@ -21,15 +22,10 @@ public class PipelineController {
     private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
     private final BriefingService briefingService;
+    private final CronInternalAuth cronInternalAuth;
 
     @Value("${axis.scheduler.ingestion-peer-ids}")
     private List<String> ingestionPeerIds;
-
-    @Value("${axis.scheduler.cron-internal-token:}")
-    private String cronInternalToken;
-
-    @Value("${axis.scheduler.cron-auth-required:false}")
-    private boolean cronAuthRequired;
 
     private static final Set<String> SUPPORTED_TRACKS = Set.of("A", "B", "C", "D", "ALL");
 
@@ -44,7 +40,7 @@ public class PipelineController {
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestBody(required = false) Map<String, Object> request
     ) {
-        if (!isCronAuthorized(authorization)) {
+        if (!cronInternalAuth.isAuthorized(authorization)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.success(Map.of("status", "unauthorized")));
         }
@@ -70,7 +66,7 @@ public class PipelineController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> triggerDelivery(
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        if (!isCronAuthorized(authorization)) {
+        if (!cronInternalAuth.isAuthorized(authorization)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.success(Map.of("status", "unauthorized")));
         }
@@ -82,13 +78,5 @@ public class PipelineController {
             return ResponseEntity.internalServerError()
                     .body(ApiResponse.success(Map.of("status", "failed", "error", e.getMessage())));
         }
-    }
-
-    private boolean isCronAuthorized(String authorization) {
-        if (cronInternalToken == null || cronInternalToken.isBlank()) {
-            // local: 토큰 없이 CronJob 테스트 허용. prod(cron-auth-required=true): fail-closed.
-            return !cronAuthRequired;
-        }
-        return ("Bearer " + cronInternalToken).equals(authorization);
     }
 }
