@@ -2,6 +2,7 @@ package com.skala.axis.config;
 
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingService;
+import com.skala.axis.service.TodayInsightCronRequestFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -9,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,18 +39,7 @@ public class SchedulerConfig {
 
     @Scheduled(cron = "${axis.scheduler.today-insight-cron:0 10 8 * * MON-FRI}", zone = "Asia/Seoul")
     public void warmupTodayInsight() {
-        Map<String, Object> request = new HashMap<>();
-        request.put("anchor_date", LocalDate.now().toString());
-        request.put("window_days", 60);
-        request.put("max_issues", 8);
-        request.put("max_cards", 12);
-        request.put("use_cached", false);
-        request.put("force_refresh", true);
-        request.put("refresh_policy", "cache_first");
-        request.put("urgent_importance_threshold", 0.9);
-        request.put("cache_only", false);
-        request.put("preload_model", true);
-        request.put("save", true);
+        Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(LocalDate.now());
 
         log.info("TodayInsight 오전 사전 생성 시작 | anchor={}", request.get("anchor_date"));
         aiClientService.generateTodayInsight(request)

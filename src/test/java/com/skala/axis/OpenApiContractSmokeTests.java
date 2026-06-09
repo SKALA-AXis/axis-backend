@@ -75,6 +75,7 @@ class OpenApiContractSmokeTests {
                 e("401-800", "GET", "/api/dashboard/summary", status().isOk()),
                 e("401-800", "GET", "/api/dashboard/today-insight", status().isOk()),
                 e("401-800", "POST", "/api/dashboard/today-insight/warmup", status().isAccepted()),
+                e("401-800", "POST", "/api/dashboard/today-insight/cron-generate", status().isBadGateway()),
                 e("401-800", "POST", "/api/search", status().isOk(), "{\"query\":\"AX\",\"scopes\":[\"cards\",\"peers\"],\"limit\":8}"),
                 e("401-800", "GET", "/api/search/suggestions?q=AX&limit=6", status().isOk()),
                 e("401-800", "GET", "/api/peers", status().isOk()),

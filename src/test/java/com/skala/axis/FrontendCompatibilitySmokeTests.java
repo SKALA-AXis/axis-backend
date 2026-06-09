@@ -99,6 +99,10 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(jsonPath("$.data.refresh_policy").value("cache_first"))
                 .andExpect(jsonPath("$.data.update_policy").value("daily_0810_kst"));
 
+        mockMvc.perform(post("/api/dashboard/today-insight/cron-generate"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.data.status").value("failed"));
+
         mockMvc.perform(get("/api/briefings/summary?briefing_type=daily"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.briefingLead").exists())

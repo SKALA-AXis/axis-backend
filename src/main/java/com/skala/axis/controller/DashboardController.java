@@ -2,10 +2,12 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.security.CronInternalAuth;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
+import com.skala.axis.service.TodayInsightCronRequestFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -30,6 +32,7 @@ public class DashboardController {
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final AiClientService aiClientService;
+    private final CronInternalAuth cronInternalAuth;
     private final AtomicBoolean todayInsightWarmupInFlight = new AtomicBoolean(false);
 
     @GetMapping("/summary")
@@ -58,6 +61,46 @@ public class DashboardController {
             log.warn("TodayInsight axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
         }
         return ResponseEntity.ok(ApiResponse.success(fixture.todayInsight()));
+    }
+
+    @PostMapping("/today-insight/cron-generate")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> cronGenerateTodayInsight(
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        if (!cronInternalAuth.isAuthorized(authorization)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.success(Map.of("status", "unauthorized")));
+        }
+
+        Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(LocalDate.now());
+        try {
+            Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
+            String headline = result == null ? "" : String.valueOf(result.getOrDefault("headline", ""));
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
+                    "status", "accepted",
+                    "anchor_date", request.get("anchor_date"),
+                    "headline", headline,
+                    "update_policy", "daily_0810_kst"
+            )));
+        } catch (AiServerException e) {
+            log.error("TodayInsight cron-generate axis-ai 호출 실패 | anchor={} error={}",
+                    request.get("anchor_date"), e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(ApiResponse.success(Map.of(
+                            "status", "failed",
+                            "anchor_date", request.get("anchor_date"),
+                            "error", e.getMessage()
+                    )));
+        } catch (Exception e) {
+            log.error("TodayInsight cron-generate 실패 | anchor={} error={}",
+                    request.get("anchor_date"), e.getMessage());
+            return ResponseEntity.internalServerError()
+                    .body(ApiResponse.success(Map.of(
+                            "status", "failed",
+                            "anchor_date", request.get("anchor_date"),
+                            "error", e.getMessage()
+                    )));
+        }
     }
 
     @PostMapping("/today-insight/warmup")

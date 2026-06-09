@@ -69,9 +69,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/email-verifications/confirm").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/email-verifications/resend", "/api/auth/verify-email").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/dashboard/**", "/api/cards/**").permitAll()
-                        // CronJob entrypoints — Bearer ${CRON_INTERNAL_TOKEN} 검증은 PipelineController.isCronAuthorized 에서 수행.
+                        // CronJob entrypoints — Bearer ${CRON_INTERNAL_TOKEN} 검증은 CronInternalAuth 에서 수행.
                         // 이 경로를 화이트리스트하지 않으면 axis-cron-ingestion-{a,b,c,d}, axis-cron-delivery 가 401 로 실패함.
-                        .requestMatchers(HttpMethod.POST, "/api/pipeline/trigger", "/api/pipeline/delivery").permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/pipeline/trigger",
+                                "/api/pipeline/delivery",
+                                "/api/dashboard/today-insight/cron-generate"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/pipeline/status").permitAll();
                 if (agentTestEnabled) {
                     auth.requestMatchers("/api/dev/agents/**").permitAll();
