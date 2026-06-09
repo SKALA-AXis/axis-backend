@@ -199,6 +199,10 @@ public class ApiContractFixtureService {
                                 "axRevenueSharePct", 34.0,
                                 "contractCount", null,
                                 "topKeyword", "운영형 AX",
+                                "topKeywordReason", "운영형 AX는 SK AX가 고객 업무에 AI·DX 역량을 구축하고 운영하는 AX 사업 방향과 직접 연결되는 키워드입니다.",
+                                "topKeywordBasis", "근거 4건 · 점수 9.2",
+                                "topKeywordScore", 9.2,
+                                "topKeywordEvidence", List.of("SK AX, 산업별 AX 전환 사업 확대 - 고객 업무 운영 고도화 중심으로 AX 적용"),
                                 "dartRceptNo", null
                         ),
                         mapOf(
@@ -210,6 +214,10 @@ public class ApiContractFixtureService {
                                 "axRevenueSharePct", null,
                                 "contractCount", null,
                                 "topKeyword", "FabriX",
+                                "topKeywordReason", "FabriX는 삼성 SDS의 기업용 생성형 AI 플랫폼/오퍼링과 직접 연결되는 제품 키워드입니다.",
+                                "topKeywordBasis", "근거 5건 · 점수 10.1",
+                                "topKeywordScore", 10.1,
+                                "topKeywordEvidence", List.of("삼성 SDS, 기업용 생성형 AI 플랫폼 FabriX 적용 확대 - 업무 자동화와 AI 플랫폼 수요 증가"),
                                 "dartRceptNo", null
                         ),
                         mapOf(
@@ -220,7 +228,11 @@ public class ApiContractFixtureService {
                                 "operatingMarginPct", 10.95,
                                 "axRevenueSharePct", null,
                                 "contractCount", null,
-                                "topKeyword", "금융",
+                                "topKeyword", "금융 DX",
+                                "topKeywordReason", "금융 DX는 LG CNS의 금융권 시스템 구축, 클라우드 전환, 업무 고도화 사업과 직접 연결되는 키워드입니다.",
+                                "topKeywordBasis", "근거 3건 · 점수 8.4",
+                                "topKeywordScore", 8.4,
+                                "topKeywordEvidence", List.of("LG CNS, 금융권 DX 사업 고도화 - 클라우드 전환과 시스템 구축 수요 대응"),
                                 "dartRceptNo", null
                         ),
                         mapOf(
@@ -232,6 +244,10 @@ public class ApiContractFixtureService {
                                 "axRevenueSharePct", null,
                                 "contractCount", null,
                                 "topKeyword", "커넥티드카",
+                                "topKeywordReason", "커넥티드카는 현대오토에버의 차량 SW, 모빌리티 플랫폼, 차량 연결 서비스 영역과 직접 연결되는 키워드입니다.",
+                                "topKeywordBasis", "근거 4건 · 점수 9.7",
+                                "topKeywordScore", 9.7,
+                                "topKeywordEvidence", List.of("현대오토에버, 차량 SW와 커넥티드카 플랫폼 고도화 - 모빌리티 서비스 연결성 강화"),
                                 "dartRceptNo", null
                         ),
                         mapOf(
@@ -242,7 +258,11 @@ public class ApiContractFixtureService {
                                 "operatingMarginPct", -0.5,
                                 "axRevenueSharePct", null,
                                 "contractCount", null,
-                                "topKeyword", "산업DX",
+                                "topKeyword", "산업 DX",
+                                "topKeywordReason", "산업 DX는 포스코DX의 제조 현장 자동화, 설비 지능화, 스마트팩토리 사업과 직접 연결되는 키워드입니다.",
+                                "topKeywordBasis", "근거 4건 · 점수 9.5",
+                                "topKeywordScore", 9.5,
+                                "topKeywordEvidence", List.of("포스코 DX, 제조 현장 자동화와 설비 지능화 추진 - 스마트팩토리 사업 문맥"),
                                 "dartRceptNo", null
                         )
                 )
