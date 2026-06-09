@@ -3,12 +3,15 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.service.AiClientService;
+import com.skala.axis.service.GlobalTrendsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -29,6 +32,22 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GlobalTrendsController {
     private final AiClientService aiClientService;
+    private final GlobalTrendsService globalTrendsService;
+
+    /**
+     * 저장된 글로벌 트렌드 조회 — ``global_industry_trends`` read-only.
+     *
+     * <p>query: {@code from}, {@code to} (YYYY-MM-DD), {@code limit}, {@code offset}.</p>
+     */
+    @GetMapping("/trends")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> listGlobalTrends(
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(globalTrendsService.listTrends(from, to, limit, offset)));
+    }
 
     /**
      * 글로벌 트렌드 분석 — axis-ai GlobalTrendsAgent 위임.
