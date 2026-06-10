@@ -223,6 +223,30 @@ public class AssistantConversationService {
         return Map.of("conversation_id", id.toString(), "status", "ended");
     }
 
+    public Map<String, Object> deleteConversation(
+            String conversationId,
+            Authentication authentication,
+            String deviceId
+    ) {
+        UUID id = parseUuid(conversationId, null);
+        if (id == null || !canAccess(id, authentication, deviceId)) {
+            return Map.of("conversation_id", conversationId, "status", "not_found", "deleted", false);
+        }
+        try {
+            jdbcTemplate.update("""
+                    UPDATE assistant_conversations
+                       SET status = 'deleted',
+                           updated_at = NOW()
+                     WHERE id = ?
+                    """, id);
+        } catch (Exception e) {
+            log.debug("assistant conversation delete skipped | conversation={} error={}",
+                    conversationId, e.getMessage());
+            return Map.of("conversation_id", id.toString(), "status", "failed", "deleted", false);
+        }
+        return Map.of("conversation_id", id.toString(), "status", "deleted", "deleted", true);
+    }
+
     private void ensureConversation(
             UUID conversationId,
             UUID userId,

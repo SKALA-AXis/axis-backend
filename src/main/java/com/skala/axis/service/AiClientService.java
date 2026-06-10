@@ -9,11 +9,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.io.IOException;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -387,6 +391,31 @@ public class AiClientService {
                 .onErrorMap(TimeoutException.class, ex -> new AiServerException("Chat 타임아웃 (90s)"))
                 .onErrorResume(e -> {
                     log.warn("axis-ai /chat 호출 실패: {}", e.getMessage());
+                    return Mono.error(new AiServerException(e.getMessage()));
+                });
+    }
+
+    public Mono<Map<String, Object>> chatPdf(Map<String, Object> request, MultipartFile file) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("request", request == null ? Map.of() : request);
+        body.put("file_name", file.getOriginalFilename() == null ? "attachment.pdf" : file.getOriginalFilename());
+        body.put("content_type", file.getContentType() == null ? "application/pdf" : file.getContentType());
+        try {
+            body.put("pdf_base64", Base64.getEncoder().encodeToString(file.getBytes()));
+        } catch (IOException e) {
+            return Mono.error(new AiServerException("PDF 파일을 읽지 못했습니다."));
+        }
+
+        return aiWebClient.post()
+                .uri("/chat/pdf")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(MAP_TYPE)
+                .timeout(Duration.ofSeconds(90))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException("PDF Chat 타임아웃 (90s)"))
+                .onErrorResume(e -> {
+                    log.warn("axis-ai /chat/pdf 호출 실패: {}", e.getMessage());
                     return Mono.error(new AiServerException(e.getMessage()));
                 });
     }
