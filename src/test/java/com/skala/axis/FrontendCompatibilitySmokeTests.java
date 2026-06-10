@@ -24,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
         "spring.flyway.enabled=false",
         "axis.auth.enforce=false",
+        "axis.fixtures.enabled=true",
         "ai.server.base-url=http://localhost:9999"
 })
 class FrontendCompatibilitySmokeTests {
@@ -90,7 +91,9 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.signals[0].label").value("주요 신호"))
                 .andExpect(jsonPath("$.data.response_direction[0].action").exists())
-                .andExpect(jsonPath("$.data.sources[0].title").exists());
+                .andExpect(jsonPath("$.data.sources[0].title").exists())
+                .andExpect(jsonPath("$.data.provenance.is_fixture").value(true))
+                .andExpect(jsonPath("$.data.warning").value(org.hamcrest.Matchers.containsString("목업입니다")));
 
         mockMvc.perform(post("/api/dashboard/today-insight/warmup"))
                 .andExpect(status().isAccepted())

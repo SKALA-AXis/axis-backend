@@ -469,8 +469,15 @@ public class ApiContractFixtureService {
                 "peer_ids", List.of(),
                 "sectors", List.of(),
                 "confidence", 0.0,
-                "provenance", mapOf("mode", "fixture_fallback", "reason", "axis-ai unavailable or data unavailable", "prompt_version", "today-insight-v1.0-executive-delta"),
-                "warning", "neutral fallback; not a market insight"
+                "provenance", mapOf(
+                        "mode", "fixture_fallback",
+                        "result_kind", "fixture",
+                        "fixture", true,
+                        "is_fixture", true,
+                        "reason", "axis-ai unavailable or data unavailable",
+                        "prompt_version", "today-insight-v1.0-executive-delta"
+                ),
+                "warning", "목업입니다. 실제 Today's Insight 생성 결과가 아니며 시장 판단 근거로 사용하지 않습니다."
         );
     }
 

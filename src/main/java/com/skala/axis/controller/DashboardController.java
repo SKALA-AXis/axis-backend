@@ -8,8 +8,10 @@ import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
 import com.skala.axis.service.TodayInsightCronRequestFactory;
+import com.skala.axis.service.TodayInsightReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +36,11 @@ public class DashboardController {
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final AiClientService aiClientService;
     private final CronInternalAuth cronInternalAuth;
+    private final TodayInsightReportService todayInsightReportService;
     private final AtomicBoolean todayInsightWarmupInFlight = new AtomicBoolean(false);
+
+    @Value("${axis.fixtures.enabled:false}")
+    private boolean fixturesEnabled;
 
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardSummary(@RequestParam Map<String, String> params) {
@@ -52,16 +58,22 @@ public class DashboardController {
     @GetMapping("/today-insight")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayInsight(@RequestParam Map<String, String> params) {
         Map<String, Object> request = todayInsightRequest(params, false, true);
+        LocalDate anchorDate = parseAnchorDate(request.get("anchor_date"));
 
         try {
             Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
             if (result != null && !result.isEmpty()) {
+                if (isTodayInsightStatusPlaceholder(result)) {
+                    return todayInsightLatestOrStatus(anchorDate, result);
+                }
                 return ResponseEntity.ok(ApiResponse.success(result));
             }
+            log.warn("TodayInsight axis-ai 응답 비어 있음");
+            return todayInsightLatestOrUnavailable(anchorDate, "axis-ai returned empty response");
         } catch (AiServerException e) {
-            log.warn("TodayInsight axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
+            log.warn("TodayInsight axis-ai 호출 실패 | {}", e.getMessage());
+            return todayInsightLatestOrUnavailable(anchorDate, e.getMessage());
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.todayInsight()));
     }
 
     @PostMapping("/today-insight/cron-generate")
@@ -177,6 +189,58 @@ public class DashboardController {
             return Double.parseDouble(params.getOrDefault(key, String.valueOf(defaultValue)));
         } catch (NumberFormatException ignored) {
             return defaultValue;
+        }
+    }
+
+    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightUnavailable(String error) {
+        if (fixturesEnabled) {
+            log.warn("TodayInsight fixture fallback enabled");
+            return ResponseEntity.ok(ApiResponse.success(fixture.todayInsight()));
+        }
+        String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(ApiResponse.success(Map.of(
+                        "status", "failed",
+                        "result_kind", "axis_ai_unavailable",
+                        "error", safeError
+                )));
+    }
+
+    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightLatestOrStatus(
+            LocalDate anchorDate,
+            Map<String, Object> statusPayload
+    ) {
+        return todayInsightReportService.findLatestOnOrBefore(anchorDate)
+                .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
+                .orElseGet(() -> ResponseEntity.ok(ApiResponse.success(statusPayload)));
+    }
+
+    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightLatestOrUnavailable(
+            LocalDate anchorDate,
+            String error
+    ) {
+        return todayInsightReportService.findLatestOnOrBefore(anchorDate)
+                .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
+                .orElseGet(() -> todayInsightUnavailable(error));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean isTodayInsightStatusPlaceholder(Map<String, Object> result) {
+        Object provenanceValue = result.get("provenance");
+        if (!(provenanceValue instanceof Map<?, ?> provenance)) {
+            return false;
+        }
+        Object placeholder = provenance.get("is_status_placeholder");
+        Object resultKind = provenance.get("result_kind");
+        return Boolean.parseBoolean(String.valueOf(placeholder))
+                || "scheduled_pending".equals(String.valueOf(resultKind));
+    }
+
+    private static LocalDate parseAnchorDate(Object value) {
+        try {
+            return LocalDate.parse(String.valueOf(value));
+        } catch (Exception ignored) {
+            return LocalDate.now();
         }
     }
 }

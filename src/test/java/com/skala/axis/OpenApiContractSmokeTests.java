@@ -31,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
         "spring.flyway.enabled=false",
         "axis.auth.enforce=false",
+        "axis.fixtures.enabled=true",
         "ai.server.base-url=http://localhost:9999"
 })
 class OpenApiContractSmokeTests {
@@ -119,6 +120,7 @@ class OpenApiContractSmokeTests {
                 e("1601-2000", "GET", "/api/keyword-graph", status().isOk()),
                 e("1601-2000", "GET", "/api/keyword-graph/agentic-ai/cards", status().isOk()),
                 e("1601-2000", "GET", "/api/mixer/options", status().isOk()),
+                e("1601-2000", "GET", "/api/mixer/recent", status().isOk()),
                 e("1601-2000", "POST", "/api/mixer", status().isOk(), "{\"card_ids\":[\"CN-20260502-001\",\"CN-20260502-002\"]}"),
                 e("1601-2000", "POST", "/api/mixer/MX-20260504-001/share", status().isOk()),
                 e("1601-2000", "GET", "/api/raw-articles", status().isOk()),

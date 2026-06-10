@@ -4,20 +4,25 @@ import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.MixerResultService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -36,10 +41,23 @@ import java.util.Map;
 public class MixerController {
     private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
+    private final MixerResultService mixerResultService;
+
+    @Value("${axis.fixtures.enabled:false}")
+    private boolean fixturesEnabled;
 
     @GetMapping("/options")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMixerOptions() {
         return ResponseEntity.ok(ApiResponse.success(fixture.mixerOptions()));
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getRecentMixerResults(
+            @RequestParam(defaultValue = "5") Integer limit) {
+        int safeLimit = limit == null ? 5 : limit;
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", mixerResultService.recent(safeLimit)
+        )));
     }
 
     /**
@@ -49,6 +67,7 @@ public class MixerController {
      * <pre>
      *   { "card_ids": ["CN-...", ...],
      *     "ratios": {"peer": {...}, "industry": {...}, "keyword": [...]} | null,
+     *     "analysis_mode": "quick" | "deep",
      *     "user_context": "..." | null }
      * </pre>
      *
@@ -63,8 +82,16 @@ public class MixerController {
         Map<String, Object> body = request != null ? request : Map.of();
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
-            log.info("Mixer | card_ids 미지정 — fixture stub 반환");
-            return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
+            log.info("Mixer | card_ids 미지정");
+            if (fixturesEnabled) {
+                return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
+            }
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.success(Map.of(
+                            "status", "failed",
+                            "result_kind", "invalid_request",
+                            "error", "card_ids are required"
+                    )));
         }
 
         @SuppressWarnings("unchecked")
@@ -72,18 +99,20 @@ public class MixerController {
                 ? (Map<String, Object>) r
                 : Map.of();
         String userContext = body.get("user_context") instanceof String s ? s : null;
+        String analysisMode = parseAnalysisMode(body);
 
         try {
-            Map<String, Object> result = aiClientService.runMixer(cardIds, ratios, userContext).block();
+            Map<String, Object> result = aiClientService.runMixer(cardIds, ratios, userContext, analysisMode).block();
             if (result == null) {
-                log.warn("Mixer | axis-ai 응답 null — fixture fallback");
-                return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
+                log.warn("Mixer | axis-ai 응답 null");
+                return mixerUnavailable(cardIds, "axis-ai returned empty response");
             }
-            log.info("Mixer | cards={} confidence={}", cardIds.size(), result.get("confidence"));
+            log.info("Mixer | mode={} cards={} confidence={}", analysisMode, cardIds.size(), result.get("confidence"));
+            mixerResultService.saveResult(result, cardIds, ratios, userContext, analysisMode);
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("Mixer | axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
+            log.warn("Mixer | axis-ai 호출 실패 | {}", e.getMessage());
+            return mixerUnavailable(cardIds, e.getMessage());
         }
     }
 
@@ -111,9 +140,11 @@ public class MixerController {
                 ? (Map<String, Object>) r
                 : Map.of();
         String userContext = body.get("user_context") instanceof String s ? s : null;
+        String analysisMode = parseAnalysisMode(body);
 
-        log.info("Mixer stream | cards={}", cardIds.size());
-        return aiClientService.runMixerStream(cardIds, ratios, userContext)
+        log.info("Mixer stream | mode={} cards={}", analysisMode, cardIds.size());
+        return aiClientService.runMixerStream(cardIds, ratios, userContext, analysisMode)
+                .doOnNext(data -> mixerResultService.saveStreamEvent(data, cardIds, ratios, userContext, analysisMode))
                 .map(data -> ServerSentEvent.<String>builder().data(data).build());
     }
 
@@ -132,5 +163,28 @@ public class MixerController {
                     .toList();
         }
         return List.of();
+    }
+
+    private static String parseAnalysisMode(Map<String, Object> request) {
+        Object raw = request.get("analysis_mode");
+        if (raw instanceof String value && "deep".equals(value.trim().toLowerCase(Locale.ROOT))) {
+            return "deep";
+        }
+        return "quick";
+    }
+
+    private ResponseEntity<ApiResponse<Map<String, Object>>> mixerUnavailable(List<String> cardIds, String error) {
+        if (fixturesEnabled) {
+            log.warn("Mixer fixture fallback enabled");
+            return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
+        }
+        String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(ApiResponse.success(Map.of(
+                        "status", "failed",
+                        "result_kind", "axis_ai_unavailable",
+                        "error", safeError,
+                        "card_ids", cardIds
+                )));
     }
 }

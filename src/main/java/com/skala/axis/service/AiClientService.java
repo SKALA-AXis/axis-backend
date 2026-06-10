@@ -15,6 +15,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
@@ -146,11 +147,14 @@ public class AiClientService {
      * @param cardIds 분석 대상 카드 id 목록 (2 ≤ N ≤ 20)
      * @param ratios peer / industry / keyword 가중치 (옵션)
      * @param userContext 사용자 자유 입력 (옵션)
+     * @param analysisMode 빠른 실행(quick) 또는 정확 분석(deep)
      */
     public Mono<Map<String, Object>> runMixer(
-            List<String> cardIds, Map<String, Object> ratios, String userContext) {
+            List<String> cardIds, Map<String, Object> ratios, String userContext, String analysisMode) {
+        String normalizedMode = normalizeMixerAnalysisMode(analysisMode);
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("card_ids", cardIds);
+        body.put("analysis_mode", normalizedMode);
         if (ratios != null && !ratios.isEmpty()) {
             body.put("ratios", ratios);
         }
@@ -162,8 +166,10 @@ public class AiClientService {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
-                .timeout(Duration.ofSeconds(60))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Mixer 분석 타임아웃 (60s)"))
+                .timeout(mixerTimeout(normalizedMode, false))
+                .onErrorMap(TimeoutException.class, ex -> new AiServerException(
+                        "Mixer 분석 타임아웃 (" + mixerTimeout(normalizedMode, false).toSeconds() + "s)"
+                ))
                 .onErrorResume(e -> {
                     log.warn("axis-ai /mixer/analyze 호출 실패: {}", e.getMessage());
                     return Mono.error(new AiServerException(e.getMessage()));
@@ -175,12 +181,14 @@ public class AiClientService {
      *
      * <p>각 element 는 axis-ai 가 emit 한 SSE {@code data:} JSON 문자열
      * ({@code {"type":"stage"|"result"|"error", ...}}). 메인 LLM 단계 사이 간격이
-     * 길 수 있어 element 간 timeout 은 120초로 둔다.</p>
+     * 길 수 있어 모드별 timeout 을 둔다.</p>
      */
     public Flux<String> runMixerStream(
-            List<String> cardIds, Map<String, Object> ratios, String userContext) {
+            List<String> cardIds, Map<String, Object> ratios, String userContext, String analysisMode) {
+        String normalizedMode = normalizeMixerAnalysisMode(analysisMode);
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("card_ids", cardIds);
+        body.put("analysis_mode", normalizedMode);
         if (ratios != null && !ratios.isEmpty()) {
             body.put("ratios", ratios);
         }
@@ -193,11 +201,26 @@ public class AiClientService {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToFlux(String.class)
-                .timeout(Duration.ofSeconds(120))
+                .timeout(mixerTimeout(normalizedMode, true))
                 .onErrorResume(e -> {
                     log.warn("axis-ai /mixer/analyze/stream 호출 실패: {}", e.getMessage());
                     return Flux.just(mixerStreamError(e.getMessage()));
                 });
+    }
+
+    private static String normalizeMixerAnalysisMode(String analysisMode) {
+        if (analysisMode != null && "deep".equals(analysisMode.trim().toLowerCase(Locale.ROOT))) {
+            return "deep";
+        }
+        return "quick";
+    }
+
+    private static Duration mixerTimeout(String analysisMode, boolean stream) {
+        boolean deep = "deep".equals(normalizeMixerAnalysisMode(analysisMode));
+        if (stream) {
+            return Duration.ofSeconds(deep ? 150 : 45);
+        }
+        return Duration.ofSeconds(deep ? 120 : 45);
     }
 
     private static String mixerStreamError(String rawMessage) {
