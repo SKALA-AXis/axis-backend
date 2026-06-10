@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
         "spring.flyway.enabled=false",
         "axis.auth.enforce=false",
-        "axis.fixtures.enabled=true",
+        "axis.fixtures.enabled=false",
         "ai.server.base-url=http://localhost:9999"
 })
 class OpenApiContractSmokeTests {

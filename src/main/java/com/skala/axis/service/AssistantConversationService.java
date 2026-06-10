@@ -90,7 +90,6 @@ public class AssistantConversationService {
         out.putIfAbsent("sources", List.of());
         out.putIfAbsent("answer_blocks", List.of());
         out.putIfAbsent("follow_up_suggestions", out.getOrDefault("suggested_actions", List.of()));
-        out.putIfAbsent("handoff", null);
         return out;
     }
 
@@ -183,7 +182,6 @@ public class AssistantConversationService {
                            answer_payload,
                            sources,
                            retrieval_trace,
-                           handoff,
                            safety,
                            confidence,
                            langfuse_trace_id,
@@ -308,7 +306,7 @@ public class AssistantConversationService {
                 toJson(response),
                 toJson(response.getOrDefault("sources", List.of())),
                 toJson(provenance),
-                toJson(response.get("handoff") == null ? Map.of() : response.get("handoff")),
+                toJson(Map.of()),
                 toJson(safety),
                 doubleOrNull(response.get("confidence")),
                 stringValue(provenance.get("langfuse_trace_id")),
@@ -375,7 +373,7 @@ public class AssistantConversationService {
 
     private Map<String, Object> normalizeMessageRow(Map<String, Object> row) {
         Map<String, Object> out = new LinkedHashMap<>(row);
-        for (String key : List.of("answer_payload", "retrieval_trace", "handoff", "safety")) {
+        for (String key : List.of("answer_payload", "retrieval_trace", "safety")) {
             out.put(key, parseJsonObject(out.get(key)));
         }
         out.put("sources", parseJsonList(out.get("sources")));

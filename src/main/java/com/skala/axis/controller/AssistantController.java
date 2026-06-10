@@ -29,9 +29,9 @@ import java.util.UUID;
 /**
  * Assistant chat endpoint.
  *
- * <p>v2 변경: {@code POST /api/assistant/chat} 가 fixture stub → axis-ai 의
- * {@code POST /chat} (ChatOrchestratorAgent) 위임. intent 분류 + 분석 agent 라우팅
- * + compose. 실패 시 fixture fallback.</p>
+ * <p>{@code POST /api/assistant/chat} 는 axis-ai 의 {@code POST /chat}
+ * (ChatOrchestratorAgent)에 위임한다. axis-ai 장애 시 임시 답변을 대신
+ * 보여주지 않고 사용자가 재시도할 수 있는 시스템 응답만 반환한다.</p>
  *
  * <p>spec: {@code axis-ai/design/40-user-query/chat-orchestrator.md}.</p>
  */
@@ -213,7 +213,7 @@ public class AssistantController {
         );
         Map<String, Object> response = assistantSystemResponse(
                 conversationId,
-                "AI 서버 응답을 받지 못했습니다. 지금은 임시 목업 답변을 대신 보여주지 않습니다. 잠시 후 다시 시도해 주세요.",
+                "AI 서버 응답을 받지 못했습니다. 실제 답변을 생성하지 못했으니 잠시 후 다시 시도해 주세요.",
                 "assistant_unavailable",
                 "axis_ai_unavailable",
                 errorMessage == null ? "axis-ai unavailable" : errorMessage
@@ -256,7 +256,6 @@ public class AssistantController {
         response.put("confidence", 0.0);
         response.put("blocked", false);
         response.put("blocked_reason", null);
-        response.put("handoff", null);
         response.put("provenance", provenance);
         return response;
     }

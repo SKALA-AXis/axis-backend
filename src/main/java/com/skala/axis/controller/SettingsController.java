@@ -4,7 +4,6 @@ import com.skala.axis.config.AuthProperties;
 import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.auth.PasswordChangeRequest;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.AuthService;
 import com.skala.axis.service.RequestMetadata;
 import com.skala.axis.service.UserSettingsService;
@@ -18,13 +17,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/settings")
 @RequiredArgsConstructor
 public class SettingsController {
-    private final ApiContractFixtureService fixture;
     private final AuthProperties authProperties;
     private final AuthService authService;
     private final UserSettingsService userSettingsService;
@@ -34,7 +33,7 @@ public class SettingsController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userSettingsService.alertRules(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.alertRules()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of("items", List.of())));
     }
 
     @PutMapping("/alert-rules")
@@ -50,7 +49,7 @@ public class SettingsController {
                     RequestMetadata.from(servletRequest)
             )));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.updatedResult()));
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
     }
 
     @GetMapping("/notifications")
@@ -58,7 +57,11 @@ public class SettingsController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userSettingsService.notificationSettings(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.notificationSettings()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "channels", Map.of(),
+                "quietHours", Map.of(),
+                "rules", List.of()
+        )));
     }
 
     @PutMapping("/notifications")
@@ -74,7 +77,7 @@ public class SettingsController {
                     RequestMetadata.from(servletRequest)
             )));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.updateNotificationSettings(request)));
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
     }
 
     @GetMapping("/profile")
@@ -82,7 +85,7 @@ public class SettingsController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userSettingsService.profile(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(Map.of())));
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("profile_store_unavailable")));
     }
 
     @PutMapping("/profile")
@@ -98,7 +101,7 @@ public class SettingsController {
                     RequestMetadata.from(servletRequest)
             )));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(request)));
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("profile_store_unavailable")));
     }
 
     @GetMapping("/view-preferences")
@@ -106,7 +109,7 @@ public class SettingsController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userSettingsService.viewPreferences(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.viewPreferences()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of()));
     }
 
     @PutMapping("/view-preferences")
@@ -122,7 +125,7 @@ public class SettingsController {
                     RequestMetadata.from(servletRequest)
             )));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.updateViewPreferences(request)));
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
     }
 
     @PutMapping("/password")
@@ -138,7 +141,7 @@ public class SettingsController {
                     RequestMetadata.from(servletRequest)
             )));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.changedResult()));
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("password_change_unavailable")));
     }
 
     @GetMapping("/access-logs")
@@ -146,6 +149,13 @@ public class SettingsController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userSettingsService.accessLogs(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.accessLogs()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", List.of(),
+                "total", 0
+        )));
+    }
+
+    private static Map<String, Object> operationUnavailable(String resultKind) {
+        return Map.of("status", "failed", "result_kind", resultKind);
     }
 }

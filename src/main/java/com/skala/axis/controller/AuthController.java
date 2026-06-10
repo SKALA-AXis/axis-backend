@@ -12,7 +12,6 @@ import com.skala.axis.dto.auth.PasswordResetRequest;
 import com.skala.axis.dto.auth.PasswordResetRequestResponse;
 import com.skala.axis.dto.auth.RefreshRequest;
 import com.skala.axis.dto.auth.SignupRequest;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.AuthService;
 import com.skala.axis.service.RequestMetadata;
 import jakarta.servlet.http.Cookie;
@@ -33,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -40,7 +40,6 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
-    private final ApiContractFixtureService fixture;
     private final AuthProperties authProperties;
     private final AuthService authService;
 
@@ -50,7 +49,7 @@ public class AuthController {
             HttpServletRequest servletRequest
     ) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(fixture.userProfile(request)));
+            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(devAuthDisabled("signup_disabled")));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(
                 authService.signup(toSignupRequest(request), RequestMetadata.from(servletRequest))
@@ -63,7 +62,7 @@ public class AuthController {
             HttpServletRequest servletRequest
     ) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+            return ResponseEntity.ok(ApiResponse.success(devAuthDisabled("email_verification_disabled")));
         }
         return ResponseEntity.ok(ApiResponse.success(authService.confirmEmail(stringValue(request, "token"), RequestMetadata.from(servletRequest))));
     }
@@ -74,7 +73,7 @@ public class AuthController {
             HttpServletRequest servletRequest
     ) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+            return ResponseEntity.ok(ApiResponse.success(devAuthDisabled("email_verification_disabled")));
         }
         return ResponseEntity.ok(ApiResponse.success(authService.confirmEmail(token, RequestMetadata.from(servletRequest))));
     }
@@ -85,7 +84,7 @@ public class AuthController {
             HttpServletRequest servletRequest
     ) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.verifiedResult()));
+            return ResponseEntity.ok(ApiResponse.success(devAuthDisabled("email_verification_disabled")));
         }
         return ResponseEntity.ok(ApiResponse.success(authService.resendEmailVerification(request == null ? "" : request.email(), RequestMetadata.from(servletRequest))));
     }
@@ -124,7 +123,7 @@ public class AuthController {
     ) {
         LoginRequest loginRequest = normalizeLoginRequest(request);
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.login(loginFixtureRequest(loginRequest))));
+            return ResponseEntity.ok(ApiResponse.success(devLoginResponse(loginRequest)));
         }
         AuthService.AuthLoginResult result = authService.login(loginRequest, RequestMetadata.from(servletRequest));
         addRefreshCookie(servletResponse, result.refreshToken(), Boolean.TRUE.equals(loginRequest.rememberMe()));
@@ -139,14 +138,14 @@ public class AuthController {
             HttpServletResponse servletResponse
     ) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.logoutResult()));
+            return ResponseEntity.ok(ApiResponse.success(Map.of("status", "logged_out")));
         }
         UUID userId = authentication != null && authentication.getPrincipal() instanceof AuthPrincipal principal
                 ? principal.userId()
                 : null;
         authService.logout(resolveRefreshToken(request, servletRequest), userId, RequestMetadata.from(servletRequest));
         clearRefreshCookie(servletResponse);
-        return ResponseEntity.ok(ApiResponse.success(fixture.logoutResult()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of("status", "logged_out")));
     }
 
     @PostMapping("/refresh")
@@ -156,7 +155,7 @@ public class AuthController {
             HttpServletResponse servletResponse
     ) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.refreshTokenResult()));
+            return ResponseEntity.ok(ApiResponse.success(devAuthDisabled("refresh_disabled")));
         }
         AuthService.AuthLoginResult result = authService.refresh(resolveRefreshToken(request, servletRequest), RequestMetadata.from(servletRequest));
         addRefreshCookie(servletResponse, result.refreshToken(), true);
@@ -166,7 +165,7 @@ public class AuthController {
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<Object>> getMe(Authentication authentication) {
         if (!authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(fixture.userProfile(Map.of())));
+            return ResponseEntity.ok(ApiResponse.success(devAuthDisabled("auth_disabled")));
         }
         return ResponseEntity.ok(ApiResponse.success(authService.me(AuthSecurity.requireUserId(authentication))));
     }
@@ -230,17 +229,36 @@ public class AuthController {
         );
     }
 
-    private Map<String, Object> loginFixtureRequest(LoginRequest request) {
-        return Map.of(
-                "email", request.email() == null ? "" : request.email(),
-                "password", request.password() == null ? "" : request.password(),
-                "remember_me", Boolean.TRUE.equals(request.rememberMe())
-        );
-    }
-
     private String stringValue(Map<String, Object> request, String key) {
         Object value = request == null ? null : request.get(key);
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Map<String, Object> devLoginResponse(LoginRequest request) {
+        String email = request.email() == null || request.email().isBlank()
+                ? "local-user"
+                : request.email();
+        Map<String, Object> user = new LinkedHashMap<>();
+        user.put("id", "local-auth-disabled");
+        user.put("email", email);
+        user.put("name", email);
+        user.put("role", "local");
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("access_token", "auth-disabled");
+        response.put("refresh_token", "auth-disabled");
+        response.put("token_type", "Bearer");
+        response.put("expires_in", 0);
+        response.put("user", user);
+        response.put("status", "auth_disabled");
+        return response;
+    }
+
+    private Map<String, Object> devAuthDisabled(String resultKind) {
+        return Map.of(
+                "status", "disabled",
+                "result_kind", resultKind
+        );
     }
 
 }

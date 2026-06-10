@@ -4,14 +4,12 @@ import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.security.CronInternalAuth;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
 import com.skala.axis.service.TodayInsightCronRequestFactory;
 import com.skala.axis.service.TodayInsightReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -31,7 +30,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequestMapping("/api/dashboard")
 @RequiredArgsConstructor
 public class DashboardController {
-    private final ApiContractFixtureService fixture;
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final AiClientService aiClientService;
@@ -39,12 +37,9 @@ public class DashboardController {
     private final TodayInsightReportService todayInsightReportService;
     private final AtomicBoolean todayInsightWarmupInFlight = new AtomicBoolean(false);
 
-    @Value("${axis.fixtures.enabled:false}")
-    private boolean fixturesEnabled;
-
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardSummary(@RequestParam Map<String, String> params) {
-        Map<String, Object> dashboardSummary = fixture.frontendDashboard();
+        Map<String, Object> dashboardSummary = emptyDashboardSummary();
         dashboardStockChartService.applyDailyRateChart(dashboardSummary);
         dashboardKeywordTrendChartService.removeKeywordTrendChart(dashboardSummary);
         return ResponseEntity.ok(ApiResponse.success(dashboardSummary));
@@ -171,6 +166,23 @@ public class DashboardController {
         return request;
     }
 
+    private static Map<String, Object> emptyDashboardSummary() {
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("trends", List.of());
+        summary.put("articles", List.of());
+        summary.put("keywords", List.of());
+        summary.put("keywordSearchPoints", List.of());
+        summary.put("keywordSeries", List.of());
+        summary.put("keywordInsights", List.of());
+        summary.put("stockPoints", List.of());
+        summary.put("stockRatePoints", List.of());
+        summary.put("stockSource", null);
+        summary.put("notifications", List.of());
+        summary.put("keywordNewsCount", "0");
+        summary.put("dartSummary", null);
+        return summary;
+    }
+
     private static int intParam(Map<String, String> params, String key, int defaultValue) {
         try {
             return Integer.parseInt(params.getOrDefault(key, String.valueOf(defaultValue)));
@@ -193,12 +205,8 @@ public class DashboardController {
     }
 
     private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightUnavailable(String error) {
-        if (fixturesEnabled) {
-            log.warn("TodayInsight fixture fallback enabled");
-            return ResponseEntity.ok(ApiResponse.success(fixture.todayInsight()));
-        }
         String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+        return ResponseEntity.ok()
                 .body(ApiResponse.success(Map.of(
                         "status", "failed",
                         "result_kind", "axis_ai_unavailable",

@@ -3,7 +3,7 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.CardNewsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -23,27 +23,34 @@ import java.util.Map;
 @RequestMapping("/api/briefings")
 @RequiredArgsConstructor
 public class BriefingController {
-    private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
+    private final CardNewsService cardNewsService;
 
     @GetMapping("/today")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayBriefing() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.briefing(fixture.defaultBriefingId())));
+        return ResponseEntity.ok(ApiResponse.success(emptyBriefingsData()));
     }
 
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefingSummary(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.briefingWorkspace(params)));
+        return ResponseEntity.ok(ApiResponse.success(emptyBriefingsData()));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listBriefings(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.briefingSummaryList()));
+        return ResponseEntity.ok(ApiResponse.success(emptyBriefingsData()));
     }
 
     @GetMapping("/cards/search")
     public ResponseEntity<ApiResponse<Map<String, Object>>> searchBriefingCards(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.cardList(params)));
+        String peerId = params.get("peer_id");
+        String importance = params.get("importance");
+        String eventType = params.get("event_type");
+        var cards = cardNewsService.getAll(peerId, importance, eventType);
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", cards,
+                "total", cards.size()
+        )));
     }
 
     @PostMapping("/generate")
@@ -55,19 +62,35 @@ public class BriefingController {
                 return ResponseEntity.ok(ApiResponse.success(result));
             }
         } catch (AiServerException e) {
-            log.warn("Briefing axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
+            log.warn("Briefing axis-ai 호출 실패 | {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
+                    "status", "failed",
+                    "result_kind", "axis_ai_unavailable",
+                    "error", e.getMessage()
+            )));
         }
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(fixture.briefingGenerationAccepted()));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
+                "status", "failed",
+                "result_kind", "empty_axis_ai_response"
+        )));
     }
 
     @GetMapping("/{briefingId}/status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefingGenerationStatus(@PathVariable String briefingId) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.briefingStatus(briefingId)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "briefing_id", briefingId,
+                "status", "not_found",
+                "result_kind", "no_saved_briefing"
+        )));
     }
 
     @GetMapping("/{briefingId}")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefingById(@PathVariable String briefingId) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.briefing(briefingId)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "briefing_id", briefingId,
+                "status", "not_found",
+                "result_kind", "no_saved_briefing"
+        )));
     }
 
     @PostMapping("/{briefingId}/share")
@@ -75,9 +98,24 @@ public class BriefingController {
             @PathVariable String briefingId,
             @RequestBody(required = false) Map<String, Object> request
     ) {
-        Integer expiresInHours = request == null || request.get("expires_in_hours") == null
-                ? null
-                : Integer.parseInt(String.valueOf(request.get("expires_in_hours")));
-        return ResponseEntity.ok(ApiResponse.success(fixture.shareBriefing(briefingId, expiresInHours)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "briefing_id", briefingId,
+                "status", "failed",
+                "result_kind", "briefing_share_store_unavailable"
+        )));
+    }
+
+    private static Map<String, Object> emptyBriefingsData() {
+        Map<String, Object> snapshot = Map.of(
+                "title", "",
+                "summary", "",
+                "sections", java.util.List.of()
+        );
+        return Map.of(
+                "dailySnapshot", snapshot,
+                "weeklySnapshot", snapshot,
+                "evidenceSources", java.util.List.of(),
+                "history", java.util.List.of()
+        );
     }
 }

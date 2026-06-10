@@ -29,8 +29,8 @@ axis-backend가 하지 않는 일
 2. 정상 응답은 `{ success, data, timestamp }` 구조를 유지합니다.
 3. 에러 응답 코드는 OpenAPI의 공통 에러 코드 계열을 사용합니다.
 4. 명세를 400줄 단위로 확인하며 작업하고, 단계별 테스트를 유지합니다.
-5. 실제 DB 구현 전 도메인은 `ApiContractFixtureService`의 비어 있지 않은 계약용 응답으로 연결합니다.
-6. 계약 검증용 샘플 데이터는 Java 코드에 하드코딩하지 않고 `src/main/resources/contract-fixtures.json`에 둡니다.
+5. 실제 DB 구현 전 도메인은 샘플 데이터를 반환하지 않고, 빈 실제 응답 구조 또는 명시적인 실패/미저장 상태를 반환합니다.
+6. 화면에 표시될 수 있는 임시 데이터는 실제 결과처럼 반환하지 않습니다.
 
 ## 현재 주요 구조
 
@@ -57,7 +57,6 @@ src/main/java/com/skala/axis/
 │   ├── PeerController.java
 │   └── SearchController.java
 ├── service/
-│   ├── ApiContractFixtureService.java
 │   ├── AiClientService.java
 │   ├── IssueCardService.java
 │   ├── ArticleImageService.java
