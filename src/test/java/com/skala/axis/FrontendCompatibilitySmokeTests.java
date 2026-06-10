@@ -124,6 +124,11 @@ class FrontendCompatibilitySmokeTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"오늘 인사이트 요약해줘\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.message.content").exists());
+                .andExpect(jsonPath("$.data.message.content").exists())
+                .andExpect(jsonPath("$.data.intent").value("assistant_unavailable"))
+                .andExpect(jsonPath("$.data.provenance.is_fixture").value(false))
+                .andExpect(jsonPath("$.data.message.content").value(org.hamcrest.Matchers.not(
+                        "오늘 인사이트, 근거 카드뉴스, SK AX 대응 방향을 묶어 보고서 초안을 만들었습니다."
+                )));
     }
 }

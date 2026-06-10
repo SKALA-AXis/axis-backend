@@ -6,7 +6,6 @@ import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.service.AssistantConversationService;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,8 +21,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Assistant chat endpoint.
@@ -42,7 +43,6 @@ public class AssistantController {
     private static final long MAX_PDF_BYTES = 15L * 1024L * 1024L;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-    private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
     private final AssistantConversationService assistantConversationService;
     private final ObjectMapper objectMapper;
@@ -70,9 +70,9 @@ public class AssistantController {
         String message = body.get("message") instanceof String s ? s : "";
 
         if (message.isBlank()) {
-            log.info("AssistantChat | empty message — fixture stub");
+            log.info("AssistantChat | empty message");
             return ResponseEntity.ok(ApiResponse.success(
-                    assistantConversationService.normalizeAssistantResponse(fixture.assistantChat(request))
+                    assistantConversationService.normalizeAssistantResponse(emptyChatResponse(body))
             ));
         }
 
@@ -80,9 +80,13 @@ public class AssistantController {
         try {
             Map<String, Object> result = aiClientService.chat(prepared).block();
             if (result == null) {
-                log.warn("AssistantChat | axis-ai 응답 null — fixture fallback");
+                log.warn("AssistantChat | axis-ai 응답 null — unavailable response");
+                result = assistantConversationService.completeChatTurn(
+                        prepared,
+                        unavailableChatResponse(prepared, "axis-ai returned empty chat response")
+                );
                 return ResponseEntity.ok(ApiResponse.success(
-                        assistantConversationService.normalizeAssistantResponse(fixture.assistantChat(request))
+                        result
                 ));
             }
             result = assistantConversationService.completeChatTurn(prepared, result);
@@ -90,10 +94,12 @@ public class AssistantController {
                     result.get("intent"), result.get("session_id"), result.get("confidence"));
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("AssistantChat | axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(
-                    assistantConversationService.normalizeAssistantResponse(fixture.assistantChat(request))
-            ));
+            log.warn("AssistantChat | axis-ai 호출 실패 — unavailable response | {}", e.getMessage());
+            Map<String, Object> result = assistantConversationService.completeChatTurn(
+                    prepared,
+                    unavailableChatResponse(prepared, e.getMessage())
+            );
+            return ResponseEntity.ok(ApiResponse.success(result));
         }
     }
 
@@ -184,6 +190,75 @@ public class AssistantController {
         } catch (Exception e) {
             throw new IllegalArgumentException("request_json 형식이 올바르지 않습니다.");
         }
+    }
+
+    private Map<String, Object> emptyChatResponse(Map<String, Object> request) {
+        String conversationId = String.valueOf(
+                request.getOrDefault("conversation_id", UUID.randomUUID().toString())
+        );
+        Map<String, Object> response = assistantSystemResponse(
+                conversationId,
+                "질문을 입력해 주세요. 카드뉴스, 오늘 인사이트, 브리핑, 믹서 결과에 대해 답변할 수 있습니다.",
+                "empty_message",
+                "empty_message",
+                null
+        );
+        response.put("follow_up_suggestions", List.of("오늘 카드뉴스를 요약해줘", "최근 경쟁사 동향을 알려줘"));
+        return response;
+    }
+
+    private Map<String, Object> unavailableChatResponse(Map<String, Object> request, String errorMessage) {
+        String conversationId = String.valueOf(
+                request.getOrDefault("conversation_id", UUID.randomUUID().toString())
+        );
+        Map<String, Object> response = assistantSystemResponse(
+                conversationId,
+                "AI 서버 응답을 받지 못했습니다. 지금은 임시 목업 답변을 대신 보여주지 않습니다. 잠시 후 다시 시도해 주세요.",
+                "assistant_unavailable",
+                "axis_ai_unavailable",
+                errorMessage == null ? "axis-ai unavailable" : errorMessage
+        );
+        response.put("follow_up_suggestions", List.of("오늘 카드뉴스를 다시 요약해줘", "최근 경쟁사 동향을 다시 찾아줘"));
+        return response;
+    }
+
+    private Map<String, Object> assistantSystemResponse(
+            String conversationId,
+            String reply,
+            String intent,
+            String retrievalMode,
+            String errorMessage
+    ) {
+        Map<String, Object> provenance = new LinkedHashMap<>();
+        provenance.put("agent", "AssistantController");
+        provenance.put("retrieval_mode", retrievalMode);
+        provenance.put("is_fixture", false);
+        if (errorMessage != null && !errorMessage.isBlank()) {
+            provenance.put("error", errorMessage);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("conversation_id", conversationId);
+        response.put("session_id", conversationId);
+        response.put("message_id", UUID.randomUUID().toString());
+        response.put("reply", reply);
+        response.put("intent", intent);
+        response.put("scope", "system");
+        response.put("answer_blocks", List.of());
+        response.put("sources", List.of());
+        response.put("related_items", Map.of(
+                "cards", List.of(),
+                "briefings", List.of(),
+                "mixers", List.of(),
+                "reports", List.of()
+        ));
+        response.put("follow_up_suggestions", List.of());
+        response.put("confidence", 0.0);
+        response.put("blocked", false);
+        response.put("blocked_reason", null);
+        response.put("handoff", null);
+        response.put("provenance", provenance);
+        return response;
     }
 
     private void validatePdfFile(MultipartFile file) {
