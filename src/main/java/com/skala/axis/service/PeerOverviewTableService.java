@@ -75,7 +75,7 @@ public class PeerOverviewTableService {
         Map<String, PeerLlmAnalysisSnapshot> llmSnapshots = loadPeerLlmAnalysisSnapshots();
         Map<String, List<Map<String, String>>> comparisonInsights = buildComparisonInsights(rows);
         Map<String, List<Map<String, String>>> swotInsights = defaultSwotInsights();
-        Map<String, List<Map<String, String>>> analysisTraces = new LinkedHashMap<>();
+        Map<String, List<Map<String, Object>>> analysisTraces = new LinkedHashMap<>();
         applyPeerLlmSnapshots(llmSnapshots, comparisonInsights, swotInsights, analysisTraces);
         return mapOf(
                 "periodLabel", period,
@@ -685,7 +685,7 @@ public class PeerOverviewTableService {
             Map<String, PeerLlmAnalysisSnapshot> snapshots,
             Map<String, List<Map<String, String>>> comparisonInsights,
             Map<String, List<Map<String, String>>> swotInsights,
-            Map<String, List<Map<String, String>>> analysisTraces
+            Map<String, List<Map<String, Object>>> analysisTraces
     ) {
         for (PeerLlmAnalysisSnapshot snapshot : snapshots.values()) {
             List<Map<String, String>> comparisonItems = extractComparisonPoints(snapshot.outputPayload());
@@ -698,7 +698,7 @@ public class PeerOverviewTableService {
                 swotInsights.put(snapshot.peerId(), swotItems);
             }
 
-            List<Map<String, String>> traceItems = extractAnalysisTrace(snapshot);
+            List<Map<String, Object>> traceItems = extractAnalysisTrace(snapshot);
             if (!traceItems.isEmpty()) {
                 analysisTraces.put(snapshot.peerId(), traceItems);
             }
@@ -712,7 +712,16 @@ public class PeerOverviewTableService {
             String label = stringValue(item.get("label"));
             String body = sanitizeObjectivePeerFlowText(stringValue(item.get("body")));
             if (List.of("포지셔닝", "사업 신호", "기술 신호", "리스크").contains(label) && !body.isBlank()) {
-                items.add(insight(label, body));
+                Map<String, String> comparisonItem = insight(label, body);
+                String reasoningSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("reasoning_summary")));
+                String evidenceSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("evidence_summary")));
+                if (!reasoningSummary.isBlank()) {
+                    comparisonItem.put("reasoningSummary", reasoningSummary);
+                }
+                if (!evidenceSummary.isBlank()) {
+                    comparisonItem.put("evidenceSummary", evidenceSummary);
+                }
+                items.add(comparisonItem);
             }
         }
         return items;
@@ -727,9 +736,13 @@ public class PeerOverviewTableService {
             if (canonicalSwotLabel(label) != null && !body.isBlank()) {
                 Map<String, String> swotItem = insight(canonicalSwotLabel(label), body);
                 String title = stringValue(item.get("title"));
+                String reasoningSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("reasoning_summary")));
                 String evidenceSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("evidence_summary")));
                 if (!title.isBlank()) {
                     swotItem.put("title", title);
+                }
+                if (!reasoningSummary.isBlank()) {
+                    swotItem.put("reasoningSummary", reasoningSummary);
                 }
                 if (!evidenceSummary.isBlank()) {
                     swotItem.put("evidenceSummary", evidenceSummary);
@@ -740,53 +753,30 @@ public class PeerOverviewTableService {
         return items;
     }
 
-    private List<Map<String, String>> extractAnalysisTrace(PeerLlmAnalysisSnapshot snapshot) {
-        List<Map<String, String>> items = new ArrayList<>();
+    private List<Map<String, Object>> extractAnalysisTrace(PeerLlmAnalysisSnapshot snapshot) {
+        List<Map<String, Object>> items = new ArrayList<>();
         List<Map<String, Object>> sourceItems = snapshot.analysisTrace().isEmpty()
                 ? objectList(snapshot.outputPayload().get("analysis_trace"))
                 : snapshot.analysisTrace();
         for (Map<String, Object> item : sourceItems) {
             String step = stringValue(item.get("step"));
             String summary = sanitizeObjectivePeerFlowText(stringValue(item.get("summary")));
-            if (!step.isBlank() && !summary.isBlank()) {
-                items.add(insight(step, summary));
+            String reasoning = sanitizeObjectivePeerFlowText(firstNonBlank(
+                    stringValue(item.get("reasoning")),
+                    stringValue(item.get("reasoning_summary")),
+                    stringValue(item.get("interpretation"))
+            ));
+            String evidence = sanitizeObjectivePeerFlowText(firstNonBlank(
+                    stringValue(item.get("evidence")),
+                    stringValue(item.get("evidence_summary")),
+                    stringValue(item.get("basis")),
+                    stringValue(item.get("source_summary"))
+            ));
+            if (!step.isBlank() && (!summary.isBlank() || !reasoning.isBlank() || !evidence.isBlank())) {
+                items.add(traceItem(step, summary, reasoning, evidence));
             }
         }
-        appendComparisonReasonItems(items, snapshot.outputPayload());
-        appendSwotReasonItems(items, snapshot.outputPayload());
         return items;
-    }
-
-    private void appendComparisonReasonItems(List<Map<String, String>> items, Map<String, Object> outputPayload) {
-        for (Object rawItem : listValue(outputPayload.get("comparison_points"))) {
-            Map<String, Object> item = objectMap(rawItem);
-            String label = stringValue(item.get("label"));
-            String body = sanitizeObjectivePeerFlowText(stringValue(item.get("body")));
-            String evidenceSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("evidence_summary")));
-            if (label.isBlank() || evidenceSummary.isBlank()) {
-                continue;
-            }
-            items.add(insight(
-                    label + " 판단 근거",
-                    body.isBlank() ? evidenceSummary : body + " 근거: " + evidenceSummary
-            ));
-        }
-    }
-
-    private void appendSwotReasonItems(List<Map<String, String>> items, Map<String, Object> outputPayload) {
-        for (Object rawItem : listValue(outputPayload.get("swot"))) {
-            Map<String, Object> item = objectMap(rawItem);
-            String label = canonicalSwotLabel(stringValue(item.get("label")));
-            String body = sanitizeObjectivePeerFlowText(stringValue(item.get("body")));
-            String evidenceSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("evidence_summary")));
-            if (label == null || evidenceSummary.isBlank()) {
-                continue;
-            }
-            items.add(insight(
-                    label + " 판단 근거",
-                    body.isBlank() ? evidenceSummary : body + " 근거: " + evidenceSummary
-            ));
-        }
     }
 
     private Map<String, Object> readJsonObject(String value) {
@@ -915,6 +905,19 @@ public class PeerOverviewTableService {
         Map<String, String> item = new LinkedHashMap<>();
         item.put("label", label);
         item.put("body", body);
+        return item;
+    }
+
+    private Map<String, Object> traceItem(String label, String body, String reasoning, String evidence) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("label", label);
+        item.put("body", body);
+        if (reasoning != null && !reasoning.isBlank()) {
+            item.put("reasoning", reasoning);
+        }
+        if (evidence != null && !evidence.isBlank()) {
+            item.put("evidence", evidence);
+        }
         return item;
     }
 
@@ -2034,11 +2037,12 @@ public class PeerOverviewTableService {
                 stringValue(keyword.get("reason"))
         );
         String reason = firstNonBlank(
+                stringValue(keyword.get("reasoning")),
                 stringValue(keyword.get("reason")),
                 stringValue(payload.get("top_keyword_reason"))
         );
         lines.add(
-                "%s %s 키워드 기준: %s. %s %s"
+                "%s %s 키워드 기준: %s. 근거 내용: %s. 판단 이유: %s"
                         .formatted(
                                 peerName.isBlank() ? "해당 기업" : peerName,
                                 axisLabel,
