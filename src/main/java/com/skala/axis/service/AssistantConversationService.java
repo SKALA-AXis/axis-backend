@@ -18,6 +18,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.skala.axis.query.AssistantConversationQueries.COUNT_ACCESS_BY_DEVICE;
+import static com.skala.axis.query.AssistantConversationQueries.COUNT_ACCESS_BY_USER;
+import static com.skala.axis.query.AssistantConversationQueries.DELETE_CONVERSATION_IF_DELETED;
+import static com.skala.axis.query.AssistantConversationQueries.DELETE_MESSAGES_BY_CONVERSATION;
+import static com.skala.axis.query.AssistantConversationQueries.END_CONVERSATION;
+import static com.skala.axis.query.AssistantConversationQueries.INSERT_ASSISTANT_MESSAGE;
+import static com.skala.axis.query.AssistantConversationQueries.INSERT_USER_MESSAGE;
+import static com.skala.axis.query.AssistantConversationQueries.LIST_BY_DEVICE_HASH;
+import static com.skala.axis.query.AssistantConversationQueries.LIST_BY_USER;
+import static com.skala.axis.query.AssistantConversationQueries.MESSAGE_DETAIL_BY_CONVERSATION;
+import static com.skala.axis.query.AssistantConversationQueries.RECENT_HISTORY;
+import static com.skala.axis.query.AssistantConversationQueries.SOFT_DELETE_BY_DEVICE;
+import static com.skala.axis.query.AssistantConversationQueries.SOFT_DELETE_BY_USER;
+import static com.skala.axis.query.AssistantConversationQueries.SOFT_DELETE_BY_USER_OR_DEVICE;
+import static com.skala.axis.query.AssistantConversationQueries.UPSERT_CONVERSATION;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -125,37 +141,9 @@ public class AssistantConversationService {
         int safeLimit = Math.max(1, Math.min(limit, 50));
         try {
             if (userId != null) {
-                return jdbcTemplate.queryForList("""
-                        SELECT id::text AS conversation_id,
-                               title,
-                               summary,
-                               status,
-                               message_count,
-                               last_message_at,
-                               created_at,
-                               updated_at
-                          FROM assistant_conversations
-                         WHERE user_id = ?
-                           AND status <> 'deleted'
-                         ORDER BY last_message_at DESC NULLS LAST, created_at DESC
-                         LIMIT ?
-                        """, userId, safeLimit);
+                return jdbcTemplate.queryForList(LIST_BY_USER, userId, safeLimit);
             }
-            return jdbcTemplate.queryForList("""
-                    SELECT id::text AS conversation_id,
-                           title,
-                           summary,
-                           status,
-                           message_count,
-                           last_message_at,
-                           created_at,
-                           updated_at
-                      FROM assistant_conversations
-                     WHERE device_id_hash = ?
-                       AND status <> 'deleted'
-                     ORDER BY last_message_at DESC NULLS LAST, created_at DESC
-                     LIMIT ?
-                    """, deviceHash, safeLimit);
+            return jdbcTemplate.queryForList(LIST_BY_DEVICE_HASH, deviceHash, safeLimit);
         } catch (Exception e) {
             log.debug("assistant conversation list skipped | error={}", e.getMessage());
             return List.of();
@@ -172,24 +160,10 @@ public class AssistantConversationService {
             return Map.of("conversation_id", conversationId, "messages", List.of());
         }
         try {
-            List<Map<String, Object>> messages = jdbcTemplate.queryForList("""
-                    SELECT id::text AS message_id,
-                           turn_idx,
-                           role,
-                           content,
-                           intent,
-                           scope,
-                           answer_payload,
-                           sources,
-                           retrieval_trace,
-                           safety,
-                           confidence,
-                           langfuse_trace_id,
-                           created_at
-                      FROM assistant_messages
-                     WHERE conversation_id = ?
-                     ORDER BY turn_idx ASC
-                    """, id).stream().map(this::normalizeMessageRow).toList();
+            List<Map<String, Object>> messages = jdbcTemplate.queryForList(MESSAGE_DETAIL_BY_CONVERSATION, id)
+                    .stream()
+                    .map(this::normalizeMessageRow)
+                    .toList();
             return Map.of("conversation_id", id.toString(), "messages", messages);
         } catch (Exception e) {
             log.debug("assistant conversation detail skipped | conversation={} error={}",
@@ -208,12 +182,7 @@ public class AssistantConversationService {
             return Map.of("conversation_id", conversationId, "status", "not_found");
         }
         try {
-            jdbcTemplate.update("""
-                    UPDATE assistant_conversations
-                       SET status = 'ended',
-                           updated_at = NOW()
-                     WHERE id = ?
-                    """, id);
+            jdbcTemplate.update(END_CONVERSATION, id);
         } catch (Exception e) {
             log.debug("assistant conversation end skipped | conversation={} error={}",
                     conversationId, e.getMessage());
@@ -276,46 +245,18 @@ public class AssistantConversationService {
 
     private int softDeleteConversationRow(UUID conversationId, UUID userId, String deviceHash) {
         if (userId != null && deviceHash != null) {
-            return jdbcTemplate.update("""
-                    UPDATE assistant_conversations
-                       SET status = 'deleted',
-                           updated_at = NOW()
-                     WHERE id = ?
-                       AND status <> 'deleted'
-                       AND (user_id = ? OR device_id_hash = ?)
-                    """, conversationId, userId, deviceHash);
+            return jdbcTemplate.update(SOFT_DELETE_BY_USER_OR_DEVICE, conversationId, userId, deviceHash);
         }
         if (userId != null) {
-            return jdbcTemplate.update("""
-                    UPDATE assistant_conversations
-                       SET status = 'deleted',
-                           updated_at = NOW()
-                     WHERE id = ?
-                       AND status <> 'deleted'
-                       AND user_id = ?
-                    """, conversationId, userId);
+            return jdbcTemplate.update(SOFT_DELETE_BY_USER, conversationId, userId);
         }
-        return jdbcTemplate.update("""
-                UPDATE assistant_conversations
-                   SET status = 'deleted',
-                       updated_at = NOW()
-                 WHERE id = ?
-                   AND status <> 'deleted'
-                   AND device_id_hash = ?
-                """, conversationId, deviceHash);
+        return jdbcTemplate.update(SOFT_DELETE_BY_DEVICE, conversationId, deviceHash);
     }
 
     private void purgeDeletedConversation(UUID conversationId) {
         try {
-            jdbcTemplate.update("""
-                    DELETE FROM assistant_messages
-                     WHERE conversation_id = ?
-                    """, conversationId);
-            jdbcTemplate.update("""
-                    DELETE FROM assistant_conversations
-                     WHERE id = ?
-                       AND status = 'deleted'
-                    """, conversationId);
+            jdbcTemplate.update(DELETE_MESSAGES_BY_CONVERSATION, conversationId);
+            jdbcTemplate.update(DELETE_CONVERSATION_IF_DELETED, conversationId);
         } catch (Exception e) {
             log.debug("assistant conversation purge skipped | conversation={} error={}",
                     conversationId, e.getMessage());
@@ -332,16 +273,7 @@ public class AssistantConversationService {
         String title = titleSeed == null || titleSeed.isBlank()
                 ? "새 대화"
                 : titleSeed.strip().substring(0, Math.min(titleSeed.strip().length(), 80));
-        jdbcTemplate.update("""
-                INSERT INTO assistant_conversations (id, user_id, device_id_hash, title, metadata)
-                VALUES (?, ?, ?, ?, CAST(? AS jsonb))
-                ON CONFLICT (id) DO UPDATE
-                    SET updated_at = NOW(),
-                        status = CASE
-                            WHEN assistant_conversations.status = 'ended' THEN 'active'
-                            ELSE assistant_conversations.status
-                        END
-                """, conversationId, userId, deviceHash, title, toJson(metadata));
+        jdbcTemplate.update(UPSERT_CONVERSATION, conversationId, userId, deviceHash, title, toJson(metadata));
     }
 
     private void insertUserMessage(UUID conversationId, String message, Map<String, Object> request)
@@ -349,15 +281,7 @@ public class AssistantConversationService {
         if (message == null || message.isBlank()) {
             return;
         }
-        jdbcTemplate.update("""
-                INSERT INTO assistant_messages (
-                    conversation_id, turn_idx, role, content, answer_payload, retrieval_trace, safety
-                )
-                SELECT ?, COALESCE(MAX(turn_idx), 0) + 1, 'user', ?, CAST(? AS jsonb),
-                       '{}'::jsonb, '{}'::jsonb
-                  FROM assistant_messages
-                 WHERE conversation_id = ?
-                """, conversationId, message, toJson(request), conversationId);
+        jdbcTemplate.update(INSERT_USER_MESSAGE, conversationId, message, toJson(request), conversationId);
     }
 
     private void insertAssistantMessage(UUID conversationId, Map<String, Object> response)
@@ -366,16 +290,7 @@ public class AssistantConversationService {
         Map<String, Object> safety = new LinkedHashMap<>();
         safety.put("blocked", response.getOrDefault("blocked", false));
         safety.put("blocked_reason", response.get("blocked_reason"));
-        jdbcTemplate.update("""
-                INSERT INTO assistant_messages (
-                    conversation_id, turn_idx, role, content, intent, scope, answer_payload,
-                    sources, retrieval_trace, handoff, safety, confidence, langfuse_trace_id
-                )
-                SELECT ?, COALESCE(MAX(turn_idx), 0) + 1, 'assistant', ?, ?, ?, CAST(? AS jsonb),
-                       CAST(? AS jsonb), CAST(? AS jsonb), CAST(? AS jsonb), CAST(? AS jsonb), ?, ?
-                  FROM assistant_messages
-                 WHERE conversation_id = ?
-                """,
+        jdbcTemplate.update(INSERT_ASSISTANT_MESSAGE,
                 conversationId,
                 stringValue(response.get("reply")),
                 stringValue(response.get("intent")),
@@ -393,17 +308,7 @@ public class AssistantConversationService {
 
     private List<Map<String, Object>> recentHistory(UUID conversationId, int limit) {
         try {
-            return jdbcTemplate.queryForList("""
-                    SELECT role, content
-                      FROM (
-                            SELECT role, content, turn_idx
-                              FROM assistant_messages
-                             WHERE conversation_id = ?
-                             ORDER BY turn_idx DESC
-                             LIMIT ?
-                           ) recent
-                     ORDER BY turn_idx ASC
-                    """, conversationId, limit).stream()
+            return jdbcTemplate.queryForList(RECENT_HISTORY, conversationId, limit).stream()
                     .map(row -> Map.of(
                             "role", row.get("role"),
                             "content", row.get("content")
@@ -422,21 +327,9 @@ public class AssistantConversationService {
         try {
             Integer count;
             if (userId != null) {
-                count = jdbcTemplate.queryForObject("""
-                        SELECT COUNT(*)
-                          FROM assistant_conversations
-                         WHERE id = ?
-                           AND user_id = ?
-                           AND status <> 'deleted'
-                        """, Integer.class, conversationId, userId);
+                count = jdbcTemplate.queryForObject(COUNT_ACCESS_BY_USER, Integer.class, conversationId, userId);
             } else if (deviceHash != null) {
-                count = jdbcTemplate.queryForObject("""
-                        SELECT COUNT(*)
-                          FROM assistant_conversations
-                         WHERE id = ?
-                           AND device_id_hash = ?
-                           AND status <> 'deleted'
-                        """, Integer.class, conversationId, deviceHash);
+                count = jdbcTemplate.queryForObject(COUNT_ACCESS_BY_DEVICE, Integer.class, conversationId, deviceHash);
             } else {
                 return false;
             }
