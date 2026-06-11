@@ -62,6 +62,10 @@ axis:
     cron-internal-token: ${CRON_INTERNAL_TOKEN:}
     # prod(application-prod.yml) 에서 true — 토큰 미설정 시 Cron trigger/delivery 거부.
     cron-auth-required: ${AXIS_SCHEDULER_CRON_AUTH_REQUIRED:false}
+  keyword-graph:
+    # axis-cron-ingestion-a 가 매시 정각에 카드뉴스 파이프라인을 트리거하므로
+    # 기본은 완료 여유를 둔 매시 10분 캐시 갱신이다.
+    refresh-cron: "${AXIS_KEYWORD_GRAPH_REFRESH_CRON:0 10 * * * *}"
   agent-test:
     enabled: ${AXIS_AGENT_TEST_ENABLED:false}
   fixtures:
