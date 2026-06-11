@@ -13,7 +13,11 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -31,6 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+    private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
@@ -439,13 +444,41 @@ public class CardNewsService {
 
     private String publishedDate(Map<String, Object> primarySource, RawArticle primaryRawArticle, LocalDateTime createdAt) {
         String publishedAt = stringValue(primarySource.get("published_at"), null);
-        if (publishedAt != null && publishedAt.length() >= 10) {
-            return publishedAt.substring(0, 10);
+        String sourceDate = localDateInDisplayZone(publishedAt);
+        if (sourceDate != null) {
+            return sourceDate;
         }
         if (primaryRawArticle != null && primaryRawArticle.getPublishedAt() != null) {
-            return primaryRawArticle.getPublishedAt().toLocalDate().toString();
+            return localDateInDisplayZone(primaryRawArticle.getPublishedAt());
         }
-        return createdAt == null ? null : createdAt.toLocalDate().toString();
+        return localDateInDisplayZone(createdAt);
+    }
+
+    private String localDateInDisplayZone(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(value.trim())
+                    .atZoneSameInstant(DISPLAY_ZONE)
+                    .toLocalDate()
+                    .toString();
+        } catch (DateTimeParseException ignored) {
+            if (value.length() >= 10) {
+                return value.substring(0, 10);
+            }
+            return null;
+        }
+    }
+
+    private String localDateInDisplayZone(LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        return value.atZone(ZoneOffset.UTC)
+                .withZoneSameInstant(DISPLAY_ZONE)
+                .toLocalDate()
+                .toString();
     }
 
     private String legacyDate(String publishedDate, LocalDateTime createdAt) {
@@ -455,7 +488,7 @@ public class CardNewsService {
         if (createdAt == null) {
             return null;
         }
-        return createdAt.toLocalDate().format(LEGACY_DATE_FORMAT);
+        return localDateInDisplayZone(createdAt).replace('-', '.');
     }
 
     private Float trustScore(List<Map<String, Object>> sources, Float fallback) {
