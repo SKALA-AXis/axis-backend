@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.MixerResultService;
 import lombok.RequiredArgsConstructor;
@@ -79,11 +80,7 @@ public class MixerController {
         if (cardIds.isEmpty()) {
             log.info("Mixer | card_ids 미지정");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "result_kind", "invalid_request",
-                            "error", "card_ids are required"
-                    )));
+                    .body(ApiResponse.error("MIXER_CARD_IDS_REQUIRED", "card_ids가 필요합니다."));
         }
 
         @SuppressWarnings("unchecked")
@@ -95,16 +92,14 @@ public class MixerController {
 
         try {
             Map<String, Object> result = aiClientService.runMixer(cardIds, ratios, userContext, analysisMode).block();
-            if (result == null) {
-                log.warn("Mixer | axis-ai 응답 null");
-                return mixerUnavailable(cardIds, "axis-ai returned empty response");
-            }
+            AgentResponseGuard.requireSuccess("MIXER", result);
             log.info("Mixer | mode={} cards={} confidence={}", analysisMode, cardIds.size(), result.get("confidence"));
             mixerResultService.saveResult(result, cardIds, ratios, userContext, analysisMode);
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("Mixer | axis-ai 호출 실패 | {}", e.getMessage());
-            return mixerUnavailable(cardIds, e.getMessage());
+            log.warn("Mixer | axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -123,7 +118,7 @@ public class MixerController {
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
             return Flux.just(ServerSentEvent.<String>builder()
-                    .data("{\"type\":\"error\",\"message\":\"카드 2개 이상이 필요합니다.\"}")
+                    .data("{\"type\":\"error\",\"message\":\"카드 2개 이상이 필요합니다.\",\"error_code\":\"MIXER_CARD_IDS_REQUIRED\"}")
                     .build());
         }
 
@@ -169,14 +164,4 @@ public class MixerController {
         return "quick";
     }
 
-    private ResponseEntity<ApiResponse<Map<String, Object>>> mixerUnavailable(List<String> cardIds, String error) {
-        String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
-        return ResponseEntity.ok()
-                .body(ApiResponse.success(Map.of(
-                        "status", "failed",
-                        "result_kind", "axis_ai_unavailable",
-                        "error", safeError,
-                        "card_ids", cardIds
-                )));
-    }
 }

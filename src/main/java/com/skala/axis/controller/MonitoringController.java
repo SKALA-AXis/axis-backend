@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.PeerOverviewTableService;
@@ -136,26 +137,15 @@ public class MonitoringController {
     ) {
         try {
             Map<String, Object> result = aiClientService.comparePeer(peerId, windowDays, focusSector).block();
-            if (result == null) {
-                log.warn("PeerStrategy | axis-ai 응답 null | peer={}", peerId);
-                return ResponseEntity.ok(ApiResponse.success(Map.of(
-                        "status", "failed",
-                        "result_kind", "empty_axis_ai_response",
-                        "peer_id", peerId
-                )));
-            }
+            AgentResponseGuard.requireSuccess("PEER", result);
             log.info("PeerStrategy | peer={} strategy={} confidence={}",
                     peerId, result.get("strategy_label"), result.get("confidence"));
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("PeerStrategy | axis-ai 호출 실패 | peer={} err={}",
-                    peerId, e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(Map.of(
-                    "status", "failed",
-                    "result_kind", "axis_ai_unavailable",
-                    "error", e.getMessage(),
-                    "peer_id", peerId
-            )));
+            log.warn("PeerStrategy | axis-ai 호출 실패 | peer={} code={} err={}",
+                    peerId, e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 }

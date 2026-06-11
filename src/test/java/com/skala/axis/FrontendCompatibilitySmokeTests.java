@@ -83,9 +83,10 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(jsonPath("$.data.stockRatePoints").isArray());
 
         mockMvc.perform(get("/api/dashboard/today-insight"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("failed"))
-                .andExpect(jsonPath("$.data.result_kind").value("axis_ai_unavailable"));
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("TODAY_INSIGHT_AI_CONNECTION_FAILED"))
+                .andExpect(jsonPath("$.error.message").value("호출에 실패했다"));
 
         mockMvc.perform(post("/api/dashboard/today-insight/warmup"))
                 .andExpect(status().isAccepted())
@@ -96,7 +97,9 @@ class FrontendCompatibilitySmokeTests {
 
         mockMvc.perform(post("/api/dashboard/today-insight/cron-generate"))
                 .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.data.status").value("failed"));
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("TODAY_INSIGHT_AI_CONNECTION_FAILED"))
+                .andExpect(jsonPath("$.error.message").value("호출에 실패했다"));
 
         mockMvc.perform(get("/api/briefings/summary?briefing_type=daily"))
                 .andExpect(status().isOk())
@@ -118,7 +121,11 @@ class FrontendCompatibilitySmokeTests {
                         .content("{\"message\":\"오늘 인사이트 요약해줘\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.message.content").exists())
-                .andExpect(jsonPath("$.data.intent").value("assistant_unavailable"))
+                .andExpect(jsonPath("$.data.intent").value("assistant_error"))
+                .andExpect(jsonPath("$.data.error_code").value("CHAT_AI_CONNECTION_FAILED"))
+                .andExpect(jsonPath("$.data.message.content").value(org.hamcrest.Matchers.containsString(
+                        "호출에 실패했다"
+                )))
                 .andExpect(jsonPath("$.data.provenance.is_fixture").value(false))
                 .andExpect(jsonPath("$.data.handoff").doesNotExist())
                 .andExpect(jsonPath("$.data.message.content").value(org.hamcrest.Matchers.not(

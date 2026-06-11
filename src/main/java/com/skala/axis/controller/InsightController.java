@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,11 +66,7 @@ public class InsightController {
         if (cardIds.isEmpty()) {
             log.info("Insight generate | card_ids 미지정");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "result_kind", "invalid_request",
-                            "error", "card_ids are required"
-                    )));
+                    .body(ApiResponse.error("INSIGHT_CARD_IDS_REQUIRED", "card_ids가 필요합니다."));
         }
 
         @SuppressWarnings("unchecked")
@@ -79,25 +76,14 @@ public class InsightController {
 
         try {
             Map<String, Object> result = aiClientService.generateInsight(cardIds, context).block();
-            if (result == null) {
-                log.warn("Insight generate | axis-ai 응답 null");
-                return ResponseEntity.status(HttpStatus.ACCEPTED)
-                        .body(ApiResponse.success(Map.of(
-                                "status", "failed",
-                                "result_kind", "empty_axis_ai_response"
-                        )));
-            }
+            AgentResponseGuard.requireSuccess("INSIGHT", result);
             log.info("Insight generate | cards={} confidence={}",
                     cardIds.size(), result.get("confidence"));
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("Insight generate | axis-ai 호출 실패 | {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "result_kind", "axis_ai_unavailable",
-                            "error", e.getMessage()
-                    )));
+            log.warn("Insight generate | axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 

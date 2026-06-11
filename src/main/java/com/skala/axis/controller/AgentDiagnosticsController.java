@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,13 +54,8 @@ public class AgentDiagnosticsController {
                     "response", response == null ? Map.of() : response
             )));
         } catch (AiServerException e) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponse.success(mapOf(
-                    "ok", false,
-                    "axis_ai_base_url", aiServerBaseUrl,
-                    "axis_ai_path", "/health",
-                    "duration_ms", elapsedMillis(started),
-                    "error", e.getMessage()
-            )));
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -105,15 +99,8 @@ public class AgentDiagnosticsController {
                     "response", response == null ? Map.of() : response
             )));
         } catch (AiServerException e) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponse.success(mapOf(
-                    "ok", false,
-                    "agent_type", definition.apiName,
-                    "axis_ai_base_url", aiServerBaseUrl,
-                    "axis_ai_path", definition.path,
-                    "duration_ms", elapsedMillis(started),
-                    "request", axisAiRequest,
-                    "error", e.getMessage()
-            )));
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 

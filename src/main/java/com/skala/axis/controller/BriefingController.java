@@ -2,11 +2,11 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.CardNewsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -58,21 +58,13 @@ public class BriefingController {
         Map<String, Object> body = request == null ? Map.of() : request;
         try {
             Map<String, Object> result = aiClientService.generateBriefing(body).block();
-            if (result != null && !result.isEmpty()) {
-                return ResponseEntity.ok(ApiResponse.success(result));
-            }
+            AgentResponseGuard.requireSuccess("BRIEFING", result);
+            return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("Briefing axis-ai 호출 실패 | {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
-                    "status", "failed",
-                    "result_kind", "axis_ai_unavailable",
-                    "error", e.getMessage()
-            )));
+            log.warn("Briefing axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
-                "status", "failed",
-                "result_kind", "empty_axis_ai_response"
-        )));
     }
 
     @GetMapping("/{briefingId}/status")

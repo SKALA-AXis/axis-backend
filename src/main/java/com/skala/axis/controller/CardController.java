@@ -3,6 +3,7 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.CardNewsService;
 import lombok.RequiredArgsConstructor;
@@ -115,25 +116,14 @@ public class CardController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> verifyCardLinks(@PathVariable String id) {
         try {
             Map<String, Object> result = aiClientService.verifyLink(id).block();
-            if (result == null) {
-                log.warn("VerifyLink | axis-ai 응답 null | card={}", id);
-                return ResponseEntity.ok(ApiResponse.success(Map.of(
-                        "status", "failed",
-                        "result_kind", "empty_axis_ai_response",
-                        "card_id", id
-                )));
-            }
+            AgentResponseGuard.requireSuccess("LINK_VERIFY", result);
             log.info("VerifyLink | card={} overall={}", id, result.get("overall_status"));
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("VerifyLink | axis-ai 호출 실패 | card={} err={}",
-                    id, e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(Map.of(
-                    "status", "failed",
-                    "result_kind", "axis_ai_unavailable",
-                    "error", e.getMessage(),
-                    "card_id", id
-            )));
+            log.warn("VerifyLink | axis-ai 호출 실패 | card={} code={} err={}",
+                    id, e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 

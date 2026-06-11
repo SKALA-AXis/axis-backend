@@ -227,22 +227,99 @@ public class AssistantConversationService {
             String deviceId
     ) {
         UUID id = parseUuid(conversationId, null);
-        if (id == null || !canAccess(id, authentication, deviceId)) {
-            return Map.of("conversation_id", conversationId, "status", "not_found", "deleted", false);
+        if (id == null) {
+            return Map.of(
+                    "conversation_id", conversationId,
+                    "status", "invalid_id",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_INVALID_ID"
+            );
+        }
+        UUID userId = currentUserId(authentication);
+        String deviceHash = hashNullable(deviceId);
+        if (userId == null && deviceHash == null) {
+            return Map.of(
+                    "conversation_id", conversationId,
+                    "status", "not_found",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_OWNER_REQUIRED"
+            );
         }
         try {
-            jdbcTemplate.update("""
+            int deletedRows = softDeleteConversationRow(id, userId, deviceHash);
+            if (deletedRows <= 0) {
+                return Map.of(
+                        "conversation_id", id.toString(),
+                        "status", "not_found",
+                        "deleted", false,
+                        "error_code", "ASSISTANT_CONVERSATION_NOT_FOUND"
+                );
+            }
+            purgeDeletedConversation(id);
+        } catch (Exception e) {
+            log.warn("assistant conversation delete failed | conversation={} error={}",
+                    conversationId, e.getMessage());
+            return Map.of(
+                    "conversation_id", id.toString(),
+                    "status", "failed",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_DELETE_FAILED"
+            );
+        }
+        return Map.of(
+                "conversation_id", id.toString(),
+                "status", "deleted",
+                "deleted", true,
+                "delete_mode", "soft"
+        );
+    }
+
+    private int softDeleteConversationRow(UUID conversationId, UUID userId, String deviceHash) {
+        if (userId != null && deviceHash != null) {
+            return jdbcTemplate.update("""
                     UPDATE assistant_conversations
                        SET status = 'deleted',
                            updated_at = NOW()
                      WHERE id = ?
-                    """, id);
-        } catch (Exception e) {
-            log.debug("assistant conversation delete skipped | conversation={} error={}",
-                    conversationId, e.getMessage());
-            return Map.of("conversation_id", id.toString(), "status", "failed", "deleted", false);
+                       AND status <> 'deleted'
+                       AND (user_id = ? OR device_id_hash = ?)
+                    """, conversationId, userId, deviceHash);
         }
-        return Map.of("conversation_id", id.toString(), "status", "deleted", "deleted", true);
+        if (userId != null) {
+            return jdbcTemplate.update("""
+                    UPDATE assistant_conversations
+                       SET status = 'deleted',
+                           updated_at = NOW()
+                     WHERE id = ?
+                       AND status <> 'deleted'
+                       AND user_id = ?
+                    """, conversationId, userId);
+        }
+        return jdbcTemplate.update("""
+                UPDATE assistant_conversations
+                   SET status = 'deleted',
+                       updated_at = NOW()
+                 WHERE id = ?
+                   AND status <> 'deleted'
+                   AND device_id_hash = ?
+                """, conversationId, deviceHash);
+    }
+
+    private void purgeDeletedConversation(UUID conversationId) {
+        try {
+            jdbcTemplate.update("""
+                    DELETE FROM assistant_messages
+                     WHERE conversation_id = ?
+                    """, conversationId);
+            jdbcTemplate.update("""
+                    DELETE FROM assistant_conversations
+                     WHERE id = ?
+                       AND status = 'deleted'
+                    """, conversationId);
+        } catch (Exception e) {
+            log.debug("assistant conversation purge skipped | conversation={} error={}",
+                    conversationId, e.getMessage());
+        }
     }
 
     private void ensureConversation(

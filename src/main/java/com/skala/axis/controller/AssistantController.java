@@ -42,6 +42,9 @@ import java.util.UUID;
 public class AssistantController {
     private static final long MAX_PDF_BYTES = 15L * 1024L * 1024L;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final String GENERIC_ASSISTANT_ERROR = AiServerException.CALL_FAILED_MESSAGE;
+    private static final String ERROR_CHAT_EMPTY_RESPONSE = "ASSISTANT_CHAT_EMPTY_RESPONSE";
+    private static final String ERROR_PDF_EMPTY_RESPONSE = "ASSISTANT_PDF_EMPTY_RESPONSE";
 
     private final AiClientService aiClientService;
     private final AssistantConversationService assistantConversationService;
@@ -83,7 +86,11 @@ public class AssistantController {
                 log.warn("AssistantChat | axis-ai 응답 null — unavailable response");
                 result = assistantConversationService.completeChatTurn(
                         prepared,
-                        unavailableChatResponse(prepared, "axis-ai returned empty chat response")
+                        unavailableChatResponse(
+                                prepared,
+                                ERROR_CHAT_EMPTY_RESPONSE,
+                                "axis-ai returned empty chat response"
+                        )
                 );
                 return ResponseEntity.ok(ApiResponse.success(
                         result
@@ -97,7 +104,7 @@ public class AssistantController {
             log.warn("AssistantChat | axis-ai 호출 실패 — unavailable response | {}", e.getMessage());
             Map<String, Object> result = assistantConversationService.completeChatTurn(
                     prepared,
-                    unavailableChatResponse(prepared, e.getMessage())
+                    unavailableChatResponse(prepared, e.getCode(), e.getMessage())
             );
             return ResponseEntity.ok(ApiResponse.success(result));
         }
@@ -121,9 +128,19 @@ public class AssistantController {
         ));
 
         Map<String, Object> prepared = assistantConversationService.prepareChatRequest(body, authentication);
-        Map<String, Object> result = aiClientService.chatPdf(prepared, file).block();
-        if (result == null) {
-            throw new AiServerException("axis-ai PDF 분석 응답이 비어 있습니다.");
+        Map<String, Object> result;
+        try {
+            result = aiClientService.chatPdf(prepared, file).block();
+            if (result == null) {
+                result = unavailableChatResponse(
+                        prepared,
+                        ERROR_PDF_EMPTY_RESPONSE,
+                        "axis-ai PDF analysis returned empty response"
+                );
+            }
+        } catch (AiServerException e) {
+            log.warn("AssistantChatPdf | axis-ai 호출 실패 — unavailable response | {}", e.getMessage());
+            result = unavailableChatResponse(prepared, e.getCode(), e.getMessage());
         }
         result = assistantConversationService.completeChatTurn(prepared, result);
         log.info("AssistantChatPdf | intent={} session={} confidence={}",
@@ -176,9 +193,20 @@ public class AssistantController {
             @PathVariable String conversationId,
             @RequestParam(name = "device_id", required = false) String deviceId,
             Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success(
-                assistantConversationService.deleteConversation(conversationId, authentication, deviceId)
-        ));
+        try {
+            return ResponseEntity.ok(ApiResponse.success(
+                    assistantConversationService.deleteConversation(conversationId, authentication, deviceId)
+            ));
+        } catch (Exception e) {
+            log.warn("AssistantConversationDelete | failed | conversation={} error={}",
+                    conversationId, e.getMessage());
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                    "conversation_id", conversationId,
+                    "status", "failed",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_DELETE_FAILED"
+            )));
+        }
     }
 
     private Map<String, Object> parseRequestJson(String requestJson) {
@@ -201,24 +229,33 @@ public class AssistantController {
                 "질문을 입력해 주세요. 카드뉴스, 오늘 인사이트, 브리핑, 믹서 결과에 대해 답변할 수 있습니다.",
                 "empty_message",
                 "empty_message",
+                null,
                 null
         );
         response.put("follow_up_suggestions", List.of("오늘 카드뉴스를 요약해줘", "최근 경쟁사 동향을 알려줘"));
         return response;
     }
 
-    private Map<String, Object> unavailableChatResponse(Map<String, Object> request, String errorMessage) {
+    private Map<String, Object> unavailableChatResponse(
+            Map<String, Object> request,
+            String errorCode,
+            String errorMessage
+    ) {
         String conversationId = String.valueOf(
                 request.getOrDefault("conversation_id", UUID.randomUUID().toString())
         );
         Map<String, Object> response = assistantSystemResponse(
                 conversationId,
-                "AI 서버 응답을 받지 못했습니다. 실제 답변을 생성하지 못했으니 잠시 후 다시 시도해 주세요.",
-                "assistant_unavailable",
-                "axis_ai_unavailable",
+                GENERIC_ASSISTANT_ERROR + "\n에러코드: " + errorCode,
+                "assistant_error",
+                "assistant_error",
+                errorCode,
                 errorMessage == null ? "axis-ai unavailable" : errorMessage
         );
-        response.put("follow_up_suggestions", List.of("오늘 카드뉴스를 다시 요약해줘", "최근 경쟁사 동향을 다시 찾아줘"));
+        response.put("follow_up_suggestions", List.of());
+        response.put("error_code", errorCode);
+        response.put("blocked", true);
+        response.put("blocked_reason", errorCode);
         return response;
     }
 
@@ -227,12 +264,16 @@ public class AssistantController {
             String reply,
             String intent,
             String retrievalMode,
+            String errorCode,
             String errorMessage
     ) {
         Map<String, Object> provenance = new LinkedHashMap<>();
         provenance.put("agent", "AssistantController");
         provenance.put("retrieval_mode", retrievalMode);
         provenance.put("is_fixture", false);
+        if (errorCode != null && !errorCode.isBlank()) {
+            provenance.put("error_code", errorCode);
+        }
         if (errorMessage != null && !errorMessage.isBlank()) {
             provenance.put("error", errorMessage);
         }
@@ -256,6 +297,9 @@ public class AssistantController {
         response.put("confidence", 0.0);
         response.put("blocked", false);
         response.put("blocked_reason", null);
+        if (errorCode != null && !errorCode.isBlank()) {
+            response.put("error_code", errorCode);
+        }
         response.put("provenance", provenance);
         return response;
     }

@@ -7,10 +7,12 @@ import com.skala.axis.dto.SearchResponse;
 import com.skala.axis.exception.AiServerException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -22,6 +24,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -30,6 +34,8 @@ public class AiClientService {
     private final WebClient aiWebClient;
     private static final org.springframework.core.ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new org.springframework.core.ParameterizedTypeReference<>() {};
+    private static final Pattern ERROR_CODE_PATTERN =
+            Pattern.compile("\"code\"\\s*:\\s*\"([A-Za-z0-9_\\-]+)\"");
 
     public Mono<Map<String, Object>> getRaw(String uri, Duration timeout) {
         return aiWebClient.get()
@@ -37,7 +43,6 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(MAP_TYPE)
                 .timeout(timeout)
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("axis-ai 호출 타임아웃: " + uri))
                 .onErrorResume(e -> rawAiError(uri, e));
     }
 
@@ -49,19 +54,13 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(MAP_TYPE)
                 .timeout(timeout)
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("axis-ai 호출 타임아웃: " + uri))
                 .onErrorResume(e -> rawAiError(uri, e));
     }
 
     private Mono<Map<String, Object>> rawAiError(String uri, Throwable e) {
-        String message = e.getMessage();
-        if (e instanceof WebClientResponseException responseException) {
-            String responseBody = responseException.getResponseBodyAsString();
-            message = "axis-ai " + responseException.getStatusCode() + " " + uri
-                    + (responseBody.isBlank() ? "" : " | " + responseBody);
-        }
-        log.warn("axis-ai raw 호출 실패 | uri={} error={}", uri, message);
-        return Mono.error(new AiServerException(message));
+        AiServerException error = toAiServerException(operationFromUri(uri), uri, e);
+        log.warn("axis-ai raw 호출 실패 | uri={} code={} error={}", uri, error.getCode(), error.getMessage());
+        return Mono.error(error);
     }
 
     public Mono<SearchResponse> search(SearchRequest request) {
@@ -71,11 +70,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(SearchResponse.class)
                 .timeout(Duration.ofSeconds(10))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("검색 타임아웃"))
-                .onErrorResume(e -> {
-                    log.warn("AI 서버 검색 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("SEARCH", "/search", e));
     }
 
     public Mono<Void> triggerPipeline(String track, List<String> peerIds) {
@@ -107,11 +102,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(BriefingContent.class)
                 .timeout(Duration.ofSeconds(30))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("브리핑 빌더 타임아웃"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /pipeline/delivery 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("BRIEFING_DELIVERY", "/pipeline/delivery", e));
     }
 
     /**
@@ -135,11 +126,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
                 .timeout(Duration.ofSeconds(60))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Insight 분석 타임아웃 (60s)"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /insight/generate 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("INSIGHT", "/insight/generate", e));
     }
 
     /**
@@ -171,13 +158,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
                 .timeout(mixerTimeout(normalizedMode, false))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException(
-                        "Mixer 분석 타임아웃 (" + mixerTimeout(normalizedMode, false).toSeconds() + "s)"
-                ))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /mixer/analyze 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("MIXER", "/mixer/analyze", e));
     }
 
     /**
@@ -207,8 +188,14 @@ public class AiClientService {
                 .bodyToFlux(String.class)
                 .timeout(mixerTimeout(normalizedMode, true))
                 .onErrorResume(e -> {
-                    log.warn("axis-ai /mixer/analyze/stream 호출 실패: {}", e.getMessage());
-                    return Flux.just(mixerStreamError(e.getMessage()));
+                    AiServerException error = toAiServerException(
+                            "MIXER_STREAM",
+                            "/mixer/analyze/stream",
+                            e
+                    );
+                    log.warn("axis-ai /mixer/analyze/stream 호출 실패: code={} error={}",
+                            error.getCode(), error.getMessage());
+                    return Flux.just(mixerStreamError(error));
                 });
     }
 
@@ -227,10 +214,13 @@ public class AiClientService {
         return Duration.ofSeconds(deep ? 120 : 45);
     }
 
-    private static String mixerStreamError(String rawMessage) {
-        String safe = rawMessage == null ? "Mixer 스트리밍 실패" : rawMessage;
-        safe = safe.replace("\\", " ").replace("\"", "'").replace("\n", " ").replace("\r", " ");
-        return "{\"type\":\"error\",\"message\":\"" + safe + "\"}";
+    private static String mixerStreamError(AiServerException error) {
+        String code = sanitizeJsonString(error.getCode());
+        return "{\"type\":\"error\",\"message\":\""
+                + AiServerException.CALL_FAILED_MESSAGE
+                + "\",\"error_code\":\""
+                + code
+                + "\"}";
     }
 
     /**
@@ -279,11 +269,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
                 .timeout(Duration.ofSeconds(60))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Peer 분석 타임아웃 (60s)"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /peer/compare 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("PEER", "/peer/compare", e));
     }
 
     /**
@@ -321,11 +307,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
                 .timeout(Duration.ofSeconds(90))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("GlobalTrends 타임아웃 (90s)"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /global/trends/run 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("GLOBAL_TRENDS", "/global/trends/run", e));
     }
 
     /**
@@ -344,11 +326,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
                 .timeout(Duration.ofSeconds(20))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("LinkVerify 타임아웃 (20s)"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /link/verify 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("LINK_VERIFY", "/link/verify", e));
     }
 
     /**
@@ -388,11 +366,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {})
                 .timeout(Duration.ofSeconds(90))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("Chat 타임아웃 (90s)"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /chat 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("CHAT", "/chat", e));
     }
 
     public Mono<Map<String, Object>> chatPdf(Map<String, Object> request, MultipartFile file) {
@@ -403,7 +377,11 @@ public class AiClientService {
         try {
             body.put("pdf_base64", Base64.getEncoder().encodeToString(file.getBytes()));
         } catch (IOException e) {
-            return Mono.error(new AiServerException("PDF 파일을 읽지 못했습니다."));
+            return Mono.error(new AiServerException(
+                    "CHAT_PDF_FILE_READ_FAILED",
+                    "PDF 파일을 읽지 못했습니다.",
+                    HttpStatus.BAD_REQUEST
+            ));
         }
 
         return aiWebClient.post()
@@ -413,11 +391,7 @@ public class AiClientService {
                 .retrieve()
                 .bodyToMono(MAP_TYPE)
                 .timeout(Duration.ofSeconds(90))
-                .onErrorMap(TimeoutException.class, ex -> new AiServerException("PDF Chat 타임아웃 (90s)"))
-                .onErrorResume(e -> {
-                    log.warn("axis-ai /chat/pdf 호출 실패: {}", e.getMessage());
-                    return Mono.error(new AiServerException(e.getMessage()));
-                });
+                .onErrorResume(e -> aiError("CHAT_PDF", "/chat/pdf", e));
     }
 
     public Mono<Void> triggerWeakSignal() {
@@ -430,5 +404,98 @@ public class AiClientService {
                     log.warn("약한 신호 트리거 실패: {}", e.getMessage());
                     return Mono.empty();
                 });
+    }
+
+    private <T> Mono<T> aiError(String operation, String uri, Throwable e) {
+        AiServerException error = toAiServerException(operation, uri, e);
+        log.warn("axis-ai 호출 실패 | operation={} uri={} code={} error={}",
+                operation, uri, error.getCode(), error.getMessage());
+        return Mono.error(error);
+    }
+
+    private AiServerException toAiServerException(String operation, String uri, Throwable e) {
+        if (e instanceof AiServerException aiServerException) {
+            return aiServerException;
+        }
+
+        String prefix = normalizeErrorPrefix(operation);
+        if (e instanceof TimeoutException) {
+            return new AiServerException(
+                    prefix + "_AI_TIMEOUT",
+                    "axis-ai 호출 타임아웃: " + uri,
+                    HttpStatus.GATEWAY_TIMEOUT
+            );
+        }
+        if (e instanceof WebClientResponseException responseException) {
+            String responseBody = responseException.getResponseBodyAsString();
+            int statusCode = responseException.getRawStatusCode();
+            String upstreamCode = extractUpstreamErrorCode(responseBody);
+            String message = "axis-ai HTTP " + statusCode + " " + uri
+                    + (responseBody.isBlank() ? "" : " | " + responseBody);
+            return new AiServerException(
+                    upstreamCode.isBlank() ? prefix + "_AI_HTTP_" + statusCode : upstreamCode,
+                    message,
+                    HttpStatus.BAD_GATEWAY
+            );
+        }
+        if (e instanceof WebClientRequestException) {
+            return new AiServerException(
+                    prefix + "_AI_CONNECTION_FAILED",
+                    "axis-ai 연결 실패: " + uri + " | " + nullSafeMessage(e),
+                    HttpStatus.BAD_GATEWAY
+            );
+        }
+        return new AiServerException(
+                prefix + "_AI_CALL_FAILED",
+                "axis-ai 호출 실패: " + uri + " | " + nullSafeMessage(e),
+                HttpStatus.BAD_GATEWAY
+        );
+    }
+
+    private static String operationFromUri(String uri) {
+        String path = uri == null ? "" : uri.toLowerCase(Locale.ROOT);
+        if (path.contains("/mixer/analyze/stream")) return "MIXER_STREAM";
+        if (path.contains("/mixer")) return "MIXER";
+        if (path.contains("/insight")) return "INSIGHT";
+        if (path.contains("/global/trends")) return "GLOBAL_TRENDS";
+        if (path.contains("/briefing/generate")) return "BRIEFING";
+        if (path.contains("/today-insight")) return "TODAY_INSIGHT";
+        if (path.contains("/link/verify")) return "LINK_VERIFY";
+        if (path.contains("/peer/compare")) return "PEER";
+        if (path.contains("/chat/pdf")) return "CHAT_PDF";
+        if (path.contains("/chat")) return "CHAT";
+        if (path.contains("/pipeline")) return "PIPELINE";
+        if (path.contains("/health")) return "HEALTH";
+        return "AXIS_AI";
+    }
+
+    private static String normalizeErrorPrefix(String operation) {
+        String raw = operation == null || operation.isBlank() ? "AXIS_AI" : operation;
+        return raw.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_");
+    }
+
+    private static String nullSafeMessage(Throwable e) {
+        return e.getMessage() == null || e.getMessage().isBlank()
+                ? e.getClass().getSimpleName()
+                : e.getMessage();
+    }
+
+    private static String sanitizeJsonString(String raw) {
+        return (raw == null || raw.isBlank() ? "AI_CALL_FAILED" : raw)
+                .replace("\\", " ")
+                .replace("\"", "'")
+                .replace("\n", " ")
+                .replace("\r", " ");
+    }
+
+    private static String extractUpstreamErrorCode(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return "";
+        }
+        Matcher matcher = ERROR_CODE_PATTERN.matcher(responseBody);
+        if (!matcher.find()) {
+            return "";
+        }
+        return normalizeErrorPrefix(matcher.group(1));
     }
 }

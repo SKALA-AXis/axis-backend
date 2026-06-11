@@ -19,8 +19,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AiServerException.class)
     public ResponseEntity<ApiResponse<?>> handleAiServer(AiServerException e) {
-        log.warn("AI 서버 오류: {}", e.getMessage());
-        return ResponseEntity.status(503).body(ApiResponse.error("EXTERNAL_SERVICE_UNAVAILABLE", e.getMessage()));
+        log.warn("AI 서버 오류: {} {}", e.getCode(), e.getMessage());
+        return ResponseEntity.status(e.getStatus())
+                .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
     }
 
     @ExceptionHandler(EntityNotFoundException.class)

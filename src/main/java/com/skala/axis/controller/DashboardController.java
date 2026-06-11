@@ -3,6 +3,7 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.security.CronInternalAuth;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
@@ -61,13 +62,19 @@ public class DashboardController {
                 if (isTodayInsightStatusPlaceholder(result)) {
                     return todayInsightLatestOrStatus(anchorDate, result);
                 }
+                AgentResponseGuard.requireSuccess("TODAY_INSIGHT", result);
                 return ResponseEntity.ok(ApiResponse.success(result));
             }
             log.warn("TodayInsight axis-ai 응답 비어 있음");
-            return todayInsightLatestOrUnavailable(anchorDate, "axis-ai returned empty response");
+            throw new AiServerException(
+                    "TODAY_INSIGHT_AI_EMPTY_RESPONSE",
+                    "axis-ai returned empty response",
+                    HttpStatus.BAD_GATEWAY
+            );
         } catch (AiServerException e) {
-            log.warn("TodayInsight axis-ai 호출 실패 | {}", e.getMessage());
-            return todayInsightLatestOrUnavailable(anchorDate, e.getMessage());
+            log.warn("TodayInsight axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -83,6 +90,7 @@ public class DashboardController {
         Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(LocalDate.now());
         try {
             Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
+            AgentResponseGuard.requireSuccess("TODAY_INSIGHT", result);
             String headline = result == null ? "" : String.valueOf(result.getOrDefault("headline", ""));
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
                     "status", "accepted",
@@ -93,21 +101,13 @@ public class DashboardController {
         } catch (AiServerException e) {
             log.error("TodayInsight cron-generate axis-ai 호출 실패 | anchor={} error={}",
                     request.get("anchor_date"), e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "anchor_date", request.get("anchor_date"),
-                            "error", e.getMessage()
-                    )));
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         } catch (Exception e) {
             log.error("TodayInsight cron-generate 실패 | anchor={} error={}",
                     request.get("anchor_date"), e.getMessage());
             return ResponseEntity.internalServerError()
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "anchor_date", request.get("anchor_date"),
-                            "error", e.getMessage()
-                    )));
+                    .body(ApiResponse.error("TODAY_INSIGHT_CRON_FAILED", AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -204,16 +204,6 @@ public class DashboardController {
         }
     }
 
-    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightUnavailable(String error) {
-        String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
-        return ResponseEntity.ok()
-                .body(ApiResponse.success(Map.of(
-                        "status", "failed",
-                        "result_kind", "axis_ai_unavailable",
-                        "error", safeError
-                )));
-    }
-
     private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightLatestOrStatus(
             LocalDate anchorDate,
             Map<String, Object> statusPayload
@@ -221,15 +211,6 @@ public class DashboardController {
         return todayInsightReportService.findLatestOnOrBefore(anchorDate)
                 .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
                 .orElseGet(() -> ResponseEntity.ok(ApiResponse.success(statusPayload)));
-    }
-
-    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightLatestOrUnavailable(
-            LocalDate anchorDate,
-            String error
-    ) {
-        return todayInsightReportService.findLatestOnOrBefore(anchorDate)
-                .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
-                .orElseGet(() -> todayInsightUnavailable(error));
     }
 
     @SuppressWarnings("unchecked")
