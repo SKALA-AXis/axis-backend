@@ -38,6 +38,14 @@ public class AssistantConversationService {
         UUID userId = currentUserId(authentication);
         String deviceHash = deviceHash(body, conversationId);
         String message = stringValue(body.get("message"));
+        if (!canUseConversation(conversationId, userId, deviceHash)) {
+            log.warn("assistant conversation ownership mismatch | requested={} user_id_present={}",
+                    conversationId, userId != null);
+            conversationId = UUID.randomUUID();
+            body.put("conversation_id", conversationId.toString());
+            body.put("session_id", conversationId.toString());
+            deviceHash = deviceHash(body, conversationId);
+        }
 
         try {
             ensureConversation(conversationId, userId, deviceHash, message, body);
@@ -445,6 +453,38 @@ public class AssistantConversationService {
             log.debug("assistant access check skipped | conversation={} error={}",
                     conversationId, e.getMessage());
             return false;
+        }
+    }
+
+    private boolean canUseConversation(UUID conversationId, UUID userId, String deviceHash) {
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    SELECT user_id::text AS user_id,
+                           device_id_hash,
+                           status
+                      FROM assistant_conversations
+                     WHERE id = ?
+                     LIMIT 1
+                    """, conversationId);
+            if (rows.isEmpty()) {
+                return true;
+            }
+
+            Map<String, Object> row = rows.get(0);
+            if ("deleted".equals(stringValue(row.get("status")))) {
+                return false;
+            }
+
+            UUID ownerUserId = parseUuid(stringValue(row.get("user_id")), null);
+            String ownerDeviceHash = stringValue(row.get("device_id_hash"));
+            if (userId != null && ownerUserId != null) {
+                return userId.equals(ownerUserId);
+            }
+            return deviceHash != null && !deviceHash.isBlank() && deviceHash.equals(ownerDeviceHash);
+        } catch (Exception e) {
+            log.debug("assistant ownership precheck skipped | conversation={} error={}",
+                    conversationId, e.getMessage());
+            return true;
         }
     }
 

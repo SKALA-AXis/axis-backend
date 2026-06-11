@@ -43,6 +43,7 @@ public class DashboardController {
         Map<String, Object> dashboardSummary = emptyDashboardSummary();
         dashboardStockChartService.applyDailyRateChart(dashboardSummary);
         dashboardKeywordTrendChartService.removeKeywordTrendChart(dashboardSummary);
+        dashboardSummary.put("dataStatus", dashboardSummaryStatus(dashboardSummary));
         return ResponseEntity.ok(ApiResponse.success(dashboardSummary));
     }
 
@@ -183,6 +184,22 @@ public class DashboardController {
         return summary;
     }
 
+    private static Map<String, Object> dashboardSummaryStatus(Map<String, Object> summary) {
+        boolean hasStock = summary.get("stockSource") != null;
+        return Map.of(
+                "result_kind", "partial_dashboard_summary",
+                "degraded", true,
+                "message", "대시보드 summary는 현재 stock chart만 live/fallback으로 채우고 나머지 위젯은 빈 read-model을 반환합니다.",
+                "widgets", Map.of(
+                        "stock", hasStock ? "available" : "empty",
+                        "keyword_trends", "disabled_empty",
+                        "trends", "not_wired",
+                        "articles", "not_wired",
+                        "notifications", "not_wired"
+                )
+        );
+    }
+
     private static int intParam(Map<String, String> params, String key, int defaultValue) {
         try {
             return Integer.parseInt(params.getOrDefault(key, String.valueOf(defaultValue)));
@@ -210,7 +227,14 @@ public class DashboardController {
     ) {
         return todayInsightReportService.findLatestOnOrBefore(anchorDate)
                 .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
-                .orElseGet(() -> ResponseEntity.ok(ApiResponse.success(statusPayload)));
+                .orElseGet(() -> {
+                    log.warn("TodayInsight 저장 결과 없음 | anchor={} status_payload={}", anchorDate, statusPayload);
+                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                            .body(ApiResponse.<Map<String, Object>>error(
+                                    "TODAY_INSIGHT_RESULT_UNAVAILABLE",
+                                    AiServerException.CALL_FAILED_MESSAGE
+                            ));
+                });
     }
 
     @SuppressWarnings("unchecked")

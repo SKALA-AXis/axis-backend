@@ -42,9 +42,9 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(jsonPath("$.data.stockRatePoints").isArray());
 
         mockMvc.perform(get("/briefings"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.dailySnapshot.title").exists())
-                .andExpect(jsonPath("$.data.history").isArray());
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("BRIEFING_REPORT_UNAVAILABLE"));
 
         mockMvc.perform(get("/alerts"))
                 .andExpect(status().isOk())
@@ -102,9 +102,9 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(jsonPath("$.error.message").value("호출에 실패했다"));
 
         mockMvc.perform(get("/api/briefings/summary?briefing_type=daily"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.dailySnapshot.title").exists())
-                .andExpect(jsonPath("$.data.history").isArray());
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("BRIEFING_REPORT_UNAVAILABLE"));
 
         mockMvc.perform(get("/api/mixer/options"))
                 .andExpect(status().isOk())

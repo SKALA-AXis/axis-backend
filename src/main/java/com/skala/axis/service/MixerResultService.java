@@ -182,6 +182,81 @@ public class MixerResultService {
         }
     }
 
+    public Map<String, Object> sharePayload(String rawMixId, String shareBaseUrl) {
+        String mixId = stringValue(rawMixId);
+        if (mixId.isBlank()) {
+            return mapOf(
+                    "status", "failed",
+                    "result_kind", "mixer_share_invalid_mix_id",
+                    "mix_id", ""
+            );
+        }
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.query(
+                    """
+                        SELECT
+                            id::text AS id,
+                            source_analysis_id,
+                            title,
+                            final_one_liner,
+                            sk_ax_implication,
+                            confidence::double precision AS confidence,
+                            array_to_json(input_card_ids)::text AS card_ids_json,
+                            array_to_json(input_peer_ids)::text AS peer_ids_json,
+                            array_to_json(input_keywords)::text AS keywords_json,
+                            payload::text AS payload_json,
+                            created_at::text AS created_at,
+                            updated_at::text AS updated_at
+                        FROM mixer_results
+                        WHERE source_analysis_id = ? OR id::text = ?
+                        ORDER BY updated_at DESC
+                        LIMIT 1
+                    """,
+                    (rs, rowNum) -> {
+                        String resolvedMixId = stringValue(rs.getString("source_analysis_id"));
+                        if (resolvedMixId.isBlank()) {
+                            resolvedMixId = rs.getString("id");
+                        }
+                        Map<String, Object> payload = parseObject(rs.getString("payload_json"));
+                        return mapOf(
+                                "status", "ready",
+                                "result_kind", "mixer_share_payload",
+                                "mix_id", resolvedMixId,
+                                "id", rs.getString("id"),
+                                "title", rs.getString("title"),
+                                "final_one_liner", rs.getString("final_one_liner"),
+                                "sk_ax_implication", rs.getString("sk_ax_implication"),
+                                "confidence", rs.getObject("confidence"),
+                                "input_card_ids", parseList(rs.getString("card_ids_json")),
+                                "peer_ids", parseList(rs.getString("peer_ids_json")),
+                                "input_keywords", parseList(rs.getString("keywords_json")),
+                                "payload", payload,
+                                "share_url", shareUrl(shareBaseUrl, resolvedMixId),
+                                "created_at", rs.getString("created_at"),
+                                "updated_at", rs.getString("updated_at")
+                        );
+                    },
+                    mixId,
+                    mixId
+            );
+            if (rows.isEmpty()) {
+                return mapOf(
+                        "status", "not_found",
+                        "result_kind", "mixer_share_result_not_found",
+                        "mix_id", mixId
+                );
+            }
+            return rows.get(0);
+        } catch (DataAccessException e) {
+            log.warn("mixer share payload 조회 실패 | mix_id={} error={}", mixId, e.getMessage());
+            return mapOf(
+                    "status", "failed",
+                    "result_kind", "mixer_share_store_unavailable",
+                    "mix_id", mixId
+            );
+        }
+    }
+
     private Map<String, Object> generatedImplication(Map<String, Object> result) {
         return mapOf(
                 "sk_ax_implication", result.get("sk_ax_implication"),
@@ -305,6 +380,17 @@ public class MixerResultService {
 
     private String normalizeMode(String value) {
         return "deep".equals(String.valueOf(value).trim().toLowerCase(Locale.ROOT)) ? "deep" : "quick";
+    }
+
+    private String shareUrl(String baseUrl, String mixId) {
+        String base = stringValue(baseUrl);
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.isBlank()) {
+            base = "https://axis.local";
+        }
+        return base + "/mixer/shared/" + mixId;
     }
 
     private Map<String, Object> mapOf(Object... values) {

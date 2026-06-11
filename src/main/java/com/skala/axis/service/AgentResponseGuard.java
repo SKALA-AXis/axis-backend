@@ -49,7 +49,11 @@ public final class AgentResponseGuard {
                 stringValue(result.get("result_kind")),
                 nestedString(result.get("provenance"), "result_kind")
         ).toLowerCase(Locale.ROOT);
-        if (resultKind.contains("unavailable") || resultKind.contains("empty_axis_ai_response")) {
+        String provenanceMode = nestedString(result.get("provenance"), "mode").toLowerCase(Locale.ROOT);
+        if (resultKind.contains("unavailable")
+                || resultKind.contains("empty_axis_ai_response")
+                || resultKind.contains("fallback")
+                || provenanceMode.contains("fallback")) {
             return true;
         }
 

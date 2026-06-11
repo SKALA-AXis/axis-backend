@@ -7,6 +7,7 @@ import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.MixerResultService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +40,8 @@ import java.util.Map;
 public class MixerController {
     private final AiClientService aiClientService;
     private final MixerResultService mixerResultService;
+    @Value("${axis.share.base-url:https://axis.local}")
+    private String shareBaseUrl;
 
     @GetMapping("/options")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMixerOptions() {
@@ -137,11 +140,17 @@ public class MixerController {
 
     @PostMapping("/{mixId}/share")
     public ResponseEntity<ApiResponse<Map<String, Object>>> shareMixerResult(@PathVariable String mixId) {
-        return ResponseEntity.ok(ApiResponse.success(Map.of(
-                "status", "failed",
-                "result_kind", "mixer_share_store_unavailable",
-                "mix_id", mixId
-        )));
+        Map<String, Object> payload = mixerResultService.sharePayload(mixId, shareBaseUrl);
+        String status = String.valueOf(payload.getOrDefault("status", ""));
+        if ("ready".equals(status)) {
+            return ResponseEntity.ok(ApiResponse.success(payload));
+        }
+        if ("not_found".equals(status)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("MIXER_SHARE_RESULT_NOT_FOUND", "공유할 믹서 결과를 찾지 못했습니다."));
+        }
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error("MIXER_SHARE_STORE_UNAVAILABLE", "믹서 공유 저장소를 사용할 수 없습니다."));
     }
 
     @SuppressWarnings("unchecked")
