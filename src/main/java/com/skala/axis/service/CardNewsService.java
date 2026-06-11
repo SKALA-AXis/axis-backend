@@ -176,6 +176,7 @@ public class CardNewsService {
                 .actionItems(suggestedActions)
                 .implication(responseImplication)
                 .sources(responseSources)
+                .sourceRawArticleIds(sourceRawArticleIds(card))
                 .sourceCount(sourceCount)
                 .validationPass(card.getValidationPass())
                 .isHumanReviewed(Boolean.TRUE.equals(card.getIsHumanReviewed()))
@@ -259,13 +260,48 @@ public class CardNewsService {
     }
 
     private int sourceCount(CardNews card, List<Map<String, Object>> responseSources) {
-        if (card.getSourceRawArticleIds() != null && card.getSourceRawArticleIds().length > 0) {
-            return (int) Arrays.stream(card.getSourceRawArticleIds())
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .count();
+        List<Long> sourceRawArticleIds = sourceRawArticleIds(card);
+        if (!sourceRawArticleIds.isEmpty()) {
+            return sourceRawArticleIds.size();
+        }
+        List<Long> provenanceIds = longList(nestedMap(card.getEvidencePayload(), "provenance").get("raw_article_ids"));
+        if (!provenanceIds.isEmpty()) {
+            return (int) provenanceIds.stream().filter(Objects::nonNull).distinct().count();
+        }
+        List<Long> evidenceIds = longList(nestedMap(card.getEvidencePayload(), "evidence_chain").get("raw_article_ids"));
+        if (!evidenceIds.isEmpty()) {
+            return (int) evidenceIds.stream().filter(Objects::nonNull).distinct().count();
         }
         return Math.max(responseSources.size(), 1);
+    }
+
+    private List<Long> sourceRawArticleIds(CardNews card) {
+        if (card.getSourceRawArticleIds() != null && card.getSourceRawArticleIds().length > 0) {
+            return Arrays.stream(card.getSourceRawArticleIds())
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private List<Long> longList(Object value) {
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(this::longValue)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        if (value instanceof Object[] array) {
+            return Arrays.stream(array)
+                    .map(this::longValue)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        Long single = longValue(value);
+        return single == null ? List.of() : List.of(single);
     }
 
     private void appendSources(Map<String, Map<String, Object>> deduped, Object candidates) {
@@ -588,6 +624,20 @@ public class CardNewsService {
             return Float.parseFloat(String.valueOf(value));
         } catch (NumberFormatException e) {
             return defaultValue;
+        }
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
