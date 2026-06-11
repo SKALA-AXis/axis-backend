@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -48,22 +49,24 @@ public class PeerOverviewTableService {
     @Value("${axis.peer-overview.table-cache-ttl-seconds:600}")
     private long tableCacheTtlSeconds;
 
-    private volatile CachedPeerOverviewTable cachedPeerOverviewTable = new CachedPeerOverviewTable(Map.of(), Instant.EPOCH);
+    private volatile CachedPeerOverviewTable cachedPeerOverviewTable = new CachedPeerOverviewTable(Map.of(), Instant.EPOCH, Instant.EPOCH);
 
     public Map<String, Object> getPeerOverviewTable() {
+        Instant latestDataVersion = loadLatestPeerOverviewDataVersion();
         CachedPeerOverviewTable current = cachedPeerOverviewTable;
-        if (!isPeerOverviewTableCacheExpired(current.cachedAt())) {
+        if (!isPeerOverviewTableCacheExpired(current.cachedAt()) && !isPeerOverviewTableDataStale(current, latestDataVersion)) {
             return current.payload();
         }
 
         synchronized (this) {
+            latestDataVersion = loadLatestPeerOverviewDataVersion();
             current = cachedPeerOverviewTable;
-            if (!isPeerOverviewTableCacheExpired(current.cachedAt())) {
+            if (!isPeerOverviewTableCacheExpired(current.cachedAt()) && !isPeerOverviewTableDataStale(current, latestDataVersion)) {
                 return current.payload();
             }
 
             Map<String, Object> refreshed = loadPeerOverviewTable();
-            cachedPeerOverviewTable = new CachedPeerOverviewTable(refreshed, Instant.now());
+            cachedPeerOverviewTable = new CachedPeerOverviewTable(refreshed, Instant.now(), latestDataVersion);
             return refreshed;
         }
     }
@@ -99,6 +102,40 @@ public class PeerOverviewTableService {
             return true;
         }
         return Duration.between(cachedAt, Instant.now()).getSeconds() >= tableCacheTtlSeconds;
+    }
+
+    private boolean isPeerOverviewTableDataStale(CachedPeerOverviewTable current, Instant latestDataVersion) {
+        if (latestDataVersion == null || Instant.EPOCH.equals(latestDataVersion)) {
+            return false;
+        }
+        Instant cachedDataVersion = current.dataVersion();
+        return cachedDataVersion == null || latestDataVersion.isAfter(cachedDataVersion);
+    }
+
+    private Instant loadLatestPeerOverviewDataVersion() {
+        String sql = """
+                SELECT COALESCE(
+                    MAX(GREATEST(generated_at, created_at, updated_at)),
+                    TIMESTAMPTZ 'epoch'
+                ) AS latest_at
+                FROM peer_llm_analysis_snapshots
+                WHERE analysis_type IN ('peer_swot_comparison', 'peer_overview_keywords')
+                  AND status = 'active'
+                  AND peer_id IN ('all', 'sk_ax', 'samsung_sds', 'lg_cns', 'hyundai_autoever', 'posco_dx')
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                """;
+        try {
+            return jdbcTemplate.query(sql, rs -> {
+                if (!rs.next()) {
+                    return Instant.EPOCH;
+                }
+                Timestamp latestAt = rs.getTimestamp("latest_at");
+                return latestAt == null ? Instant.EPOCH : latestAt.toInstant();
+            });
+        } catch (DataAccessException ex) {
+            log.warn("PeerOverviewTable | latest snapshot version unavailable, using TTL cache only", ex);
+            return Instant.EPOCH;
+        }
     }
 
     public Map<String, Object> getPeerPositioningChart() {
@@ -658,7 +695,11 @@ public class PeerOverviewTableService {
                           (peer_id <> 'all' AND scope = 'company' AND comparison_mode = 'peer_vs_sk_ax')
                       )
                       AND (expires_at IS NULL OR expires_at > NOW())
-                    ORDER BY peer_id, generated_at DESC, created_at DESC
+                    ORDER BY
+                        peer_id,
+                        updated_at DESC NULLS LAST,
+                        generated_at DESC,
+                        created_at DESC
                 )
                 SELECT peer_id, output_payload, analysis_trace
                 FROM latest_snapshots
@@ -729,17 +770,33 @@ public class PeerOverviewTableService {
 
     private List<Map<String, String>> extractSwotItems(Map<String, Object> outputPayload) {
         List<Map<String, String>> items = new ArrayList<>();
-        for (Object rawItem : listValue(outputPayload.get("swot"))) {
+        List<Object> sourceItems = listValue(outputPayload.get("swot"));
+        if (sourceItems.isEmpty()) {
+            sourceItems = listValue(outputPayload.get("swot_monitoring_axes"));
+        }
+        for (Object rawItem : sourceItems) {
             Map<String, Object> item = objectMap(rawItem);
             String label = stringValue(item.get("label"));
-            String body = sanitizeObjectivePeerFlowText(stringValue(item.get("body")));
+            String body = buildSwotDisplayBody(item);
             if (canonicalSwotLabel(label) != null && !body.isBlank()) {
                 Map<String, String> swotItem = insight(canonicalSwotLabel(label), body);
-                String title = stringValue(item.get("title"));
+                String title = sanitizeObjectivePeerFlowText(firstNonBlank(
+                        stringValue(item.get("title")),
+                        stringValue(item.get("axis_name")),
+                        stringValue(item.get("axisName"))
+                ));
+                String factorType = stringValue(firstNonBlank(
+                        stringValue(item.get("factor_type")),
+                        stringValue(item.get("factorType")),
+                        defaultSwotFactorType(canonicalSwotLabel(label))
+                ));
                 String reasoningSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("reasoning_summary")));
                 String evidenceSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("evidence_summary")));
                 if (!title.isBlank()) {
                     swotItem.put("title", title);
+                }
+                if (!factorType.isBlank()) {
+                    swotItem.put("factorType", factorType);
                 }
                 if (!reasoningSummary.isBlank()) {
                     swotItem.put("reasoningSummary", reasoningSummary);
@@ -747,10 +804,331 @@ public class PeerOverviewTableService {
                 if (!evidenceSummary.isBlank()) {
                     swotItem.put("evidenceSummary", evidenceSummary);
                 }
+                String checkPoint = buildSwotCheckPoint(item);
+                if (!checkPoint.isBlank()) {
+                    swotItem.put("checkPoint", checkPoint);
+                }
                 items.add(swotItem);
             }
         }
         return items;
+    }
+
+    private String buildSwotDisplayBody(Map<String, Object> item) {
+        String label = canonicalSwotLabel(stringValue(item.get("label")));
+        String body = sanitizeObjectivePeerFlowText(stringValue(item.get("body")));
+        if (!body.isBlank() && !looksLikeAxisExplanation(body) && !looksLikeGenericSwotDiagnosis(body)) {
+            return normalizeSwotDisplayText(body);
+        }
+        boolean insufficientEvidence = Boolean.parseBoolean(stringValue(item.get("insufficient_evidence")))
+                || Boolean.parseBoolean(stringValue(item.get("insufficientEvidence")));
+        String axisDefinition = sanitizeObjectivePeerFlowText(firstNonBlank(
+                stringValue(item.get("axis_definition")),
+                stringValue(item.get("axisDefinition"))
+        ));
+        String whyMonitor = sanitizeObjectivePeerFlowText(firstNonBlank(
+                stringValue(item.get("why_monitor")),
+                stringValue(item.get("whyMonitor"))
+        ));
+        String supportingPattern = sanitizeObjectivePeerFlowText(firstNonBlank(
+                stringValue(item.get("supporting_pattern")),
+                stringValue(item.get("supportingPattern"))
+        ));
+        if (insufficientEvidence || isInsufficientSwotText(axisDefinition)) {
+            return "판단 근거가 부족합니다.";
+        }
+        String title = sanitizeObjectivePeerFlowText(firstNonBlank(
+                stringValue(item.get("title")),
+                stringValue(item.get("axis_name")),
+                stringValue(item.get("axisName"))
+        ));
+        String evidenceSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("evidence_summary")));
+        String reasoningSummary = sanitizeObjectivePeerFlowText(stringValue(item.get("reasoning_summary")));
+        String diagnosisBody = buildSwotDiagnosisBody(
+                label,
+                title,
+                supportingPattern,
+                evidenceSummary,
+                reasoningSummary,
+                axisDefinition
+        );
+        if (!diagnosisBody.isBlank()) {
+            return normalizeSwotDisplayText(diagnosisBody);
+        }
+        if (axisDefinition.equals(whyMonitor)) {
+            whyMonitor = "";
+        }
+        String combined = firstNonBlank(joinDisplaySentences(axisDefinition, whyMonitor), supportingPattern);
+        if (!combined.isBlank()) {
+            return normalizeSwotDisplayText(combined);
+        }
+        return normalizeSwotDisplayText(sanitizeObjectivePeerFlowText(firstNonBlank(
+                stringValue(item.get("axis_name")),
+                stringValue(item.get("axisName")),
+                stringValue(item.get("title"))
+        )));
+    }
+
+    private String buildSwotDiagnosisBody(
+            String label,
+            String title,
+            String supportingPattern,
+            String evidenceSummary,
+            String reasoningSummary,
+            String axisDefinition
+    ) {
+        String detail = firstNonAxisText(supportingPattern, evidenceSummary, reasoningSummary, axisDefinition);
+        String subject = firstNonBlank(
+                isGenericSwotTitle(title) ? "" : title,
+                swotSubjectFromDetail(detail),
+                switch (label == null ? "" : label) {
+            case "Strength" -> "내부 역량";
+            case "Weakness" -> "내부 개선 과제";
+            case "Opportunity" -> "외부 성장 기회";
+            case "Threat" -> "외부 위협 요인";
+            default -> "SWOT 요인";
+        });
+        String sentence = switch (label == null ? "" : label) {
+            case "Strength" -> subject + topicParticle(subject) + " 내부 강점으로 확인됩니다.";
+            case "Weakness" -> subject + topicParticle(subject) + " 내부 개선 과제로 남아 있습니다.";
+            case "Opportunity" -> subject + topicParticle(subject) + " 외부 기회 요인으로 볼 수 있습니다.";
+            case "Threat" -> subject + topicParticle(subject) + " 외부 위협 요인으로 볼 수 있습니다.";
+            default -> subject + topicParticle(subject) + " 주요 SWOT 요인으로 볼 수 있습니다.";
+        };
+        if (!detail.isBlank()) {
+            sentence = sentence + " " + detail;
+        }
+        return sentence;
+    }
+
+    private boolean isGenericSwotTitle(String value) {
+        if (value == null || value.isBlank()) {
+            return true;
+        }
+        return List.of(
+                "내부 역량",
+                "내부 역량 강화",
+                "내부 역량 통합성",
+                "내부 역량의 반복 적용성",
+                "내부 제약",
+                "내부 제약 관리",
+                "외부 시장 기회",
+                "시장 기회",
+                "시장 기회 탐색",
+                "시장 성장 가능성",
+                "외부 환경 압박",
+                "외부 환경의 부정적 압박",
+                "외부 환경의 유리한 조건",
+                "경쟁 및 규제 압박",
+                "외부 기회",
+                "외부 위협",
+                "외부 경쟁 위협",
+                "외부 압박 요인",
+                "외부 경쟁 압박",
+                "수익성 개선",
+                "수익성 개선 필요",
+                "수익성 개선 필요성",
+                "사업 성장 가능성",
+                "성장 가능성"
+        ).contains(value.trim());
+    }
+
+    private String swotSubjectFromDetail(String detail) {
+        if (detail == null || detail.isBlank()) {
+            return "";
+        }
+        List<String> patterns = List.of(
+                "GPUaaS",
+                "패브릭스",
+                "클라우드",
+                "AI",
+                "IT 서비스",
+                "스마트 엔지니어링",
+                "스마트 물류",
+                "제조 AX",
+                "차량용 소프트웨어",
+                "차량 SW",
+                "R&D 비용",
+                "CCS",
+                "OTA",
+                "내비게이션 플랫폼",
+                "데이터센터",
+                "Intelligent Factory",
+                "로봇",
+                "공장 자동화",
+                "영업이익"
+        );
+        List<String> matched = new ArrayList<>();
+        for (String pattern : patterns) {
+            if (detail.contains(pattern) && !matched.contains(pattern)) {
+                matched.add(pattern);
+            }
+            if (matched.size() >= 2) {
+                break;
+            }
+        }
+        if (!matched.isEmpty()) {
+            return String.join("·", matched);
+        }
+        Matcher matcher = Pattern.compile("[A-Za-z][A-Za-z0-9+&./-]{2,}|[가-힣0-9A-Za-z+&./-]{3,}").matcher(detail);
+        List<String> tokens = new ArrayList<>();
+        while (matcher.find() && tokens.size() < 2) {
+            String token = matcher.group();
+            if (!List.of("관련", "기반", "최근", "변화", "확대", "강화", "관찰됨", "나타나고").contains(token)) {
+                tokens.add(token);
+            }
+        }
+        return String.join("·", tokens);
+    }
+
+    private String topicParticle(String value) {
+        if (value == null || value.isBlank()) {
+            return "은";
+        }
+        char lastChar = value.charAt(value.length() - 1);
+        if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
+            return ((lastChar - 0xAC00) % 28) == 0 ? "는" : "은";
+        }
+        return "는";
+    }
+
+    private String firstNonAxisText(String... values) {
+        for (String value : values) {
+            String cleaned = sanitizeObjectivePeerFlowText(value);
+            if (!cleaned.isBlank() && !looksLikeAxisExplanation(cleaned)) {
+                return cleaned;
+            }
+        }
+        return "";
+    }
+
+    private boolean looksLikeAxisExplanation(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        return value.contains("이 축은")
+                || value.contains("관찰 축")
+                || value.contains("판단하기 위한 기준")
+                || value.contains("판단 기준")
+                || value.contains("추적해야")
+                || value.contains("모니터링");
+    }
+
+    private boolean looksLikeGenericSwotDiagnosis(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String cleaned = sanitizeObjectivePeerFlowText(value);
+        boolean hasGenericFrame = cleaned.contains("내부 강점으로 확인")
+                || cleaned.contains("내부 개선 과제로 남")
+                || cleaned.contains("외부 기회 요인으로 볼 수")
+                || cleaned.contains("외부 위협 요인으로 볼 수");
+        if (!hasGenericFrame) {
+            return false;
+        }
+        return cleaned.startsWith("내부 역량")
+                || cleaned.startsWith("내부 제약")
+                || cleaned.startsWith("외부 시장")
+                || cleaned.startsWith("시장 기회")
+                || cleaned.startsWith("외부 환경")
+                || cleaned.startsWith("경쟁 및 규제")
+                || cleaned.startsWith("수익성 개선")
+                || cleaned.startsWith("시장 성장");
+    }
+
+    private String buildSwotCheckPoint(Map<String, Object> item) {
+        String explicit = sanitizeObjectivePeerFlowText(firstNonBlank(
+                stringValue(item.get("check_point")),
+                stringValue(item.get("checkPoint"))
+        ));
+        if (!explicit.isBlank()) {
+            return explicit;
+        }
+        String watchVariables = flattenSwotValue(firstNonBlankObject(
+                item.get("watch_variables"),
+                item.get("watchVariables")
+        ));
+        return sanitizeObjectivePeerFlowText(watchVariables);
+    }
+
+    private String joinNonBlank(String... values) {
+        List<String> parts = new ArrayList<>();
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                parts.add(value);
+            }
+        }
+        return String.join(" ", parts);
+    }
+
+    private String joinDisplaySentences(String... values) {
+        List<String> parts = new ArrayList<>();
+        for (String value : values) {
+            String cleaned = sanitizeObjectivePeerFlowText(value);
+            if (cleaned.isBlank()) {
+                continue;
+            }
+            if (!parts.isEmpty()) {
+                int lastIndex = parts.size() - 1;
+                String previous = parts.get(lastIndex);
+                if (!previous.endsWith(".") && !previous.endsWith("!") && !previous.endsWith("?") && !previous.endsWith("。")) {
+                    parts.set(lastIndex, previous + ".");
+                }
+            }
+            parts.add(cleaned);
+        }
+        return String.join(" ", parts);
+    }
+
+    private boolean isInsufficientSwotText(String value) {
+        return value != null && (
+                value.contains("현재 입력 근거만으로 해당 축을 정의하기 어렵다")
+                        || value.contains("판단 근거 부족")
+        );
+    }
+
+    private String normalizeSwotDisplayText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String cleaned = sanitizeObjectivePeerFlowText(value)
+                .replaceAll("[\\[\\]\\{\\}\"]", " ")
+                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (cleaned.isBlank()) {
+            return "";
+        }
+
+        List<String> uniqueSentences = new ArrayList<>();
+        for (String sentence : cleaned.split("(?<=[.!?。])\\s+")) {
+            String normalized = sentence.replaceAll("\\s+", " ").trim();
+            if (!normalized.isBlank() && !uniqueSentences.contains(normalized)) {
+                uniqueSentences.add(normalized);
+            }
+        }
+        return String.join(" ", uniqueSentences);
+    }
+
+    private Object firstNonBlankObject(Object... values) {
+        for (Object value : values) {
+            String text = stringValue(value);
+            if (!text.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String defaultSwotFactorType(String label) {
+        if (label == null) {
+            return "";
+        }
+        return switch (label) {
+            case "Strength", "Weakness" -> "internal_controllable";
+            case "Opportunity", "Threat" -> "external_uncontrollable";
+            default -> "";
+        };
     }
 
     private List<Map<String, Object>> extractAnalysisTrace(PeerLlmAnalysisSnapshot snapshot) {
@@ -843,6 +1221,30 @@ public class PeerOverviewTableService {
             return "";
         }
         return value
+                .replace("최근 공개 원문에서는", "")
+                .replace("최근 공개 원문에서", "최근 신호에서")
+                .replace("최근 공개 원문 신호", "최근 신호")
+                .replace("이 Peer사는", "해당 기업은")
+                .replace("이 Peer사가", "해당 기업이")
+                .replace("이 Peer사를", "해당 기업을")
+                .replace("이 Peer사의", "해당 기업의")
+                .replace("이 peer사는", "해당 기업은")
+                .replace("이 peer사가", "해당 기업이")
+                .replace("이 peer사를", "해당 기업을")
+                .replace("이 peer사의", "해당 기업의")
+                .replace("Peer사는", "해당 기업은")
+                .replace("Peer사가", "해당 기업이")
+                .replace("Peer사를", "해당 기업을")
+                .replace("Peer사의", "해당 기업의")
+                .replace("Peer사에", "해당 기업에")
+                .replace("Peer사", "대상 기업")
+                .replace("peer사는", "해당 기업은")
+                .replace("peer사가", "해당 기업이")
+                .replace("peer사를", "해당 기업을")
+                .replace("peer사의", "해당 기업의")
+                .replace("peer사에", "해당 기업에")
+                .replace("peer사", "대상 기업")
+                .replace("현재 입력 근거만으로 해당 축을 정의하기 어렵다", "판단 근거가 부족합니다.")
                 .replace("SK AX와 비교했을 때", "")
                 .replace("SK AX와 비교해", "")
                 .replace("SK AX와 비교하면", "")
@@ -879,7 +1281,7 @@ public class PeerOverviewTableService {
 
         return List.of(
                 insight("포지셔닝", "전체 비교에서는 peer별 최근 사업·기술 신호가 어디에 집중되는지 보는 것이 중요합니다. " + businessSummary + " 축으로 갈라져 각 기업의 관심 영역과 비교 기준이 드러납니다."),
-                insight("사업 신호", "최근 공개 원문 신호를 보면 " + businessSummary + " 관련 활동이 핵심 사업 차이로 나타납니다. 각 기업의 사업명과 고객 산업이 분기별 진행 방향을 보여주는 객관 지표로 쓰입니다."),
+                insight("사업 신호", "최근 신호를 보면 " + businessSummary + " 관련 활동이 핵심 사업 차이로 나타납니다. 각 기업의 사업명과 고객 산업이 분기별 진행 방향을 보여주는 객관 지표로 쓰입니다."),
                 insight("기술 신호", "기술 축에서는 " + techSummary + " 흐름이 보입니다. 제품·플랫폼·구현 역량이 각 peer의 기술 방향을 구분하는 기준입니다."),
                 insight("리스크", "Peer를 비교할 때는 최근 사업 신호와 공시 수치를 함께 봐야 합니다. 현재 수익성 기준으로는 " + marginLeader + "가 두드러지며, 세부 부문 공시 범위 차이는 비교 리스크로 남아 있습니다.")
         );
@@ -895,7 +1297,7 @@ public class PeerOverviewTableService {
 
         return List.of(
                 insight("포지셔닝", peerLabel + "는 사업 신호의 " + peerBusiness + ", 기술 신호의 " + peerTech + "를 앞세우는 흐름으로 읽힙니다. 분기별 사업명과 기술명이 확인해야 할 초점을 나눕니다."),
-                insight("사업 신호", peerLabel + "는 최근 공개 원문에서 " + peerBusiness + " 관련 사업 활동이 가장 강하게 읽힙니다. 수주·확장·고객 산업 같은 실행 신호가 사업 방향 판단의 기준입니다."),
+                insight("사업 신호", peerLabel + "는 최근 신호에서 " + peerBusiness + " 관련 사업 활동이 가장 강하게 읽힙니다. 수주·확장·고객 산업 같은 실행 신호가 사업 방향 판단의 기준입니다."),
                 insight("기술 신호", peerLabel + "는 " + peerTech + "를 제품·플랫폼 또는 구현 역량의 중심으로 보여줍니다. 기술명과 플랫폼 신호가 기술 방향의 객관 지표로 쓰입니다."),
                 insight("리스크", buildRiskInsight(peerLabel, revenue, margin, marginDelta))
         );
@@ -1929,20 +2331,16 @@ public class PeerOverviewTableService {
                       AND comparison_mode = 'quarterly_keyword_selection'
                       AND status = 'active'
                       AND peer_id IN ('sk_ax', 'samsung_sds', 'lg_cns', 'hyundai_autoever', 'posco_dx')
-                      AND (
-                          NULLIF(?, '') IS NULL
-                          OR output_payload->>'period' = ?
-                      )
                       AND (expires_at IS NULL OR expires_at > NOW())
-                    ORDER BY peer_id, generated_at DESC, created_at DESC
+                    ORDER BY
+                        peer_id,
+                        updated_at DESC NULLS LAST,
+                        generated_at DESC,
+                        created_at DESC
                     """;
 
             return jdbcTemplate.query(
                     sql,
-                    ps -> {
-                        ps.setString(1, period);
-                        ps.setString(2, period);
-                    },
                     rs -> {
                         Map<String, SupplementalRow> rows = new HashMap<>();
                         while (rs.next()) {
@@ -2049,7 +2447,7 @@ public class PeerOverviewTableService {
                                 label,
                                 evidenceSummary.isBlank() ? "저장된 근거 요약 없음" : evidenceSummary,
                                 reason.isBlank()
-                                        ? "이 근거가 해당 기업의 진행 방향을 보여줘 대표 키워드로 선정했습니다."
+                                        ? "이 원문 내용을 보아 해당 기업의 진행 방향을 보여주는 대표 키워드로 선정했습니다."
                                         : reason
                         )
         );
@@ -2198,7 +2596,8 @@ public class PeerOverviewTableService {
 
     private record CachedPeerOverviewTable(
             Map<String, Object> payload,
-            Instant cachedAt
+            Instant cachedAt,
+            Instant dataVersion
     ) {
         private CachedPeerOverviewTable {
             if (payload == null) {
@@ -2206,6 +2605,9 @@ public class PeerOverviewTableService {
             }
             if (cachedAt == null) {
                 cachedAt = Instant.EPOCH;
+            }
+            if (dataVersion == null) {
+                dataVersion = Instant.EPOCH;
             }
         }
     }
