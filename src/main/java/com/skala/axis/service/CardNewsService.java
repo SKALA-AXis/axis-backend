@@ -123,9 +123,10 @@ public class CardNewsService {
         String whyImportant = stringValue(responseImplication.get("why_important"), null);
         String potentialImpact = stringValue(responseImplication.get("potential_impact"), null);
         List<String> suggestedActions = stringList(responseImplication.get("suggested_actions"));
-        List<String> insights = potentialImpact == null || potentialImpact.isBlank()
-                ? List.of()
-                : List.of(potentialImpact);
+        List<String> insights = stringList(responseImplication.get("key_implications"));
+        if (insights.isEmpty() && potentialImpact != null && !potentialImpact.isBlank()) {
+            insights = List.of(potentialImpact);
+        }
 
         return CardNewsResponse.builder()
                 .id(card.getId())
@@ -251,11 +252,12 @@ public class CardNewsService {
         return List.copyOf(deduped.values());
     }
 
-    private void appendSources(Map<String, Map<String, Object>> deduped, List<Map<String, Object>> candidates) {
-        if (candidates == null || candidates.isEmpty()) {
+    private void appendSources(Map<String, Map<String, Object>> deduped, Object candidates) {
+        List<Map<String, Object>> normalizedCandidates = mapList(candidates);
+        if (normalizedCandidates.isEmpty()) {
             return;
         }
-        for (Map<String, Object> candidate : candidates) {
+        for (Map<String, Object> candidate : normalizedCandidates) {
             Map<String, Object> normalized = normalizeSource(candidate);
             String key = firstNonBlank(
                     stringValue(normalized.get("url"), null),
@@ -360,15 +362,43 @@ public class CardNewsService {
         return value == null ? Map.of() : value;
     }
 
-    private Map<String, Object> firstImageAsset(List<Map<String, Object>> imageAssets) {
-        if (imageAssets == null || imageAssets.isEmpty()) {
+    private Map<String, Object> firstImageAsset(Object imageAssets) {
+        List<Map<String, Object>> normalizedAssets = mapList(imageAssets);
+        if (normalizedAssets.isEmpty()) {
             return Map.of();
         }
-        return imageAssets.stream()
+        return normalizedAssets.stream()
                 .filter(Objects::nonNull)
                 .filter(item -> !item.isEmpty())
                 .findFirst()
                 .orElse(Map.of());
+    }
+
+    private List<Map<String, Object>> mapList(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : list) {
+                Map<String, Object> map = objectMap(item);
+                if (!map.isEmpty()) {
+                    result.add(map);
+                }
+            }
+            return result;
+        }
+        Map<String, Object> single = objectMap(value);
+        return single.isEmpty() ? List.of() : List.of(single);
+    }
+
+    private Map<String, Object> objectMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, item) -> result.put(String.valueOf(key), item));
+            return result;
+        }
+        return Map.of();
     }
 
     private String imageUrl(Map<String, Object> image) {
