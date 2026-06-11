@@ -114,6 +114,7 @@ public class CardNewsService {
             }
             responseSources.add(fallbackSource);
         }
+        int sourceCount = sourceCount(card, responseSources);
         Float trustScore = trustScore(responseSources, card.getValidationScScore());
         String coverImageUrl = firstNonBlank(
                 imageUrl(coverImage),
@@ -175,7 +176,7 @@ public class CardNewsService {
                 .actionItems(suggestedActions)
                 .implication(responseImplication)
                 .sources(responseSources)
-                .sourceCount(responseSources.size())
+                .sourceCount(sourceCount)
                 .validationPass(card.getValidationPass())
                 .isHumanReviewed(Boolean.TRUE.equals(card.getIsHumanReviewed()))
                 .build();
@@ -255,6 +256,16 @@ public class CardNewsService {
         appendSources(deduped, card.getSources());
         appendSources(deduped, card.getSourceArticles());
         return List.copyOf(deduped.values());
+    }
+
+    private int sourceCount(CardNews card, List<Map<String, Object>> responseSources) {
+        if (card.getSourceRawArticleIds() != null && card.getSourceRawArticleIds().length > 0) {
+            return (int) Arrays.stream(card.getSourceRawArticleIds())
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .count();
+        }
+        return Math.max(responseSources.size(), 1);
     }
 
     private void appendSources(Map<String, Map<String, Object>> deduped, Object candidates) {
