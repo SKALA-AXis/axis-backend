@@ -1,5 +1,7 @@
 package com.skala.axis.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PostConstruct;
@@ -30,29 +32,9 @@ import java.util.Map;
 @Slf4j
 public class DashboardKeywordTrendChartService {
     private static final int CHART_DAYS = 7;
+    private static final int SPIKE_LOOKBACK_DAYS = 14;
     private static final int MAX_GROUPS = 4;
-    private static final List<String> FIXED_GROUPS = List.of("AI 에이전트", "LLM", "인프라", "네트워크");
-    private static final List<String> DATALAB_GROUPS = List.of(
-            "인프라",
-            "IT 인프라",
-            "AX",
-            "생성형 AI",
-            "GPU",
-            "cloud",
-            "프라이빗 클라우드",
-            "하이브리드 클라우드",
-            "네트워크",
-            "스마트팩토리",
-            "AI 에이전트",
-            "LLM",
-            "RAG",
-            "SOC",
-            "디지털 트윈",
-            "Kubernetes",
-            "랜섬웨어",
-            "사이버보안",
-            "제조 AX"
-    );
+    private static final List<String> FIXED_GROUPS = List.of("AX", "사이버보안", "인프라", "수주");
     private static final DateTimeFormatter TREND_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM.dd");
     private static final List<String> SERIES_COLORS = List.of(
             "#EE7501",
@@ -68,6 +50,7 @@ public class DashboardKeywordTrendChartService {
                     COALESCE(ra.metadata ->> 'group_name', ra.company::jsonb ->> 0) AS group_name,
                     COALESCE((ra.metadata ->> 'period')::date, ra.published_at::date) AS period,
                     NULLIF(ra.metadata ->> 'ratio', '')::numeric AS ratio,
+                    ra.metadata -> 'cause_analysis' AS cause_analysis,
                     COALESCE(ra.metadata ->> 'time_unit', 'date') AS time_unit,
                     COALESCE(ra.metadata ->> 'source', ra.source_name) AS source_name,
                     ROW_NUMBER() OVER (
@@ -84,6 +67,7 @@ public class DashboardKeywordTrendChartService {
                     group_name,
                     period,
                     ratio,
+                    cause_analysis,
                     source_name
                 FROM trend_rows
                 WHERE rn = 1
@@ -120,6 +104,7 @@ public class DashboardKeywordTrendChartService {
                     d.group_name,
                     d.period,
                     d.ratio,
+                    d.cause_analysis,
                     d.source_name,
                     d.prev_ratio
                 FROM history d
@@ -132,6 +117,7 @@ public class DashboardKeywordTrendChartService {
                 ratio,
                 prev_ratio,
                 ROUND(ratio - COALESCE(prev_ratio, ratio), 2) AS ratio_delta,
+                cause_analysis::text AS cause_analysis,
                 source_name
             FROM windowed
             ORDER BY period ASC, group_name ASC
@@ -141,11 +127,13 @@ public class DashboardKeywordTrendChartService {
                 id,
                 source_name,
                 title,
+                url,
                 published_at,
                 LEFT(COALESCE(content, ''), 240) AS snippet
             FROM raw_articles
             WHERE source_type <> 'search_trend'
               AND COALESCE(published_at::date, collected_at::date) BETWEEN :startDate AND :endDate
+              AND url IS NOT NULL
               AND (
                   title ILIKE :keywordPattern
                   OR content ILIKE :keywordPattern
@@ -155,9 +143,13 @@ public class DashboardKeywordTrendChartService {
             """;
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    @Value("${axis.dashboard.keyword-spike-delta-threshold:40}")
+    @Value("${axis.dashboard.keyword-spike-delta-threshold:50}")
     private BigDecimal spikeDeltaThreshold;
+
+    @Value("${axis.dashboard.keyword-spike-average-multiplier:2.5}")
+    private BigDecimal spikeAverageMultiplier;
 
     @Value("${axis.dashboard.keyword-trends-cache-ttl-seconds:900}")
     private long cacheTtlSeconds;
@@ -196,8 +188,8 @@ public class DashboardKeywordTrendChartService {
             // schema/data edge case on a specific environment.
         }
 
-        // Never leave fixture keyword chart data behind when DB enrichment fails.
-        // An empty chart is less misleading than showing mock series names/values.
+        // Never leave placeholder keyword chart data behind when DB enrichment fails.
+        // An empty chart is less misleading than showing sample series names/values.
         dashboardSummary.put("keywordSearchPoints", List.of());
         dashboardSummary.put("keywordSeries", List.of());
         dashboardSummary.put("keywordInsights", List.of());
@@ -220,7 +212,7 @@ public class DashboardKeywordTrendChartService {
 
     private KeywordTrendPayload loadKeywordTrendChart(int chartDays) {
         try {
-            List<KeywordTrendRow> rows = queryKeywordTrendRows(KEYWORD_TREND_SQL, chartDays);
+            List<KeywordTrendRow> rows = queryKeywordTrendRows(KEYWORD_TREND_SQL, Math.max(chartDays, SPIKE_LOOKBACK_DAYS));
             if (rows.isEmpty()) {
                 return KeywordTrendPayload.empty();
             }
@@ -229,12 +221,19 @@ public class DashboardKeywordTrendChartService {
             if (displayedRows.isEmpty()) {
                 return KeywordTrendPayload.empty();
             }
+            LinkedHashSet<LocalDate> chartPeriods = latestPeriods(rows, chartDays);
+            List<KeywordTrendRow> chartRows = displayedRows.stream()
+                    .filter(row -> chartPeriods.contains(row.period()))
+                    .toList();
+            if (chartRows.isEmpty()) {
+                return KeywordTrendPayload.empty();
+            }
 
             Map<Integer, SeriesMeta> seriesByRank = new LinkedHashMap<>();
             Map<LocalDate, Map<String, Object>> pointsByDate = new LinkedHashMap<>();
             LinkedHashSet<String> sourceNames = new LinkedHashSet<>();
 
-            for (KeywordTrendRow row : displayedRows) {
+            for (KeywordTrendRow row : chartRows) {
                 if (row.groupRank() == null || row.groupRank() < 1 || row.groupRank() > MAX_GROUPS) {
                     continue;
                 }
@@ -273,7 +272,7 @@ public class DashboardKeywordTrendChartService {
             return new KeywordTrendPayload(
                     searchPoints,
                     series,
-                    buildSpikeInsights(displayedRows, seriesByRank),
+                    buildSpikeInsights(chartRows, rows, seriesByRank),
                     String.join(", ", sourceNames)
             );
         } catch (DataAccessException ignored) {
@@ -289,7 +288,7 @@ public class DashboardKeywordTrendChartService {
                             .addValue("historySize", chartDays)
                             .addValue("maxGroups", MAX_GROUPS)
                             .addValue("spikeDeltaThreshold", spikeDeltaThreshold)
-                            .addValue("allowedGroups", DATALAB_GROUPS),
+                            .addValue("allowedGroups", FIXED_GROUPS),
                     this::mapKeywordTrendRow
             );
         } catch (DataAccessException ignored) {
@@ -308,66 +307,17 @@ public class DashboardKeywordTrendChartService {
                 rs.getBigDecimal("ratio"),
                 rs.getBigDecimal("prev_ratio"),
                 rs.getBigDecimal("ratio_delta"),
-                rs.getString("source_name")
+                rs.getString("source_name"),
+                rs.getString("cause_analysis")
         );
     }
 
     private List<KeywordTrendRow> selectDisplayedRows(List<KeywordTrendRow> rows) {
-        Map<String, KeywordTrendRow> latestByGroup = new LinkedHashMap<>();
-        for (KeywordTrendRow row : rows) {
-            KeywordTrendRow current = latestByGroup.get(row.groupName());
-            if (current == null || row.period().isAfter(current.period())) {
-                latestByGroup.put(row.groupName(), row);
-            }
-        }
-
-        Map<String, KeywordTrendRow> strongestSpikeByGroup = new LinkedHashMap<>();
-        for (KeywordTrendRow row : rows) {
-            if (FIXED_GROUPS.contains(row.groupName()) || !isSpikeRow(row)) {
-                continue;
-            }
-
-            KeywordTrendRow current = strongestSpikeByGroup.get(row.groupName());
-            if (current == null || compareSpikeStrength(row, current) < 0) {
-                strongestSpikeByGroup.put(row.groupName(), row);
-            }
-        }
-
-        List<KeywordTrendRow> spikeRows = strongestSpikeByGroup.values().stream()
-                .filter(row -> !FIXED_GROUPS.contains(row.groupName()))
-                .sorted(
-                        Comparator.comparing((KeywordTrendRow row) -> absOrZero(row.ratioDelta()), Comparator.reverseOrder())
-                                .thenComparing(KeywordTrendRow::period, Comparator.reverseOrder())
-                                .thenComparing(KeywordTrendRow::latestRatio, Comparator.nullsLast(Comparator.reverseOrder()))
-                                .thenComparing(KeywordTrendRow::groupName)
-                )
-                .limit(MAX_GROUPS)
-                .toList();
-
-        int fixedSlots = Math.max(MAX_GROUPS - spikeRows.size(), 0);
-        LinkedHashSet<String> fixedToKeep = latestByGroup.values().stream()
-                .filter(row -> FIXED_GROUPS.contains(row.groupName()))
-                .sorted(
-                        Comparator.comparing(
-                                        (KeywordTrendRow row) -> absOrZero(row.ratioDelta()),
-                                        Comparator.reverseOrder()
-                                )
-                                .thenComparing(row -> FIXED_GROUPS.indexOf(row.groupName()))
-                )
-                .limit(fixedSlots)
-                .map(KeywordTrendRow::groupName)
-                .collect(
-                        java.util.stream.Collectors.toCollection(LinkedHashSet::new)
-                );
-
-        List<String> selectedGroups = new ArrayList<>();
+        List<String> selectedGroups = new ArrayList<>(MAX_GROUPS);
         for (String fixedGroup : FIXED_GROUPS) {
-            if (fixedToKeep.contains(fixedGroup)) {
+            if (rows.stream().anyMatch(row -> fixedGroup.equals(row.groupName()))) {
                 selectedGroups.add(fixedGroup);
             }
-        }
-        for (KeywordTrendRow spikeRow : spikeRows) {
-            selectedGroups.add(spikeRow.groupName());
         }
 
         Map<String, Integer> rankByGroup = new LinkedHashMap<>();
@@ -385,31 +335,59 @@ public class DashboardKeywordTrendChartService {
                 .toList();
     }
 
+    private LinkedHashSet<LocalDate> latestPeriods(List<KeywordTrendRow> rows, int limit) {
+        return rows.stream()
+                .map(KeywordTrendRow::period)
+                .distinct()
+                .sorted(Comparator.reverseOrder())
+                .limit(Math.max(1, limit))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
     private BigDecimal absOrZero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value.abs();
     }
 
-    private int compareSpikeStrength(KeywordTrendRow left, KeywordTrendRow right) {
-        return Comparator.comparing((KeywordTrendRow row) -> absOrZero(row.ratioDelta()), Comparator.reverseOrder())
-                .thenComparing(KeywordTrendRow::period, Comparator.reverseOrder())
-                .thenComparing(KeywordTrendRow::latestRatio, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(KeywordTrendRow::groupName)
-                .compare(left, right);
-    }
+    private boolean isSpikeRow(KeywordTrendRow row, List<KeywordTrendRow> lookbackRows) {
+        if (row.prevRatio() == null || row.ratioDelta() == null) {
+            return false;
+        }
 
-    private boolean isSpikeRow(KeywordTrendRow row) {
-        return row.prevRatio() != null
-                && row.ratioDelta() != null
-                && row.ratioDelta().abs().compareTo(spikeDeltaThreshold.abs()) >= 0;
+        BigDecimal absDelta = row.ratioDelta().abs();
+        if (absDelta.compareTo(spikeDeltaThreshold.abs()) < 0) {
+            return false;
+        }
+
+        List<BigDecimal> groupDeltas = lookbackRows.stream()
+                .filter(candidate -> row.groupName().equals(candidate.groupName()))
+                .map(KeywordTrendRow::ratioDelta)
+                .filter(delta -> delta != null)
+                .map(BigDecimal::abs)
+                .filter(delta -> delta.compareTo(BigDecimal.ZERO) > 0)
+                .toList();
+        if (groupDeltas.isEmpty()) {
+            return false;
+        }
+
+        BigDecimal maxDelta = groupDeltas.stream().max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
+        if (absDelta.compareTo(maxDelta) >= 0) {
+            return true;
+        }
+
+        BigDecimal averageDelta = groupDeltas.stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(groupDeltas.size()), 4, RoundingMode.HALF_UP);
+        return absDelta.compareTo(averageDelta.multiply(spikeAverageMultiplier)) >= 0;
     }
 
     private List<Map<String, Object>> buildSpikeInsights(
             List<KeywordTrendRow> rows,
+            List<KeywordTrendRow> lookbackRows,
             Map<Integer, SeriesMeta> seriesByRank
     ) {
         return rows.stream()
                 .filter(row -> row.groupRank() != null && row.groupRank() >= 1 && row.groupRank() <= MAX_GROUPS)
-                .filter(this::isSpikeRow)
+                .filter(row -> isSpikeRow(row, lookbackRows))
                 .sorted(
                         Comparator.comparing(KeywordTrendRow::period)
                                 .thenComparing(KeywordTrendRow::groupRank)
@@ -417,18 +395,27 @@ public class DashboardKeywordTrendChartService {
                 .map(row -> {
                     SeriesMeta series = seriesByRank.get(row.groupRank());
                     String key = series == null ? "trend" + row.groupRank() : series.key();
-                    List<Map<String, Object>> evidence = queryCauseEvidence(row.groupName(), row.period());
-                    String skAxPoint = buildSkAxPoint(evidence);
+                    Map<String, Object> causeAnalysis = parseCauseAnalysis(row.causeAnalysisJson());
+                    List<Map<String, Object>> evidence = buildDisplayEvidence(causeAnalysis);
+                    if (evidence.isEmpty()) {
+                        evidence = sanitizeFallbackEvidence(queryCauseEvidence(row.groupName(), row.period()), row.groupName());
+                    }
+                    List<Map<String, Object>> causeFactors = buildCauseFactors(causeAnalysis);
+                    if (causeFactors.isEmpty()) {
+                        causeFactors = buildEvidenceCauseFactors(row, evidence);
+                    }
                     String directionLabel = row.ratioDelta().signum() < 0 ? "급락" : "급등";
-                    String reason = buildCauseReason(row.groupName(), directionLabel, evidence);
+                    String reason = buildCauseReason(row, directionLabel, causeAnalysis, evidence, causeFactors);
+                    String skAxPoint = buildSkAxPoint(evidence);
 
                     Map<String, Object> insight = new LinkedHashMap<>();
                     insight.put("key", key);
                     insight.put("time", TREND_DATE_FORMATTER.format(row.period()));
-                    insight.put("title", row.groupName() + " 검색지수 " + directionLabel);
+                    insight.put("title", row.groupName() + " 관련 검색 관심도 " + directionLabel);
                     insight.put("valueLabel", formatRatioValue(row.ratio()) + " / " + formatDeltaValue(row.ratioDelta()));
                     insight.put("reason", reason);
                     insight.put("skAxPoint", skAxPoint);
+                    insight.put("causeFactors", causeFactors);
                     insight.put("evidence", evidence);
                     return insight;
                 })
@@ -445,26 +432,541 @@ public class DashboardKeywordTrendChartService {
                     new MapSqlParameterSource()
                             .addValue("keywordPattern", "%" + keyword + "%")
                             .addValue("startDate", period.minusDays(3))
-                            .addValue("endDate", period.plusDays(1))
+                            .addValue("endDate", period)
             );
         } catch (DataAccessException ignored) {
             return List.of();
         }
     }
 
-    private String buildCauseReason(String keyword, String directionLabel, List<Map<String, Object>> evidence) {
-        if (evidence.isEmpty()) {
-            return keyword + " 검색지수가 전일 대비 크게 변동했습니다. 아직 raw_articles에서 직접 연결되는 원문 근거가 충분하지 않아 웹 서치 보강이 필요한 상태입니다.";
+    private Map<String, Object> parseCauseAnalysis(String causeAnalysisJson) {
+        if (causeAnalysisJson == null || causeAnalysisJson.isBlank() || "null".equals(causeAnalysisJson)) {
+            return Map.of();
         }
-        Object title = evidence.get(0).get("title");
-        return directionLabel + "일 전후 raw_articles에서 '" + keyword + "' 관련 원문이 확인됐습니다. 대표 근거는 \"" + title + "\"입니다.";
+        try {
+            return objectMapper.readValue(causeAnalysisJson, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> causeDrivers(Map<String, Object> causeAnalysis) {
+        Object drivers = causeAnalysis.get("keyword_drivers");
+        if (!(drivers instanceof List<?> list)) {
+            return List.of();
+        }
+        return list.stream()
+                .filter(Map.class::isInstance)
+                .map(item -> (Map<String, Object>) item)
+                .toList();
+    }
+
+    private String buildCauseReason(
+            KeywordTrendRow row,
+            String directionLabel,
+            Map<String, Object> causeAnalysis,
+            List<Map<String, Object>> evidence,
+            List<Map<String, Object>> causeFactors
+    ) {
+        List<Map<String, Object>> drivers = causeDrivers(causeAnalysis).stream()
+                .filter(driver -> stringValue(driver.get("keyword")) != null)
+                .limit(3)
+                .toList();
+        String evidenceCauseText = buildEvidenceCauseText(evidence);
+        if (!drivers.isEmpty()) {
+            String driverText = drivers.stream()
+                    .map(this::formatDriver)
+                    .filter(value -> !value.isBlank())
+                    .reduce((left, right) -> left + ", " + right)
+                    .orElse("");
+            if (evidenceCauseText != null) {
+                return row.groupName() + " 관련 검색 관심도 " + directionLabel + "은 " + evidenceCauseText
+                        + " 여기에 세부 키워드 " + driverText
+                        + " 흐름이 겹치며 발생한 것으로 보입니다.";
+            }
+            return row.groupName() + " 관련 검색 관심도 " + directionLabel + "은 섹터 내 " + driverText
+                    + " 흐름이 급등일 당일까지 집중되며 발생한 것으로 보입니다.";
+        }
+
+        if (evidenceCauseText != null) {
+            return row.groupName() + " 관련 검색 관심도 " + directionLabel + "은 " + evidenceCauseText
+                    + " 이 때문에 검색 수요가 커진 것으로 보입니다.";
+        }
+
+        if (evidence.isEmpty()) {
+            return row.groupName() + " 관련 검색 관심도가 전일 대비 "
+                    + formatDeltaValue(row.ratioDelta())
+                    + " 변동했습니다. 아직 같은 기간에 바로 연결되는 출처가 충분하지 않습니다.";
+        }
+        return directionLabel + "일 당일까지 '" + row.groupName() + "' 관련 출처 "
+                + evidence.size()
+                + "건에서 같은 흐름이 확인됐습니다. 원문 링크로 실제 기사와 날짜를 확인해 주세요.";
+    }
+
+    private String buildEvidenceCauseText(List<Map<String, Object>> evidence) {
+        List<String> titles = evidence.stream()
+                .map(item -> stringValue(item.get("title")))
+                .filter(title -> title != null)
+                .map(this::cleanEvidenceTitle)
+                .filter(title -> title != null)
+                .distinct()
+                .limit(2)
+                .toList();
+        if (titles.isEmpty()) {
+            return null;
+        }
+
+        List<String> causes = inferCausePhrases(titles);
+        if (causes.isEmpty()) {
+            return "관련 기사들이 같은 기간 집중되면서";
+        }
+        return joinNaturalKorean(causes) + " 이슈가 같은 기간 겹치면서";
+    }
+
+    private List<String> inferCausePhrases(List<String> titles) {
+        String text = String.join(" ", titles).toLowerCase();
+        List<String> causes = new ArrayList<>();
+        addCauseIfMatches(causes, text, "정부 GPU 사업 수주와 AI 인프라 구축", "정부", "gpu", "수주");
+        addCauseIfMatches(causes, text, "공공 사업 수주·공급 계약", "공공", "수주", "계약", "공급", "조달", "우선협상");
+        addCauseIfMatches(causes, text, "오픈AI 활용 사례와 대규모 토큰 처리 성과", "오픈ai", "토큰");
+        addCauseIfMatches(causes, text, "대기업 SI사의 AI 연구개발 투자 확대", "연구개발비", "r&d", "연구개발");
+        addCauseIfMatches(causes, text, "AI 개발 자동화 솔루션 공개", "코딩", "검증", "aind", "공개");
+        addCauseIfMatches(causes, text, "AI/AX 전환과 생성형 AI 적용 확대", "생성형", "ai", "ax", "llm", "에이전트", "디지털 전환", "dx");
+        addCauseIfMatches(causes, text, "컨퍼런스와 공식 발표", "컨퍼런스", "세미나", "행사", "발표", "개최", "m.ax");
+        addCauseIfMatches(causes, text, "보안 사고와 대응 솔루션 이슈", "보안", "랜섬웨어", "해킹", "제로트러스트", "edr", "xdr", "soc");
+        return causes.stream().distinct().limit(3).toList();
+    }
+
+    private void addCauseIfMatches(List<String> causes, String text, String cause, String... tokens) {
+        for (String token : tokens) {
+            if (text.contains(token.toLowerCase())) {
+                causes.add(cause);
+                return;
+            }
+        }
+    }
+
+    private String joinNaturalKorean(List<String> items) {
+        if (items.isEmpty()) {
+            return "";
+        }
+        if (items.size() == 1) {
+            return items.get(0);
+        }
+        if (items.size() == 2) {
+            return items.get(0) + ", " + items.get(1);
+        }
+        return items.get(0) + ", " + items.get(1) + ", " + items.get(2);
     }
 
     private String buildSkAxPoint(List<Map<String, Object>> evidence) {
         if (evidence.isEmpty()) {
-            return "후속 분석에서는 같은 기간 뉴스/공식 발표를 웹 서치로 보강해 실제 이슈인지 검증해야 합니다.";
+            return "";
         }
-        return "원인 후보는 raw_articles 근거 " + evidence.size() + "건을 기반으로 한 1차 분석입니다. 통합 분석 agent에서 출처 다양성과 시점 일치성을 추가 검증해야 합니다.";
+        return "";
+    }
+
+    private String formatDriver(Map<String, Object> driver) {
+        String keyword = stringValue(driver.get("keyword"));
+        if (keyword == null) {
+            return "";
+        }
+        return "'" + keyword + "' 관련";
+    }
+
+    private List<Map<String, Object>> buildCauseFactors(Map<String, Object> causeAnalysis) {
+        List<Map<String, Object>> factors = new ArrayList<>();
+        int rank = 1;
+        for (Map<String, Object> driver : causeDrivers(causeAnalysis)) {
+            String keyword = stringValue(driver.get("keyword"));
+            if (keyword == null) {
+                continue;
+            }
+            int evidenceCount = intValue(driver.get("evidence_count"));
+            int windowCount = intValue(driver.get("raw_article_window_count"));
+            int baselineCount = intValue(driver.get("raw_article_baseline_count"));
+            String lift = stringValue(driver.get("raw_article_lift"));
+
+            Map<String, Object> factor = new LinkedHashMap<>();
+            factor.put("rank", rank);
+            factor.put("keyword", keyword);
+            factor.put("title", keyword + " 관련 언급 집중");
+            factor.put("description", buildCauseFactorDescription(keyword, windowCount, baselineCount, lift, evidenceCount));
+            factor.put("evidenceCount", evidenceCount);
+            factors.add(factor);
+            rank++;
+            if (factors.size() >= 3) {
+                break;
+            }
+        }
+        return factors;
+    }
+
+    private String buildCauseFactorDescription(
+            String keyword,
+            int windowCount,
+            int baselineCount,
+            String lift,
+            int evidenceCount
+    ) {
+        List<String> pieces = new ArrayList<>();
+        if (windowCount > 0) {
+            pieces.add(keyword + " 관련 흐름이 급등일 당일까지 확인됨");
+        }
+        if (evidenceCount > 0) {
+            pieces.add("검증 원문 연결");
+        }
+        if (pieces.isEmpty()) {
+            return keyword + " 관련 흐름이 같은 기간 원인 후보로 감지됐습니다.";
+        }
+        return String.join(" · ", pieces);
+    }
+
+    private List<Map<String, Object>> buildEvidenceCauseFactors(KeywordTrendRow row, List<Map<String, Object>> evidence) {
+        List<Map<String, Object>> factors = new ArrayList<>();
+        int rank = 1;
+        for (Map<String, Object> item : evidence) {
+            String title = stringValue(item.get("title"));
+            if (title == null) {
+                continue;
+            }
+            Map<String, Object> factor = new LinkedHashMap<>();
+            factor.put("rank", rank);
+            factor.put("keyword", row.groupName());
+            factor.put("title", trimSentence(cleanEvidenceTitle(title), 54));
+            factor.put("description", row.groupName() + " 검색 급등일 당일까지 이 제목의 원문이 수집돼 원인 후보로 연결됐습니다.");
+            factor.put("evidenceCount", 1);
+            factors.add(factor);
+            rank++;
+            if (factors.size() >= 3) {
+                break;
+            }
+        }
+        return factors;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> buildDisplayEvidence(Map<String, Object> causeAnalysis) {
+        List<Map<String, Object>> displayed = new ArrayList<>();
+        for (Map<String, Object> driver : causeDrivers(causeAnalysis)) {
+            Object evidence = driver.get("evidence");
+            if (!(evidence instanceof Map<?, ?> evidenceMap)) {
+                continue;
+            }
+            String driverKeyword = stringValue(driver.get("keyword"));
+            addDisplayEvidence(displayed, evidenceMap.get("raw_articles"), "기사/원문", driverKeyword);
+            addDisplayEvidence(displayed, evidenceMap.get("card_news"), "카드뉴스", driverKeyword);
+            addDisplayEvidence(displayed, evidenceMap.get("integrated_issues"), "통합 이슈", driverKeyword);
+            addDisplayEvidence(displayed, evidenceMap.get("raw_article_business_signals"), "비즈니스 신호", driverKeyword);
+            if (displayed.size() >= 3) {
+                break;
+            }
+        }
+        return displayed.stream().limit(3).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void addDisplayEvidence(List<Map<String, Object>> target, Object itemsValue, String label, String driverKeyword) {
+        if (!(itemsValue instanceof List<?> items) || target.size() >= 3) {
+            return;
+        }
+        for (Object item : items) {
+            if (target.size() >= 3) {
+                return;
+            }
+            if (!(item instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+            Map<String, Object> source = (Map<String, Object>) rawMap;
+            Map<String, Object> resolvedSource = resolveEvidenceSource(label, source);
+            String url = normalizeExternalUrl(firstPresent(resolvedSource, "url", "source_url"));
+            if (url == null) {
+                continue;
+            }
+            Map<String, Object> display = new LinkedHashMap<>();
+            display.put("label", label);
+            display.put("source", firstPresent(resolvedSource, "source_name", "source", "peer_id"));
+            display.put("title", cleanEvidenceTitle(stringValue(firstPresent(
+                    resolvedSource,
+                    "title",
+                    "headline",
+                    "summary",
+                    "evidence_text",
+                    "one_line_summary"
+            ))));
+            display.put("basis", buildEvidenceSummary(label, source, driverKeyword));
+            display.put("url", url);
+            display.put("publishedAt", firstPresent(resolvedSource, "published_at", "created_at", "collected_at"));
+            target.add(display);
+        }
+    }
+
+    private List<Map<String, Object>> sanitizeFallbackEvidence(List<Map<String, Object>> evidence, String keyword) {
+        return evidence.stream()
+                .filter(item -> normalizeExternalUrl(item.get("url")) != null)
+                .limit(3)
+                .map(item -> {
+                    Map<String, Object> display = new LinkedHashMap<>();
+                    display.put("label", "기사/원문");
+                    display.put("source", item.get("source_name"));
+                    display.put("title", cleanEvidenceTitle(stringValue(item.get("title"))));
+                    display.put("basis", "'" + keyword + "' 검색 급등일 당일까지 이 원문에서 관련 언급이 확인됐습니다.");
+                    display.put("url", normalizeExternalUrl(item.get("url")));
+                    display.put("publishedAt", item.get("published_at"));
+                    return display;
+                })
+                .toList();
+    }
+
+    private String buildEvidenceSummary(String label, Map<String, Object> source, String driverKeyword) {
+        String keyword = driverKeyword == null ? "관련 키워드" : "'" + driverKeyword + "'";
+        if ("비즈니스 신호".equals(label)) {
+            String signalType = stringValue(source.get("signal_type"));
+            String businessArea = stringValue(source.get("business_area"));
+            if (signalType != null && businessArea != null) {
+                return keyword + "와 연결된 " + businessArea + "/" + signalType + " 신호입니다.";
+            }
+            String summary = stringValue(source.get("summary"));
+            if (summary != null) {
+                return trimSentence(summary, 96);
+            }
+            return keyword + "와 연결된 비즈니스 신호가 확인됐습니다.";
+        }
+        if ("통합 이슈".equals(label)) {
+            String summary = stringValue(firstPresent(source, "one_line_summary", "headline"));
+            if (summary != null) {
+                return keyword + " 관련 통합 이슈 근거입니다.";
+            }
+            return keyword + " 관련 복수 출처가 하나의 이슈로 묶여 확인됐습니다.";
+        }
+        if ("카드뉴스".equals(label)) {
+            String eventType = stringValue(source.get("event_type"));
+            if (eventType != null) {
+                return keyword + " 관련 " + eventType + " 이슈가 카드뉴스 근거로 확인됐습니다.";
+            }
+            return keyword + " 관련 카드뉴스 근거가 확인됐습니다.";
+        }
+        return keyword + " 관련 원문 기사에서 같은 기간 언급이 확인됐습니다.";
+    }
+
+    private Map<String, Object> resolveEvidenceSource(String label, Map<String, Object> source) {
+        if ("기사/원문".equals(label)) {
+            return source;
+        }
+
+        Map<String, Object> linkedSource = switch (label) {
+            case "통합 이슈" -> queryIntegratedIssueSource(firstPresent(source, "id", "integrated_issue_id"));
+            case "카드뉴스" -> queryCardNewsSource(firstPresent(source, "id", "card_news_id"));
+            case "비즈니스 신호" -> queryBusinessSignalSource(
+                    firstPresent(source, "raw_article_id"),
+                    firstPresent(source, "id", "signal_id")
+            );
+            default -> Map.of();
+        };
+
+        if (linkedSource.isEmpty()) {
+            return source;
+        }
+
+        Map<String, Object> merged = new LinkedHashMap<>(source);
+        linkedSource.forEach((key, value) -> {
+            if (value != null && !String.valueOf(value).isBlank()) {
+                merged.put(key, value);
+            }
+        });
+        return merged;
+    }
+
+    private Map<String, Object> queryIntegratedIssueSource(Object issueIdValue) {
+        String issueId = stringValue(issueIdValue);
+        if (issueId == null) {
+            return Map.of();
+        }
+
+        String sourceArticleSql = """
+                SELECT
+                    COALESCE(ra.url, iisa.url) AS url,
+                    COALESCE(ra.source_name, iisa.source_name, iisa.publisher) AS source_name,
+                    COALESCE(ra.title, iisa.title) AS title,
+                    COALESCE(ra.published_at, iisa.published_at) AS published_at
+                FROM integrated_issue_source_articles iisa
+                LEFT JOIN raw_articles ra ON ra.id = iisa.raw_article_id
+                WHERE iisa.integrated_issue_id = CAST(:issueId AS uuid)
+                  AND COALESCE(ra.url, iisa.url) IS NOT NULL
+                ORDER BY
+                    iisa.is_analyzed_basis DESC,
+                    iisa.source_order ASC,
+                    COALESCE(ra.published_at, iisa.published_at) DESC NULLS LAST
+                LIMIT 1
+                """;
+        Map<String, Object> sourceArticle = querySingleEvidenceSource(sourceArticleSql, "issueId", issueId);
+        if (!sourceArticle.isEmpty()) {
+            return sourceArticle;
+        }
+
+        String representativeSql = """
+                SELECT
+                    ra.url,
+                    ra.source_name,
+                    ra.title,
+                    ra.published_at
+                FROM integrated_issues ii
+                JOIN raw_articles ra ON ra.id = ii.representative_raw_article_id
+                WHERE ii.id = CAST(:issueId AS uuid)
+                  AND ra.url IS NOT NULL
+                LIMIT 1
+                """;
+        return querySingleEvidenceSource(representativeSql, "issueId", issueId);
+    }
+
+    private Map<String, Object> queryCardNewsSource(Object cardNewsIdValue) {
+        String cardNewsId = stringValue(cardNewsIdValue);
+        if (cardNewsId == null) {
+            return Map.of();
+        }
+
+        String sql = """
+                SELECT
+                    ra.url,
+                    ra.source_name,
+                    ra.title,
+                    ra.published_at
+                FROM card_news cn
+                JOIN raw_articles ra
+                  ON ra.id = cn.primary_raw_article_id
+                  OR ra.id = ANY(COALESCE(cn.source_raw_article_ids, '{}'::bigint[]))
+                WHERE cn.id = :cardNewsId
+                  AND ra.url IS NOT NULL
+                ORDER BY
+                    CASE WHEN ra.id = cn.primary_raw_article_id THEN 0 ELSE 1 END,
+                    ra.published_at DESC NULLS LAST
+                LIMIT 1
+                """;
+        return querySingleEvidenceSource(sql, "cardNewsId", cardNewsId);
+    }
+
+    private Map<String, Object> queryBusinessSignalSource(Object rawArticleIdValue, Object signalIdValue) {
+        String rawArticleId = stringValue(rawArticleIdValue);
+        if (rawArticleId != null) {
+            String sql = """
+                    SELECT
+                        url,
+                        source_name,
+                        title,
+                        published_at
+                    FROM raw_articles
+                    WHERE id::text = :rawArticleId
+                      AND url IS NOT NULL
+                    LIMIT 1
+                    """;
+            Map<String, Object> rawArticle = querySingleEvidenceSource(sql, "rawArticleId", rawArticleId);
+            if (!rawArticle.isEmpty()) {
+                return rawArticle;
+            }
+        }
+
+        String signalId = stringValue(signalIdValue);
+        if (signalId == null) {
+            return Map.of();
+        }
+
+        String sql = """
+                SELECT
+                    ra.url,
+                    ra.source_name,
+                    ra.title,
+                    ra.published_at
+                FROM raw_article_business_signals rabs
+                JOIN raw_articles ra ON ra.id = rabs.raw_article_id
+                WHERE rabs.id::text = :signalId
+                  AND ra.url IS NOT NULL
+                LIMIT 1
+                """;
+        return querySingleEvidenceSource(sql, "signalId", signalId);
+    }
+
+    private Map<String, Object> querySingleEvidenceSource(String sql, String paramName, String paramValue) {
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    sql,
+                    new MapSqlParameterSource().addValue(paramName, paramValue)
+            );
+            if (rows.isEmpty()) {
+                return Map.of();
+            }
+            return rows.get(0);
+        } catch (DataAccessException ignored) {
+            return Map.of();
+        }
+    }
+
+    private String normalizeExternalUrl(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String url = String.valueOf(value).trim();
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        return null;
+    }
+
+    private Object firstPresent(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String stringValue(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        return String.valueOf(value);
+    }
+
+    private int intValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return new BigDecimal(text).intValue();
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private String formatLiftValue(String value) {
+        try {
+            return new BigDecimal(value).setScale(1, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException ignored) {
+            return value;
+        }
+    }
+
+    private String trimSentence(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 1)).trim() + "...";
+    }
+
+    private String cleanEvidenceTitle(String value) {
+        if (value == null) {
+            return null;
+        }
+        String title = value.replaceAll("\\s+", " ").trim();
+        if (title.isBlank()) {
+            return null;
+        }
+        return trimSentence(title, 120);
     }
 
     private String formatRatioValue(BigDecimal value) {
@@ -516,7 +1018,8 @@ public class DashboardKeywordTrendChartService {
             BigDecimal ratio,
             BigDecimal prevRatio,
             BigDecimal ratioDelta,
-            String sourceName
+            String sourceName,
+            String causeAnalysisJson
     ) {
         private KeywordTrendRow withRank(Integer nextRank) {
             return new KeywordTrendRow(
@@ -527,7 +1030,8 @@ public class DashboardKeywordTrendChartService {
                     ratio,
                     prevRatio,
                     ratioDelta,
-                    sourceName
+                    sourceName,
+                    causeAnalysisJson
             );
         }
     }

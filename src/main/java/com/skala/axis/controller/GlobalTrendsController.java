@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.GlobalTrendsService;
 import lombok.RequiredArgsConstructor;
@@ -85,28 +86,14 @@ public class GlobalTrendsController {
             Map<String, Object> result = aiClientService
                     .runGlobalTrends(companyIds, focusThemes, windowDays, lines)
                     .block();
-            if (result == null) {
-                log.warn("GlobalTrends | axis-ai 응답 null");
-                return ResponseEntity.ok(ApiResponse.success(Map.of(
-                        "warning", "axis-ai 응답 null",
-                        "snapshots", List.of(),
-                        "trend_detections", List.of(),
-                        "impact_matrix", List.of(),
-                        "forecasts", List.of()
-                )));
-            }
+            AgentResponseGuard.requireSuccess("GLOBAL_TRENDS", result);
             log.info("GlobalTrends | companies={} confidence={}",
                     result.get("company_ids"), result.get("confidence"));
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("GlobalTrends | axis-ai 호출 실패 | {}", e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(Map.of(
-                    "warning", "axis-ai 호출 실패: " + e.getMessage(),
-                    "snapshots", List.of(),
-                    "trend_detections", List.of(),
-                    "impact_matrix", List.of(),
-                    "forecasts", List.of()
-            )));
+            log.warn("GlobalTrends | axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 }

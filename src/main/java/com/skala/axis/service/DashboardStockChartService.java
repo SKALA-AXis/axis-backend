@@ -119,7 +119,7 @@ public class DashboardStockChartService {
         List<Map<String, Object>> fallbackPoints = buildFallbackRatePoints(dashboardSummary.get("stockPoints"));
         if (!fallbackPoints.isEmpty()) {
             dashboardSummary.put("stockRatePoints", fallbackPoints);
-            dashboardSummary.put("stockSource", buildSourceMetadata("Mock fixture stockPoints", null, null, true));
+            dashboardSummary.put("stockSource", buildSourceMetadata("preloaded stockPoints", null, null, true));
         }
         return dashboardSummary;
     }

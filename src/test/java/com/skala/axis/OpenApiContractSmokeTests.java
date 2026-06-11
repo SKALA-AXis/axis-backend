@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
         "spring.flyway.enabled=false",
         "axis.auth.enforce=false",
-        "axis.fixtures.enabled=true",
+        "axis.fixtures.enabled=false",
         "ai.server.base-url=http://localhost:9999"
 })
 class OpenApiContractSmokeTests {
@@ -46,8 +46,10 @@ class OpenApiContractSmokeTests {
                 endpoint.chunk + " " + endpoint.method + " " + endpoint.path,
                 () -> perform(endpoint)
                         .andExpect(endpoint.status)
-                        .andExpect(jsonPath("$.success").value(true))
-                        .andExpect(jsonPath("$.data").exists())
+                        .andExpect(jsonPath("$.success").value(endpoint.success))
+                        .andExpect(endpoint.success
+                                ? jsonPath("$.data").exists()
+                                : jsonPath("$.error.code").exists())
                         .andExpect(jsonPath("$.timestamp").exists())
         ));
     }
@@ -74,9 +76,9 @@ class OpenApiContractSmokeTests {
                 e("401-800", "POST", "/api/auth/refresh", status().isOk(), "{\"refresh_token\":\"axis-refresh-token\"}"),
                 e("401-800", "GET", "/api/auth/me", status().isOk()),
                 e("401-800", "GET", "/api/dashboard/summary", status().isOk()),
-                e("401-800", "GET", "/api/dashboard/today-insight", status().isOk()),
+                fail("401-800", "GET", "/api/dashboard/today-insight", status().isBadGateway()),
                 e("401-800", "POST", "/api/dashboard/today-insight/warmup", status().isAccepted()),
-                e("401-800", "POST", "/api/dashboard/today-insight/cron-generate", status().isBadGateway()),
+                fail("401-800", "POST", "/api/dashboard/today-insight/cron-generate", status().isBadGateway()),
                 e("401-800", "POST", "/api/search", status().isOk(), "{\"query\":\"AX\",\"scopes\":[\"cards\",\"peers\"],\"limit\":8}"),
                 e("401-800", "GET", "/api/search/suggestions?q=AX&limit=6", status().isOk()),
                 e("401-800", "GET", "/api/peers", status().isOk()),
@@ -86,7 +88,7 @@ class OpenApiContractSmokeTests {
                 e("401-800", "GET", "/api/cards?q=AX&limit=2", status().isOk()),
                 e("401-800", "GET", "/api/cards/today?limit=2", status().isOk()),
                 e("401-800", "GET", "/api/cards/CN-20260502-001", status().isOk()),
-                e("401-800", "POST", "/api/cards/CN-20260502-001/verify-link", status().isOk()),
+                fail("401-800", "POST", "/api/cards/CN-20260502-001/verify-link", status().isBadGateway()),
                 e("401-800", "GET", "/api/monitoring/overview?period_unit=quarterly&period_value=2026Q2", status().isOk()),
                 e("801-1200", "GET", "/api/monitoring/cards/search?q=AX", status().isOk()),
                 e("801-1200", "GET", "/api/monitoring", status().isOk()),
@@ -94,12 +96,12 @@ class OpenApiContractSmokeTests {
                 e("801-1200", "GET", "/api/monitoring/samsung_sds/cards", status().isOk()),
                 e("801-1200", "GET", "/api/monitoring/samsung_sds/financials?quarters=4", status().isOk()),
                 e("801-1200", "GET", "/api/monitoring/comparison?metric=revenue", status().isOk()),
-                e("801-1200", "GET", "/api/monitoring/samsung_sds/strategy", status().isOk()),
+                fail("801-1200", "GET", "/api/monitoring/samsung_sds/strategy", status().isBadGateway()),
                 e("801-1200", "GET", "/api/briefings/today", status().isOk()),
                 e("1201-1600", "GET", "/api/briefings", status().isOk()),
                 e("1201-1600", "GET", "/api/briefings/summary?briefing_type=daily", status().isOk()),
                 e("1201-1600", "GET", "/api/briefings/cards/search?q=AX", status().isOk()),
-                e("1201-1600", "POST", "/api/briefings/generate", status().isAccepted(), "{\"briefing_type\":\"daily\"}"),
+                fail("1201-1600", "POST", "/api/briefings/generate", status().isBadGateway(), "{\"briefing_type\":\"daily\"}"),
                 e("1201-1600", "GET", "/api/briefings/BR-20260502-001/status", status().isOk()),
                 e("1201-1600", "GET", "/api/briefings/BR-20260502-001", status().isOk()),
                 e("1201-1600", "POST", "/api/briefings/BR-20260502-001/share", status().isOk(), "{\"expires_in_hours\":168}"),
@@ -116,12 +118,12 @@ class OpenApiContractSmokeTests {
                 e("1601-2000", "DELETE", "/api/bookmarks/CN-20260502-001", status().isOk()),
                 e("1601-2000", "POST", "/api/cards/CN-20260502-001/share", status().isOk(), "{\"expires_in_hours\":24}"),
                 e("1601-2000", "GET", "/api/insights/latest", status().isOk()),
-                e("1601-2000", "POST", "/api/insights/generate", status().isAccepted(), "{\"card_ids\":[\"CN-20260502-001\"]}"),
+                fail("1601-2000", "POST", "/api/insights/generate", status().isBadGateway(), "{\"card_ids\":[\"CN-20260502-001\"]}"),
                 e("1601-2000", "GET", "/api/keyword-graph", status().isOk()),
                 e("1601-2000", "GET", "/api/keyword-graph/agentic-ai/cards", status().isOk()),
                 e("1601-2000", "GET", "/api/mixer/options", status().isOk()),
                 e("1601-2000", "GET", "/api/mixer/recent", status().isOk()),
-                e("1601-2000", "POST", "/api/mixer", status().isOk(), "{\"card_ids\":[\"CN-20260502-001\",\"CN-20260502-002\"]}"),
+                fail("1601-2000", "POST", "/api/mixer", status().isBadGateway(), "{\"card_ids\":[\"CN-20260502-001\",\"CN-20260502-002\"]}"),
                 e("1601-2000", "POST", "/api/mixer/MX-20260504-001/share", status().isOk()),
                 e("1601-2000", "GET", "/api/raw-articles", status().isOk()),
                 e("1601-2000", "GET", "/api/raw-articles/1", status().isOk()),
@@ -159,9 +161,24 @@ class OpenApiContractSmokeTests {
     }
 
     private Endpoint e(String chunk, String method, String path, ResultMatcher status, String body) {
-        return new Endpoint(chunk, method, path, status, body);
+        return new Endpoint(chunk, method, path, status, body, true);
     }
 
-    private record Endpoint(String chunk, String method, String path, ResultMatcher status, String body) {
+    private Endpoint fail(String chunk, String method, String path, ResultMatcher status) {
+        return fail(chunk, method, path, status, JSON);
+    }
+
+    private Endpoint fail(String chunk, String method, String path, ResultMatcher status, String body) {
+        return new Endpoint(chunk, method, path, status, body, false);
+    }
+
+    private record Endpoint(
+            String chunk,
+            String method,
+            String path,
+            ResultMatcher status,
+            String body,
+            boolean success
+    ) {
     }
 }

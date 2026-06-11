@@ -1,7 +1,7 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
 import com.skala.axis.service.RawArticleQueryService;
@@ -11,11 +11,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Temporary compatibility endpoints for the current React mock UI.
+ * Temporary compatibility endpoints for the current React UI.
  *
  * The OpenAPI contract remains under /api/**. These root-level endpoints keep
  * the existing frontend repositories working while they are migrated to the
@@ -24,14 +25,14 @@ import java.util.Map;
 @RestController
 @RequiredArgsConstructor
 public class FrontendCompatibilityController {
-    private final ApiContractFixtureService fixture;
+    private final CardNewsService cardNewsService;
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final RawArticleQueryService rawArticleQueryService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboard() {
-        Map<String, Object> dashboardSummary = fixture.frontendDashboard();
+        Map<String, Object> dashboardSummary = emptyDashboardSummary();
         dashboardStockChartService.applyDailyRateChart(dashboardSummary);
         dashboardKeywordTrendChartService.applyKeywordTrendChart(dashboardSummary);
         return ResponseEntity.ok(ApiResponse.success(dashboardSummary));
@@ -39,17 +40,17 @@ public class FrontendCompatibilityController {
 
     @GetMapping("/briefings")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefings() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.frontendBriefings()));
+        return ResponseEntity.ok(ApiResponse.success(emptyBriefingsData()));
     }
 
     @GetMapping("/alerts")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getAlerts() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.frontendAlerts()));
+        return ResponseEntity.ok(ApiResponse.success(emptyAlerts()));
     }
 
     @GetMapping("/peers")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getPeers() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.frontendPeers()));
+        return ResponseEntity.ok(ApiResponse.success(emptyPeers()));
     }
 
     @GetMapping("/raw-articles")
@@ -59,6 +60,87 @@ public class FrontendCompatibilityController {
 
     @GetMapping("/issues")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getIssues() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.frontendIssues()));
+        return ResponseEntity.ok(ApiResponse.success(
+                cardNewsService.getAll(null, null, null).stream()
+                        .map(card -> Map.<String, Object>of(
+                                "id", card.getId(),
+                                "peerId", card.getPeerId() == null ? "" : card.getPeerId(),
+                                "peerName", peerName(card.getPeerId()),
+                                "title", card.getTitle() == null ? "" : card.getTitle(),
+                                "summaryLines", card.getSummaryLines() == null ? List.of() : card.getSummaryLines(),
+                                "importance", issueImportance(card.getImportance(), card.getImportanceScore()),
+                                "createdAt", card.getCreatedAt() == null ? "" : card.getCreatedAt().toString(),
+                                "sourceUrl", card.getSourceUrl() == null ? "" : card.getSourceUrl()
+                        ))
+                        .toList()
+        ));
+    }
+
+    private static Map<String, Object> emptyDashboardSummary() {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("trends", List.of());
+        summary.put("articles", List.of());
+        summary.put("keywords", List.of());
+        summary.put("keywordSearchPoints", List.of());
+        summary.put("keywordSeries", List.of());
+        summary.put("keywordInsights", List.of());
+        summary.put("stockPoints", List.of());
+        summary.put("stockRatePoints", List.of());
+        summary.put("notifications", List.of());
+        summary.put("keywordNewsCount", "0");
+        return summary;
+    }
+
+    private static Map<String, Object> emptyBriefingsData() {
+        Map<String, Object> snapshot = Map.of(
+                "title", "",
+                "summary", "",
+                "sections", List.of()
+        );
+        return Map.of(
+                "dailySnapshot", snapshot,
+                "weeklySnapshot", snapshot,
+                "evidenceSources", List.of(),
+                "history", List.of()
+        );
+    }
+
+    private static Map<String, Object> emptyAlerts() {
+        return Map.of(
+                "rules", List.of(),
+                "history", List.of(),
+                "conditionOptions", List.of(),
+                "channelOptions", List.of()
+        );
+    }
+
+    private static Map<String, Object> emptyPeers() {
+        return Map.of(
+                "peers", List.of(),
+                "periodLabels", Map.of("yearly", "연간", "quarterly", "분기", "monthly", "월간"),
+                "periodDescriptions", Map.of(
+                        "yearly", "연간 분석 데이터가 연결되면 표시됩니다.",
+                        "quarterly", "분기 분석 데이터가 연결되면 표시됩니다.",
+                        "monthly", "월간 분석 데이터가 연결되면 표시됩니다."
+                ),
+                "analyses", Map.of()
+        );
+    }
+
+    private static String issueImportance(String importance, Float score) {
+        if ("urgent".equals(importance) || "notable".equals(importance) || "reference".equals(importance)) {
+            return importance;
+        }
+        if (score != null && score >= 0.85f) return "urgent";
+        if (score != null && score >= 0.6f) return "notable";
+        return "reference";
+    }
+
+    private static String peerName(String peerId) {
+        if ("samsung_sds".equals(peerId)) return "삼성SDS";
+        if ("lg_cns".equals(peerId)) return "LG CNS";
+        if ("hyundai_autoever".equals(peerId)) return "현대오토에버";
+        if ("posco_dx".equals(peerId)) return "포스코DX";
+        return peerId == null || peerId.isBlank() ? "Peer사" : peerId;
     }
 }

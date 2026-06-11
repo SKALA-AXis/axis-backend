@@ -20,7 +20,6 @@ import java.util.Map;
 public class RawArticleQueryService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
-    private final ApiContractFixtureService fixture;
 
     public List<Map<String, Object>> rawArticles() {
         return rawArticleItems(Map.of("limit", "100", "offset", "0"));
@@ -73,7 +72,12 @@ public class RawArticleQueryService {
                     "offset", offset
             );
         } catch (BadSqlGrammarException ignored) {
-            return fixture.rawArticleList(params);
+            return mapOf(
+                    "items", List.of(),
+                    "total", 0,
+                    "limit", limit,
+                    "offset", offset
+            );
         }
     }
 
@@ -122,7 +126,7 @@ public class RawArticleQueryService {
 
             return rows.isEmpty() ? Map.of() : rows.get(0);
         } catch (BadSqlGrammarException ignored) {
-            return fixture.rawArticleDetail((int) id);
+            return Map.of();
         }
     }
 
