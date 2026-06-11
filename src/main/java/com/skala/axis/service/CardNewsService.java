@@ -13,7 +13,11 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -31,6 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+    private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
@@ -123,9 +128,10 @@ public class CardNewsService {
         String whyImportant = stringValue(responseImplication.get("why_important"), null);
         String potentialImpact = stringValue(responseImplication.get("potential_impact"), null);
         List<String> suggestedActions = stringList(responseImplication.get("suggested_actions"));
-        List<String> insights = potentialImpact == null || potentialImpact.isBlank()
-                ? List.of()
-                : List.of(potentialImpact);
+        List<String> insights = stringList(responseImplication.get("key_implications"));
+        if (insights.isEmpty() && potentialImpact != null && !potentialImpact.isBlank()) {
+            insights = List.of(potentialImpact);
+        }
 
         return CardNewsResponse.builder()
                 .id(card.getId())
@@ -251,11 +257,12 @@ public class CardNewsService {
         return List.copyOf(deduped.values());
     }
 
-    private void appendSources(Map<String, Map<String, Object>> deduped, List<Map<String, Object>> candidates) {
-        if (candidates == null || candidates.isEmpty()) {
+    private void appendSources(Map<String, Map<String, Object>> deduped, Object candidates) {
+        List<Map<String, Object>> normalizedCandidates = mapList(candidates);
+        if (normalizedCandidates.isEmpty()) {
             return;
         }
-        for (Map<String, Object> candidate : candidates) {
+        for (Map<String, Object> candidate : normalizedCandidates) {
             Map<String, Object> normalized = normalizeSource(candidate);
             String key = firstNonBlank(
                     stringValue(normalized.get("url"), null),
@@ -360,15 +367,43 @@ public class CardNewsService {
         return value == null ? Map.of() : value;
     }
 
-    private Map<String, Object> firstImageAsset(List<Map<String, Object>> imageAssets) {
-        if (imageAssets == null || imageAssets.isEmpty()) {
+    private Map<String, Object> firstImageAsset(Object imageAssets) {
+        List<Map<String, Object>> normalizedAssets = mapList(imageAssets);
+        if (normalizedAssets.isEmpty()) {
             return Map.of();
         }
-        return imageAssets.stream()
+        return normalizedAssets.stream()
                 .filter(Objects::nonNull)
                 .filter(item -> !item.isEmpty())
                 .findFirst()
                 .orElse(Map.of());
+    }
+
+    private List<Map<String, Object>> mapList(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object item : list) {
+                Map<String, Object> map = objectMap(item);
+                if (!map.isEmpty()) {
+                    result.add(map);
+                }
+            }
+            return result;
+        }
+        Map<String, Object> single = objectMap(value);
+        return single.isEmpty() ? List.of() : List.of(single);
+    }
+
+    private Map<String, Object> objectMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, item) -> result.put(String.valueOf(key), item));
+            return result;
+        }
+        return Map.of();
     }
 
     private String imageUrl(Map<String, Object> image) {
@@ -409,13 +444,41 @@ public class CardNewsService {
 
     private String publishedDate(Map<String, Object> primarySource, RawArticle primaryRawArticle, LocalDateTime createdAt) {
         String publishedAt = stringValue(primarySource.get("published_at"), null);
-        if (publishedAt != null && publishedAt.length() >= 10) {
-            return publishedAt.substring(0, 10);
+        String sourceDate = localDateInDisplayZone(publishedAt);
+        if (sourceDate != null) {
+            return sourceDate;
         }
         if (primaryRawArticle != null && primaryRawArticle.getPublishedAt() != null) {
-            return primaryRawArticle.getPublishedAt().toLocalDate().toString();
+            return localDateInDisplayZone(primaryRawArticle.getPublishedAt());
         }
-        return createdAt == null ? null : createdAt.toLocalDate().toString();
+        return localDateInDisplayZone(createdAt);
+    }
+
+    private String localDateInDisplayZone(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(value.trim())
+                    .atZoneSameInstant(DISPLAY_ZONE)
+                    .toLocalDate()
+                    .toString();
+        } catch (DateTimeParseException ignored) {
+            if (value.length() >= 10) {
+                return value.substring(0, 10);
+            }
+            return null;
+        }
+    }
+
+    private String localDateInDisplayZone(LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        return value.atZone(ZoneOffset.UTC)
+                .withZoneSameInstant(DISPLAY_ZONE)
+                .toLocalDate()
+                .toString();
     }
 
     private String legacyDate(String publishedDate, LocalDateTime createdAt) {
@@ -425,7 +488,7 @@ public class CardNewsService {
         if (createdAt == null) {
             return null;
         }
-        return createdAt.toLocalDate().format(LEGACY_DATE_FORMAT);
+        return localDateInDisplayZone(createdAt).replace('-', '.');
     }
 
     private Float trustScore(List<Map<String, Object>> sources, Float fallback) {

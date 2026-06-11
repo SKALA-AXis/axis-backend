@@ -65,11 +65,11 @@ public class CardNews {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "sources", columnDefinition = "jsonb")
-    private List<Map<String, Object>> sources;
+    private Object sources;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "source_articles", columnDefinition = "jsonb")
-    private List<Map<String, Object>> sourceArticles;
+    private Object sourceArticles;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "evidence_payload", columnDefinition = "jsonb")
@@ -77,7 +77,7 @@ public class CardNews {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "image_assets", columnDefinition = "jsonb")
-    private List<Map<String, Object>> imageAssets;
+    private Object imageAssets;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "legacy_payload", columnDefinition = "jsonb")
