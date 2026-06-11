@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    # 문서만 바뀐 push 는 CI skip → build-and-push 미발동 (불필요 재배포 방지)
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'design/**'
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
