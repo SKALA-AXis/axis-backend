@@ -35,28 +35,6 @@ public class DashboardKeywordTrendChartService {
     private static final int SPIKE_LOOKBACK_DAYS = 14;
     private static final int MAX_GROUPS = 4;
     private static final List<String> FIXED_GROUPS = List.of("AX", "사이버보안", "인프라", "수주");
-    private static final List<String> DATALAB_GROUPS = List.of(
-            "인프라",
-            "IT 인프라",
-            "AX",
-            "생성형 AI",
-            "GPU",
-            "cloud",
-            "프라이빗 클라우드",
-            "하이브리드 클라우드",
-            "네트워크",
-            "스마트팩토리",
-            "AI 에이전트",
-            "LLM",
-            "RAG",
-            "SOC",
-            "디지털 트윈",
-            "Kubernetes",
-            "랜섬웨어",
-            "사이버보안",
-            "제조 AX",
-            "수주"
-    );
     private static final DateTimeFormatter TREND_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM.dd");
     private static final List<String> SERIES_COLORS = List.of(
             "#EE7501",
@@ -310,7 +288,7 @@ public class DashboardKeywordTrendChartService {
                             .addValue("historySize", chartDays)
                             .addValue("maxGroups", MAX_GROUPS)
                             .addValue("spikeDeltaThreshold", spikeDeltaThreshold)
-                            .addValue("allowedGroups", DATALAB_GROUPS),
+                            .addValue("allowedGroups", FIXED_GROUPS),
                     this::mapKeywordTrendRow
             );
         } catch (DataAccessException ignored) {
@@ -335,61 +313,11 @@ public class DashboardKeywordTrendChartService {
     }
 
     private List<KeywordTrendRow> selectDisplayedRows(List<KeywordTrendRow> rows) {
-        Map<String, KeywordTrendRow> latestByGroup = new LinkedHashMap<>();
-        for (KeywordTrendRow row : rows) {
-            KeywordTrendRow current = latestByGroup.get(row.groupName());
-            if (current == null || row.period().isAfter(current.period())) {
-                latestByGroup.put(row.groupName(), row);
-            }
-        }
-
-        Map<String, KeywordTrendRow> strongestSpikeByGroup = new LinkedHashMap<>();
-        for (KeywordTrendRow row : rows) {
-            if (FIXED_GROUPS.contains(row.groupName()) || !isSpikeRow(row, rows)) {
-                continue;
-            }
-
-            KeywordTrendRow current = strongestSpikeByGroup.get(row.groupName());
-            if (current == null || compareSpikeStrength(row, current) < 0) {
-                strongestSpikeByGroup.put(row.groupName(), row);
-            }
-        }
-
-        List<KeywordTrendRow> spikeRows = strongestSpikeByGroup.values().stream()
-                .filter(row -> !FIXED_GROUPS.contains(row.groupName()))
-                .sorted(
-                        Comparator.comparing((KeywordTrendRow row) -> absOrZero(row.ratioDelta()), Comparator.reverseOrder())
-                                .thenComparing(KeywordTrendRow::period, Comparator.reverseOrder())
-                                .thenComparing(KeywordTrendRow::latestRatio, Comparator.nullsLast(Comparator.reverseOrder()))
-                                .thenComparing(KeywordTrendRow::groupName)
-                )
-                .limit(MAX_GROUPS)
-                .toList();
-
-        int fixedSlots = Math.max(MAX_GROUPS - spikeRows.size(), 0);
-        LinkedHashSet<String> fixedToKeep = latestByGroup.values().stream()
-                .filter(row -> FIXED_GROUPS.contains(row.groupName()))
-                .sorted(
-                        Comparator.comparing(
-                                        (KeywordTrendRow row) -> absOrZero(row.ratioDelta()),
-                                        Comparator.reverseOrder()
-                                )
-                                .thenComparing(row -> FIXED_GROUPS.indexOf(row.groupName()))
-                )
-                .limit(fixedSlots)
-                .map(KeywordTrendRow::groupName)
-                .collect(
-                        java.util.stream.Collectors.toCollection(LinkedHashSet::new)
-                );
-
-        List<String> selectedGroups = new ArrayList<>();
+        List<String> selectedGroups = new ArrayList<>(MAX_GROUPS);
         for (String fixedGroup : FIXED_GROUPS) {
-            if (fixedToKeep.contains(fixedGroup)) {
+            if (rows.stream().anyMatch(row -> fixedGroup.equals(row.groupName()))) {
                 selectedGroups.add(fixedGroup);
             }
-        }
-        for (KeywordTrendRow spikeRow : spikeRows) {
-            selectedGroups.add(spikeRow.groupName());
         }
 
         Map<String, Integer> rankByGroup = new LinkedHashMap<>();
@@ -418,14 +346,6 @@ public class DashboardKeywordTrendChartService {
 
     private BigDecimal absOrZero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value.abs();
-    }
-
-    private int compareSpikeStrength(KeywordTrendRow left, KeywordTrendRow right) {
-        return Comparator.comparing((KeywordTrendRow row) -> absOrZero(row.ratioDelta()), Comparator.reverseOrder())
-                .thenComparing(KeywordTrendRow::period, Comparator.reverseOrder())
-                .thenComparing(KeywordTrendRow::latestRatio, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(KeywordTrendRow::groupName)
-                .compare(left, right);
     }
 
     private boolean isSpikeRow(KeywordTrendRow row, List<KeywordTrendRow> lookbackRows) {
