@@ -24,7 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
         "spring.flyway.enabled=false",
         "axis.auth.enforce=false",
-        "axis.fixtures.enabled=true",
+        "axis.fixtures.enabled=false",
         "ai.server.base-url=http://localhost:9999"
 })
 class FrontendCompatibilitySmokeTests {
@@ -36,64 +36,57 @@ class FrontendCompatibilitySmokeTests {
         mockMvc.perform(get("/dashboard"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.trends[0].title").exists())
+                .andExpect(jsonPath("$.data.trends").isArray())
                 .andExpect(jsonPath("$.data.keywordSeries").isArray())
                 .andExpect(jsonPath("$.data.keywordSearchPoints").isArray())
-                .andExpect(jsonPath("$.data.stockRatePoints[0].date").exists())
-                .andExpect(jsonPath("$.data.stockSource.basis").value("day_over_day_pct"));
+                .andExpect(jsonPath("$.data.stockRatePoints").isArray());
 
         mockMvc.perform(get("/briefings"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.dailySnapshot.title").exists())
-                .andExpect(jsonPath("$.data.history[0].status").value("delivered"));
+                .andExpect(jsonPath("$.data.history").isArray());
 
         mockMvc.perform(get("/alerts"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rules[0].id").exists())
-                .andExpect(jsonPath("$.data.conditionOptions[0]").exists());
+                .andExpect(jsonPath("$.data.rules").isArray())
+                .andExpect(jsonPath("$.data.conditionOptions").isArray());
 
         mockMvc.perform(get("/peers"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.peers[0].id").exists())
-                .andExpect(jsonPath("$.data.analyses.samsung_sds.title").exists());
+                .andExpect(jsonPath("$.data.peers").isArray())
+                .andExpect(jsonPath("$.data.analyses").isMap());
 
         mockMvc.perform(get("/raw-articles"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].sourceName").exists())
-                .andExpect(jsonPath("$.data[0].importanceLevel").exists());
+                .andExpect(jsonPath("$.data").isArray());
 
         mockMvc.perform(get("/issues"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].peerName").exists())
-                .andExpect(jsonPath("$.data[0].summaryLines[0]").exists());
+                .andExpect(jsonPath("$.data").isArray());
     }
 
     @Test
     void cardListContainsFieldsRequiredByCurrentCardNewsUi() throws Exception {
         mockMvc.perform(get("/api/cards?limit=2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].coverImageUrl").exists())
-                .andExpect(jsonPath("$.data.items[0].summary[0]").exists())
-                .andExpect(jsonPath("$.data.items[0].insights[0]").exists())
-                .andExpect(jsonPath("$.data.items[0].actionItems[0]").exists())
-                .andExpect(jsonPath("$.data.items[0].sourceUrl").exists())
-                .andExpect(jsonPath("$.data.items[0].displayEntries[0].id").exists());
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.limit").value(2))
+                .andExpect(jsonPath("$.data.offset").value(0));
     }
 
     @Test
     void canonicalFrontendApiEndpointsReturnCurrentUiShapes() throws Exception {
         mockMvc.perform(get("/api/dashboard/summary"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.trends[0].peer").exists())
-                .andExpect(jsonPath("$.data.stockRatePoints[0].date").exists());
+                .andExpect(jsonPath("$.data.trends").isArray())
+                .andExpect(jsonPath("$.data.stockRatePoints").isArray());
 
         mockMvc.perform(get("/api/dashboard/today-insight"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.signals[0].label").value("주요 신호"))
-                .andExpect(jsonPath("$.data.response_direction[0].action").exists())
-                .andExpect(jsonPath("$.data.sources[0].title").exists())
-                .andExpect(jsonPath("$.data.provenance.is_fixture").value(true))
-                .andExpect(jsonPath("$.data.warning").value(org.hamcrest.Matchers.containsString("목업입니다")));
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("TODAY_INSIGHT_AI_CONNECTION_FAILED"))
+                .andExpect(jsonPath("$.error.message").value("호출에 실패했다"));
 
         mockMvc.perform(post("/api/dashboard/today-insight/warmup"))
                 .andExpect(status().isAccepted())
@@ -104,26 +97,39 @@ class FrontendCompatibilitySmokeTests {
 
         mockMvc.perform(post("/api/dashboard/today-insight/cron-generate"))
                 .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.data.status").value("failed"));
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("TODAY_INSIGHT_AI_CONNECTION_FAILED"))
+                .andExpect(jsonPath("$.error.message").value("호출에 실패했다"));
 
         mockMvc.perform(get("/api/briefings/summary?briefing_type=daily"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.briefingLead").exists())
-                .andExpect(jsonPath("$.data.signalCards[0].label").exists());
+                .andExpect(jsonPath("$.data.dailySnapshot.title").exists())
+                .andExpect(jsonPath("$.data.history").isArray());
 
         mockMvc.perform(get("/api/mixer/options"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.defaults.peers[0]").exists())
-                .andExpect(jsonPath("$.data.connectionKeywords[0]").exists());
+                .andExpect(jsonPath("$.data.analysis_modes[0]").value("quick"))
+                .andExpect(jsonPath("$.data.analysis_modes[1]").value("deep"));
 
         mockMvc.perform(get("/api/raw-articles"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].processingStatus").value("EMBEDDED"));
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.total").value(0));
 
         mockMvc.perform(post("/api/assistant/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"오늘 인사이트 요약해줘\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.message.content").exists());
+                .andExpect(jsonPath("$.data.message.content").exists())
+                .andExpect(jsonPath("$.data.intent").value("assistant_error"))
+                .andExpect(jsonPath("$.data.error_code").value("CHAT_AI_CONNECTION_FAILED"))
+                .andExpect(jsonPath("$.data.message.content").value(org.hamcrest.Matchers.containsString(
+                        "호출에 실패했다"
+                )))
+                .andExpect(jsonPath("$.data.provenance.is_fixture").value(false))
+                .andExpect(jsonPath("$.data.handoff").doesNotExist())
+                .andExpect(jsonPath("$.data.message.content").value(org.hamcrest.Matchers.not(
+                        "오늘 인사이트, 근거 카드뉴스, SK AX 대응 방향을 묶어 보고서 초안을 만들었습니다."
+                )));
     }
 }

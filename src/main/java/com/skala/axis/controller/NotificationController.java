@@ -3,7 +3,6 @@ package com.skala.axis.controller;
 import com.skala.axis.config.AuthProperties;
 import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.UserNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,7 +24,6 @@ import java.util.UUID;
 @RequestMapping("/api/notifications")
 @RequiredArgsConstructor
 public class NotificationController {
-    private final ApiContractFixtureService fixture;
     private final AuthProperties authProperties;
     private final UserNotificationService userNotificationService;
 
@@ -37,7 +36,11 @@ public class NotificationController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userNotificationService.list(AuthSecurity.requireUserId(authentication), unread_only, limit)));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.notifications()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", List.of(),
+                "unread_count", 0,
+                "unreadCount", 0
+        )));
     }
 
     @GetMapping("/unread-count")
@@ -45,7 +48,7 @@ public class NotificationController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userNotificationService.unreadCount(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(Map.of("count", 2)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of("count", 0)));
     }
 
     @PostMapping("/{id}/read")
@@ -56,7 +59,7 @@ public class NotificationController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userNotificationService.markRead(AuthSecurity.requireUserId(authentication), UUID.fromString(id))));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.markNotificationAsRead(id)));
+        return ResponseEntity.ok(ApiResponse.success(notFound(id)));
     }
 
     @PatchMapping("/{id}/read")
@@ -72,7 +75,7 @@ public class NotificationController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userNotificationService.markAllRead(AuthSecurity.requireUserId(authentication))));
         }
-        return ResponseEntity.ok(ApiResponse.success(Map.of("updated_count", 2, "updatedCount", 2)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of("updated_count", 0, "updatedCount", 0)));
     }
 
     @DeleteMapping("/{id}")
@@ -83,7 +86,7 @@ public class NotificationController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userNotificationService.deleteOne(AuthSecurity.requireUserId(authentication), UUID.fromString(id))));
         }
-        return ResponseEntity.ok(ApiResponse.success(Map.of("deleted", true)));
+        return ResponseEntity.ok(ApiResponse.success(notFound(id)));
     }
 
     @DeleteMapping
@@ -94,6 +97,17 @@ public class NotificationController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(userNotificationService.clear(AuthSecurity.requireUserId(authentication), scope)));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.clearNotifications()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "deleted_count", 0,
+                "deletedCount", 0
+        )));
+    }
+
+    private static Map<String, Object> notFound(String id) {
+        return Map.of(
+                "id", id,
+                "status", "not_found",
+                "result_kind", "no_saved_notification"
+        );
     }
 }

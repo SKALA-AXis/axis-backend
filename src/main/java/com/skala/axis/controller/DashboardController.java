@@ -3,15 +3,14 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.security.CronInternalAuth;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
 import com.skala.axis.service.TodayInsightCronRequestFactory;
 import com.skala.axis.service.TodayInsightReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequestMapping("/api/dashboard")
 @RequiredArgsConstructor
 public class DashboardController {
-    private final ApiContractFixtureService fixture;
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final AiClientService aiClientService;
@@ -39,12 +38,9 @@ public class DashboardController {
     private final TodayInsightReportService todayInsightReportService;
     private final AtomicBoolean todayInsightWarmupInFlight = new AtomicBoolean(false);
 
-    @Value("${axis.fixtures.enabled:false}")
-    private boolean fixturesEnabled;
-
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardSummary(@RequestParam Map<String, String> params) {
-        Map<String, Object> dashboardSummary = fixture.frontendDashboard();
+        Map<String, Object> dashboardSummary = emptyDashboardSummary();
         dashboardStockChartService.applyDailyRateChart(dashboardSummary);
         dashboardKeywordTrendChartService.removeKeywordTrendChart(dashboardSummary);
         return ResponseEntity.ok(ApiResponse.success(dashboardSummary));
@@ -66,13 +62,19 @@ public class DashboardController {
                 if (isTodayInsightStatusPlaceholder(result)) {
                     return todayInsightLatestOrStatus(anchorDate, result);
                 }
+                AgentResponseGuard.requireSuccess("TODAY_INSIGHT", result);
                 return ResponseEntity.ok(ApiResponse.success(result));
             }
             log.warn("TodayInsight axis-ai 응답 비어 있음");
-            return todayInsightLatestOrUnavailable(anchorDate, "axis-ai returned empty response");
+            throw new AiServerException(
+                    "TODAY_INSIGHT_AI_EMPTY_RESPONSE",
+                    "axis-ai returned empty response",
+                    HttpStatus.BAD_GATEWAY
+            );
         } catch (AiServerException e) {
-            log.warn("TodayInsight axis-ai 호출 실패 | {}", e.getMessage());
-            return todayInsightLatestOrUnavailable(anchorDate, e.getMessage());
+            log.warn("TodayInsight axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -88,6 +90,7 @@ public class DashboardController {
         Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(LocalDate.now());
         try {
             Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
+            AgentResponseGuard.requireSuccess("TODAY_INSIGHT", result);
             String headline = result == null ? "" : String.valueOf(result.getOrDefault("headline", ""));
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
                     "status", "accepted",
@@ -98,21 +101,13 @@ public class DashboardController {
         } catch (AiServerException e) {
             log.error("TodayInsight cron-generate axis-ai 호출 실패 | anchor={} error={}",
                     request.get("anchor_date"), e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "anchor_date", request.get("anchor_date"),
-                            "error", e.getMessage()
-                    )));
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         } catch (Exception e) {
             log.error("TodayInsight cron-generate 실패 | anchor={} error={}",
                     request.get("anchor_date"), e.getMessage());
             return ResponseEntity.internalServerError()
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "anchor_date", request.get("anchor_date"),
-                            "error", e.getMessage()
-                    )));
+                    .body(ApiResponse.error("TODAY_INSIGHT_CRON_FAILED", AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -171,6 +166,23 @@ public class DashboardController {
         return request;
     }
 
+    private static Map<String, Object> emptyDashboardSummary() {
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("trends", List.of());
+        summary.put("articles", List.of());
+        summary.put("keywords", List.of());
+        summary.put("keywordSearchPoints", List.of());
+        summary.put("keywordSeries", List.of());
+        summary.put("keywordInsights", List.of());
+        summary.put("stockPoints", List.of());
+        summary.put("stockRatePoints", List.of());
+        summary.put("stockSource", null);
+        summary.put("notifications", List.of());
+        summary.put("keywordNewsCount", "0");
+        summary.put("dartSummary", null);
+        return summary;
+    }
+
     private static int intParam(Map<String, String> params, String key, int defaultValue) {
         try {
             return Integer.parseInt(params.getOrDefault(key, String.valueOf(defaultValue)));
@@ -192,20 +204,6 @@ public class DashboardController {
         }
     }
 
-    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightUnavailable(String error) {
-        if (fixturesEnabled) {
-            log.warn("TodayInsight fixture fallback enabled");
-            return ResponseEntity.ok(ApiResponse.success(fixture.todayInsight()));
-        }
-        String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body(ApiResponse.success(Map.of(
-                        "status", "failed",
-                        "result_kind", "axis_ai_unavailable",
-                        "error", safeError
-                )));
-    }
-
     private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightLatestOrStatus(
             LocalDate anchorDate,
             Map<String, Object> statusPayload
@@ -213,15 +211,6 @@ public class DashboardController {
         return todayInsightReportService.findLatestOnOrBefore(anchorDate)
                 .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
                 .orElseGet(() -> ResponseEntity.ok(ApiResponse.success(statusPayload)));
-    }
-
-    private ResponseEntity<ApiResponse<Map<String, Object>>> todayInsightLatestOrUnavailable(
-            LocalDate anchorDate,
-            String error
-    ) {
-        return todayInsightReportService.findLatestOnOrBefore(anchorDate)
-                .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
-                .orElseGet(() -> todayInsightUnavailable(error));
     }
 
     @SuppressWarnings("unchecked")

@@ -90,7 +90,6 @@ public class AssistantConversationService {
         out.putIfAbsent("sources", List.of());
         out.putIfAbsent("answer_blocks", List.of());
         out.putIfAbsent("follow_up_suggestions", out.getOrDefault("suggested_actions", List.of()));
-        out.putIfAbsent("handoff", null);
         return out;
     }
 
@@ -183,7 +182,6 @@ public class AssistantConversationService {
                            answer_payload,
                            sources,
                            retrieval_trace,
-                           handoff,
                            safety,
                            confidence,
                            langfuse_trace_id,
@@ -221,6 +219,107 @@ public class AssistantConversationService {
                     conversationId, e.getMessage());
         }
         return Map.of("conversation_id", id.toString(), "status", "ended");
+    }
+
+    public Map<String, Object> deleteConversation(
+            String conversationId,
+            Authentication authentication,
+            String deviceId
+    ) {
+        UUID id = parseUuid(conversationId, null);
+        if (id == null) {
+            return Map.of(
+                    "conversation_id", conversationId,
+                    "status", "invalid_id",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_INVALID_ID"
+            );
+        }
+        UUID userId = currentUserId(authentication);
+        String deviceHash = hashNullable(deviceId);
+        if (userId == null && deviceHash == null) {
+            return Map.of(
+                    "conversation_id", conversationId,
+                    "status", "not_found",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_OWNER_REQUIRED"
+            );
+        }
+        try {
+            int deletedRows = softDeleteConversationRow(id, userId, deviceHash);
+            if (deletedRows <= 0) {
+                return Map.of(
+                        "conversation_id", id.toString(),
+                        "status", "not_found",
+                        "deleted", false,
+                        "error_code", "ASSISTANT_CONVERSATION_NOT_FOUND"
+                );
+            }
+            purgeDeletedConversation(id);
+        } catch (Exception e) {
+            log.warn("assistant conversation delete failed | conversation={} error={}",
+                    conversationId, e.getMessage());
+            return Map.of(
+                    "conversation_id", id.toString(),
+                    "status", "failed",
+                    "deleted", false,
+                    "error_code", "ASSISTANT_CONVERSATION_DELETE_FAILED"
+            );
+        }
+        return Map.of(
+                "conversation_id", id.toString(),
+                "status", "deleted",
+                "deleted", true,
+                "delete_mode", "soft"
+        );
+    }
+
+    private int softDeleteConversationRow(UUID conversationId, UUID userId, String deviceHash) {
+        if (userId != null && deviceHash != null) {
+            return jdbcTemplate.update("""
+                    UPDATE assistant_conversations
+                       SET status = 'deleted',
+                           updated_at = NOW()
+                     WHERE id = ?
+                       AND status <> 'deleted'
+                       AND (user_id = ? OR device_id_hash = ?)
+                    """, conversationId, userId, deviceHash);
+        }
+        if (userId != null) {
+            return jdbcTemplate.update("""
+                    UPDATE assistant_conversations
+                       SET status = 'deleted',
+                           updated_at = NOW()
+                     WHERE id = ?
+                       AND status <> 'deleted'
+                       AND user_id = ?
+                    """, conversationId, userId);
+        }
+        return jdbcTemplate.update("""
+                UPDATE assistant_conversations
+                   SET status = 'deleted',
+                       updated_at = NOW()
+                 WHERE id = ?
+                   AND status <> 'deleted'
+                   AND device_id_hash = ?
+                """, conversationId, deviceHash);
+    }
+
+    private void purgeDeletedConversation(UUID conversationId) {
+        try {
+            jdbcTemplate.update("""
+                    DELETE FROM assistant_messages
+                     WHERE conversation_id = ?
+                    """, conversationId);
+            jdbcTemplate.update("""
+                    DELETE FROM assistant_conversations
+                     WHERE id = ?
+                       AND status = 'deleted'
+                    """, conversationId);
+        } catch (Exception e) {
+            log.debug("assistant conversation purge skipped | conversation={} error={}",
+                    conversationId, e.getMessage());
+        }
     }
 
     private void ensureConversation(
@@ -284,7 +383,7 @@ public class AssistantConversationService {
                 toJson(response),
                 toJson(response.getOrDefault("sources", List.of())),
                 toJson(provenance),
-                toJson(response.get("handoff") == null ? Map.of() : response.get("handoff")),
+                toJson(Map.of()),
                 toJson(safety),
                 doubleOrNull(response.get("confidence")),
                 stringValue(provenance.get("langfuse_trace_id")),
@@ -351,7 +450,7 @@ public class AssistantConversationService {
 
     private Map<String, Object> normalizeMessageRow(Map<String, Object> row) {
         Map<String, Object> out = new LinkedHashMap<>(row);
-        for (String key : List.of("answer_payload", "retrieval_trace", "handoff", "safety")) {
+        for (String key : List.of("answer_payload", "retrieval_trace", "safety")) {
             out.put(key, parseJsonObject(out.get(key)));
         }
         out.put("sources", parseJsonList(out.get("sources")));

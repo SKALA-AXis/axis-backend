@@ -2,8 +2,8 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,9 +21,9 @@ import java.util.Map;
 /**
  * InsightCascade 4-phase 분석 endpoint.
  *
- * <p>v3 변경: {@code POST /api/insights/generate} 가 fixture stub → axis-ai 의
- * {@code POST /insight/generate} 위임으로 wiring. axis-ai 미가용 / card_ids 미지정 시
- * fixture 로 graceful fallback (기존 frontend 의 polling 패턴 호환).</p>
+ * <p>{@code POST /api/insights/generate} 는 axis-ai 의
+ * {@code POST /insight/generate}에 위임한다. axis-ai 미가용 / card_ids 미지정 시
+ * 실패 상태를 반환한다.</p>
  *
  * <p>spec: {@code axis-ai/design/30-analysis/insight-cascade.md} ·
  * {@code axis-ai/design/02-prompt-design-checklist.md §4} (3-tier observability).</p>
@@ -33,13 +33,15 @@ import java.util.Map;
 @RequestMapping("/api/insights")
 @RequiredArgsConstructor
 public class InsightController {
-    private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
 
     @GetMapping("/latest")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getLatestInsight(
             @RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.latestInsight()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "status", "not_found",
+                "result_kind", "no_saved_insight"
+        )));
     }
 
     /**
@@ -62,9 +64,9 @@ public class InsightController {
         Map<String, Object> body = request != null ? request : Map.of();
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
-            log.info("Insight generate | card_ids 미지정 — fixture stub 반환");
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(ApiResponse.success(fixture.insightGenerationAccepted()));
+            log.info("Insight generate | card_ids 미지정");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("INSIGHT_CARD_IDS_REQUIRED", "card_ids가 필요합니다."));
         }
 
         @SuppressWarnings("unchecked")
@@ -74,18 +76,14 @@ public class InsightController {
 
         try {
             Map<String, Object> result = aiClientService.generateInsight(cardIds, context).block();
-            if (result == null) {
-                log.warn("Insight generate | axis-ai 응답 null — fixture fallback");
-                return ResponseEntity.status(HttpStatus.ACCEPTED)
-                        .body(ApiResponse.success(fixture.insightGenerationAccepted()));
-            }
+            AgentResponseGuard.requireSuccess("INSIGHT", result);
             log.info("Insight generate | cards={} confidence={}",
                     cardIds.size(), result.get("confidence"));
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("Insight generate | axis-ai 호출 실패 — fixture fallback | {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .body(ApiResponse.success(fixture.insightGenerationAccepted()));
+            log.warn("Insight generate | axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 

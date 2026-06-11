@@ -2,7 +2,6 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.security.CronInternalAuth;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingService;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +18,6 @@ import java.util.Set;
 @RequestMapping("/api/pipeline")
 @RequiredArgsConstructor
 public class PipelineController {
-    private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
     private final BriefingService briefingService;
     private final CronInternalAuth cronInternalAuth;
@@ -31,7 +29,11 @@ public class PipelineController {
 
     @GetMapping("/status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getStatus() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.pipelineStatus()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "status", "unavailable",
+                "result_kind", "pipeline_status_store_unavailable",
+                "tracks", List.of()
+        )));
     }
 
     @PostMapping("/trigger")

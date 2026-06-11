@@ -3,7 +3,6 @@ package com.skala.axis.controller;
 import com.skala.axis.config.AuthProperties;
 import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.dto.ApiResponse;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.BookmarkService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,13 +17,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/bookmarks")
 @RequiredArgsConstructor
 public class BookmarkController {
-    private final ApiContractFixtureService fixture;
     private final AuthProperties authProperties;
     private final BookmarkService bookmarkService;
 
@@ -36,8 +35,9 @@ public class BookmarkController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(bookmarkService.list(AuthSecurity.requireUserId(authentication), params)));
         }
-        return ResponseEntity.ok(ApiResponse.success(ApiContractFixtureService.mapOf(
-                "items", fixture.todayCards(params).get("items")
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", List.of(),
+                "total", 0
         )));
     }
 
@@ -49,7 +49,10 @@ public class BookmarkController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(bookmarkService.add(AuthSecurity.requireUserId(authentication), request)));
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(fixture.createdResult()));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(Map.of(
+                "status", "failed",
+                "result_kind", "bookmark_store_unavailable"
+        )));
     }
 
     @DeleteMapping("/{cardId}")
@@ -60,6 +63,10 @@ public class BookmarkController {
         if (authProperties.isEnforce()) {
             return ResponseEntity.ok(ApiResponse.success(bookmarkService.remove(AuthSecurity.requireUserId(authentication), cardId)));
         }
-        return ResponseEntity.ok(ApiResponse.success(fixture.deletedResult("card_id", cardId)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "card_id", cardId,
+                "status", "not_found",
+                "result_kind", "no_saved_bookmark"
+        )));
     }
 }
