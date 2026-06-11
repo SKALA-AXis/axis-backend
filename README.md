@@ -2,7 +2,7 @@
 
 AXIS 서비스의 Spring Boot REST API 서버입니다. Frontend가 호출하는 외부 API 계약은 `axis-infra/api/openapi.yaml`이 최우선 기준이며, DB 구조는 `axis-infra/db/schema.sql`을 참조합니다.
 
-현재 백엔드는 OpenAPI v3 명세의 외부 API 경로를 우선 구현합니다. 일부 도메인은 실제 영속화 전 단계이므로 계약 검증용 응답 fixture를 반환하며, 이후 DB/API 서비스 구현으로 점진 교체합니다. 계약 검증용 샘플 데이터는 Java 코드가 아니라 `src/main/resources/contract-fixtures.json`에서 관리합니다.
+현재 백엔드는 OpenAPI v3 명세의 외부 API 경로를 우선 구현합니다. 실제 영속화가 없는 도메인은 샘플 데이터를 반환하지 않고, 빈 실제 응답 구조 또는 명시적인 실패/미저장 상태를 반환합니다.
 
 ## 기준 문서
 
@@ -229,7 +229,7 @@ src/main/java/com/skala/axis/
 ├── dto/             공통 응답 및 기존 DTO
 ├── exception/       공통 에러 응답 처리
 ├── repository/      Spring Data JPA Repository
-└── service/         비즈니스 로직, AI 호출, 계약 fixture
+└── service/         비즈니스 로직, AI 호출, 실제 저장소 조회
 ```
 
 ## 개발 원칙

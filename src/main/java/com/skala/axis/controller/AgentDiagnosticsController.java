@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,20 +54,15 @@ public class AgentDiagnosticsController {
                     "response", response == null ? Map.of() : response
             )));
         } catch (AiServerException e) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponse.success(mapOf(
-                    "ok", false,
-                    "axis_ai_base_url", aiServerBaseUrl,
-                    "axis_ai_path", "/health",
-                    "duration_ms", elapsedMillis(started),
-                    "error", e.getMessage()
-            )));
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
     @Operation(
             summary = "에이전트 직접 실행",
             description = """
-                    기존 사용자 API의 fixture fallback 없이 axis-ai 내부 endpoint를 직접 호출합니다.
+                    기존 사용자 API의 임시 응답 없이 axis-ai 내부 endpoint를 직접 호출합니다.
                     agent_type: insight, mixer, global_trends, briefing, link_verify, pipeline, peer, chat, weak_signal.
                     payload를 넣으면 payload가 axis-ai 요청 body로 그대로 전달됩니다.
                     """
@@ -105,15 +99,8 @@ public class AgentDiagnosticsController {
                     "response", response == null ? Map.of() : response
             )));
         } catch (AiServerException e) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponse.success(mapOf(
-                    "ok", false,
-                    "agent_type", definition.apiName,
-                    "axis_ai_base_url", aiServerBaseUrl,
-                    "axis_ai_path", definition.path,
-                    "duration_ms", elapsedMillis(started),
-                    "request", axisAiRequest,
-                    "error", e.getMessage()
-            )));
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 

@@ -2,12 +2,11 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
 import com.skala.axis.service.MixerResultService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,9 +27,8 @@ import java.util.Map;
 /**
  * MixerAnalysis endpoint.
  *
- * <p>v2 변경: {@code POST /api/mixer} 가 fixture stub → axis-ai 의
- * {@code POST /mixer/analyze} 위임으로 wiring. axis-ai 미가용 / card_ids 부족 시
- * fixture 로 graceful fallback (기존 frontend 호환).</p>
+ * <p>{@code POST /api/mixer} 는 axis-ai 의 {@code POST /mixer/analyze}에
+ * 위임한다. axis-ai 미가용 / card_ids 부족 시 실패 상태를 반환한다.</p>
  *
  * <p>spec: {@code axis-ai/design/30-analysis/mixer-analysis.md}.</p>
  */
@@ -39,16 +37,14 @@ import java.util.Map;
 @RequestMapping("/api/mixer")
 @RequiredArgsConstructor
 public class MixerController {
-    private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
     private final MixerResultService mixerResultService;
 
-    @Value("${axis.fixtures.enabled:false}")
-    private boolean fixturesEnabled;
-
     @GetMapping("/options")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMixerOptions() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.mixerOptions()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "analysis_modes", List.of("quick", "deep")
+        )));
     }
 
     @GetMapping("/recent")
@@ -83,15 +79,8 @@ public class MixerController {
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
             log.info("Mixer | card_ids 미지정");
-            if (fixturesEnabled) {
-                return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
-            }
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.success(Map.of(
-                            "status", "failed",
-                            "result_kind", "invalid_request",
-                            "error", "card_ids are required"
-                    )));
+                    .body(ApiResponse.error("MIXER_CARD_IDS_REQUIRED", "card_ids가 필요합니다."));
         }
 
         @SuppressWarnings("unchecked")
@@ -103,16 +92,14 @@ public class MixerController {
 
         try {
             Map<String, Object> result = aiClientService.runMixer(cardIds, ratios, userContext, analysisMode).block();
-            if (result == null) {
-                log.warn("Mixer | axis-ai 응답 null");
-                return mixerUnavailable(cardIds, "axis-ai returned empty response");
-            }
+            AgentResponseGuard.requireSuccess("MIXER", result);
             log.info("Mixer | mode={} cards={} confidence={}", analysisMode, cardIds.size(), result.get("confidence"));
             mixerResultService.saveResult(result, cardIds, ratios, userContext, analysisMode);
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("Mixer | axis-ai 호출 실패 | {}", e.getMessage());
-            return mixerUnavailable(cardIds, e.getMessage());
+            log.warn("Mixer | axis-ai 호출 실패 | code={} error={}", e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 
@@ -131,7 +118,7 @@ public class MixerController {
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
             return Flux.just(ServerSentEvent.<String>builder()
-                    .data("{\"type\":\"error\",\"message\":\"카드 2개 이상이 필요합니다.\"}")
+                    .data("{\"type\":\"error\",\"message\":\"카드 2개 이상이 필요합니다.\",\"error_code\":\"MIXER_CARD_IDS_REQUIRED\"}")
                     .build());
         }
 
@@ -150,7 +137,11 @@ public class MixerController {
 
     @PostMapping("/{mixId}/share")
     public ResponseEntity<ApiResponse<Map<String, Object>>> shareMixerResult(@PathVariable String mixId) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.shareMixerResult(mixId)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "status", "failed",
+                "result_kind", "mixer_share_store_unavailable",
+                "mix_id", mixId
+        )));
     }
 
     @SuppressWarnings("unchecked")
@@ -173,18 +164,4 @@ public class MixerController {
         return "quick";
     }
 
-    private ResponseEntity<ApiResponse<Map<String, Object>>> mixerUnavailable(List<String> cardIds, String error) {
-        if (fixturesEnabled) {
-            log.warn("Mixer fixture fallback enabled");
-            return ResponseEntity.ok(ApiResponse.success(fixture.mixerResult(cardIds)));
-        }
-        String safeError = error == null || error.isBlank() ? "axis-ai unavailable" : error;
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body(ApiResponse.success(Map.of(
-                        "status", "failed",
-                        "result_kind", "axis_ai_unavailable",
-                        "error", safeError,
-                        "card_ids", cardIds
-                )));
-    }
 }

@@ -210,8 +210,8 @@ public class DashboardKeywordTrendChartService {
             // schema/data edge case on a specific environment.
         }
 
-        // Never leave fixture keyword chart data behind when DB enrichment fails.
-        // An empty chart is less misleading than showing mock series names/values.
+        // Never leave placeholder keyword chart data behind when DB enrichment fails.
+        // An empty chart is less misleading than showing sample series names/values.
         dashboardSummary.put("keywordSearchPoints", List.of());
         dashboardSummary.put("keywordSeries", List.of());
         dashboardSummary.put("keywordInsights", List.of());

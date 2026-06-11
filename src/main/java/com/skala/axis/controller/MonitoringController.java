@@ -2,8 +2,9 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
-import com.skala.axis.service.ApiContractFixtureService;
+import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.PeerOverviewTableService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,14 +15,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 /**
  * Monitoring (Peer+) endpoint.
  *
- * <p>v2 변경: {@code GET /api/monitoring/{peerId}/strategy} 가 fixture stub →
- * axis-ai 의 {@code POST /peer/compare} (PeerComparisonAgent) 위임. axis-ai 미가용 /
- * 에러 시 fixture fallback. window_days / focus_sector 쿼리 파라미터 지원.</p>
+ * <p>{@code GET /api/monitoring/{peerId}/strategy} 는 axis-ai 의
+ * {@code POST /peer/compare} (PeerComparisonAgent)에 위임한다. axis-ai 미가용 /
+ * 에러 시 실패 상태를 반환한다. window_days / focus_sector 쿼리 파라미터 지원.</p>
  *
  * <p>spec: {@code axis-ai/design/30-analysis/peer-comparison.md}.</p>
  */
@@ -30,23 +32,35 @@ import java.util.Map;
 @RequestMapping("/api/monitoring")
 @RequiredArgsConstructor
 public class MonitoringController {
-    private final ApiContractFixtureService fixture;
     private final AiClientService aiClientService;
     private final PeerOverviewTableService peerOverviewTableService;
+    private final CardNewsService cardNewsService;
 
     @GetMapping("/overview")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringOverview(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.monitoringOverview(params)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "period", params,
+                "metrics", List.of(),
+                "peerScores", List.of(),
+                "items", List.of()
+        )));
     }
 
     @GetMapping("/cards/search")
     public ResponseEntity<ApiResponse<Map<String, Object>>> searchMonitoringCards(@RequestParam Map<String, String> params) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.cardList(params)));
+        var cards = cardNewsService.getAll(params.get("peer_id"), params.get("importance"), params.get("event_type"));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", cards,
+                "total", cards.size()
+        )));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listMonitoringPeers() {
-        return ResponseEntity.ok(ApiResponse.success(fixture.monitoringPeers()));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", List.of(),
+                "total", 0
+        )));
     }
 
     @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}")
@@ -54,12 +68,20 @@ public class MonitoringController {
             @PathVariable String peerId,
             @RequestParam Map<String, String> params
     ) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.monitoringPeerDetail(peerId, params)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "peer_id", peerId,
+                "status", "not_found",
+                "result_kind", "no_saved_monitoring_peer"
+        )));
     }
 
     @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}/cards")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMonitoringPeerCardTimeline(@PathVariable String peerId) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.monitoringPeerCards(peerId)));
+        var cards = cardNewsService.getAll(peerId, null, null);
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "items", cards,
+                "total", cards.size()
+        )));
     }
 
     @GetMapping("/{peerId:^(?!overview$|comparison$|peer-overview$)[a-zA-Z0-9_]+}/financials")
@@ -67,7 +89,12 @@ public class MonitoringController {
             @PathVariable String peerId,
             @RequestParam(defaultValue = "8") int quarters
     ) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.financials(peerId, quarters)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "peer_id", peerId,
+                "quarters", quarters,
+                "status", "not_found",
+                "result_kind", "no_saved_financials"
+        )));
     }
 
     @GetMapping("/comparison")
@@ -75,7 +102,11 @@ public class MonitoringController {
             @RequestParam(defaultValue = "revenue") String metric,
             @RequestParam(defaultValue = "8") int quarters
     ) {
-        return ResponseEntity.ok(ApiResponse.success(fixture.monitoringComparison(metric, quarters)));
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "metric", metric,
+                "quarters", quarters,
+                "series", List.of()
+        )));
     }
 
     @GetMapping("/overview/peer-table")
@@ -106,17 +137,15 @@ public class MonitoringController {
     ) {
         try {
             Map<String, Object> result = aiClientService.comparePeer(peerId, windowDays, focusSector).block();
-            if (result == null) {
-                log.warn("PeerStrategy | axis-ai 응답 null — fixture fallback | peer={}", peerId);
-                return ResponseEntity.ok(ApiResponse.success(fixture.peerStrategy(peerId)));
-            }
+            AgentResponseGuard.requireSuccess("PEER", result);
             log.info("PeerStrategy | peer={} strategy={} confidence={}",
                     peerId, result.get("strategy_label"), result.get("confidence"));
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (AiServerException e) {
-            log.warn("PeerStrategy | axis-ai 호출 실패 — fixture fallback | peer={} err={}",
-                    peerId, e.getMessage());
-            return ResponseEntity.ok(ApiResponse.success(fixture.peerStrategy(peerId)));
+            log.warn("PeerStrategy | axis-ai 호출 실패 | peer={} code={} err={}",
+                    peerId, e.getCode(), e.getMessage());
+            return ResponseEntity.status(e.getStatus())
+                    .body(ApiResponse.error(e.getCode(), AiServerException.CALL_FAILED_MESSAGE));
         }
     }
 }
