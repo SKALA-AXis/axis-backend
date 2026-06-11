@@ -15,6 +15,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.skala.axis.query.GlobalTrendsQueries.COUNT_BY_DATE_RANGE;
+import static com.skala.axis.query.GlobalTrendsQueries.LATEST_TREND_DATE;
+import static com.skala.axis.query.GlobalTrendsQueries.LIST_BY_DATE_RANGE;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -33,41 +37,13 @@ public class GlobalTrendsService {
 
         try {
             Integer total = jdbcTemplate.queryForObject(
-                    """
-                        SELECT COUNT(*)::int
-                        FROM global_industry_trends
-                        WHERE trend_date >= ? AND trend_date <= ?
-                    """,
+                    COUNT_BY_DATE_RANGE,
                     Integer.class,
                     fromDate,
                     toDate
             );
             List<Map<String, Object>> items = jdbcTemplate.query(
-                    """
-                        SELECT
-                            id::text AS id,
-                            source_analysis_id,
-                            trend_date::text AS trend_date,
-                            industry,
-                            region,
-                            keyword,
-                            keyword_category,
-                            title,
-                            summary,
-                            mention_count,
-                            impact_score::double precision AS impact_score,
-                            confidence::double precision AS confidence,
-                            array_to_json(related_peer_ids)::text AS peer_ids_json,
-                            array_to_json(related_card_ids)::text AS card_ids_json,
-                            sk_ax_implication,
-                            payload::text AS payload_json,
-                            created_at::text AS created_at,
-                            updated_at::text AS updated_at
-                        FROM global_industry_trends
-                        WHERE trend_date >= ? AND trend_date <= ?
-                        ORDER BY trend_date DESC, impact_score DESC NULLS LAST, created_at DESC
-                        LIMIT ? OFFSET ?
-                    """,
+                    LIST_BY_DATE_RANGE,
                     (rs, rowNum) -> mapTrendRow(rs),
                     fromDate,
                     toDate,
@@ -75,12 +51,7 @@ public class GlobalTrendsService {
                     safeOffset
             );
             List<String> latestDates = jdbcTemplate.query(
-                    """
-                        SELECT trend_date::text
-                        FROM global_industry_trends
-                        ORDER BY trend_date DESC, created_at DESC
-                        LIMIT 1
-                    """,
+                    LATEST_TREND_DATE,
                     (rs, rowNum) -> rs.getString(1)
             );
             String latestTrendDate = latestDates.isEmpty() ? "" : latestDates.get(0);
