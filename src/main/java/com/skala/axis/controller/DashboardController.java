@@ -114,12 +114,17 @@ public class DashboardController {
 
     @PostMapping("/today-insight/warmup")
     public ResponseEntity<ApiResponse<Map<String, Object>>> warmupTodayInsight(@RequestParam Map<String, String> params) {
-        Map<String, Object> request = todayInsightRequest(params, true, true);
+        boolean generateNow = boolParam(params, "generate", false)
+                || boolParam(params, "force_refresh", false)
+                || boolParam(params, "save", false);
+        Map<String, Object> request = todayInsightRequest(params, true, !generateNow);
         if (!todayInsightWarmupInFlight.compareAndSet(false, true)) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
                     "status", "already_running",
                     "anchor_date", request.get("anchor_date"),
                     "cache_only", request.get("cache_only"),
+                    "force_refresh", request.get("force_refresh"),
+                    "save", request.get("save"),
                     "refresh_policy", request.get("refresh_policy"),
                     "update_policy", "daily_0810_kst"
             )));
@@ -138,6 +143,8 @@ public class DashboardController {
                 "status", "accepted",
                 "anchor_date", request.get("anchor_date"),
                 "cache_only", request.get("cache_only"),
+                "force_refresh", request.get("force_refresh"),
+                "save", request.get("save"),
                 "refresh_policy", request.get("refresh_policy"),
                 "update_policy", "daily_0810_kst"
         )));
@@ -158,8 +165,11 @@ public class DashboardController {
             request.put("cache_only", true);
             request.put("save", false);
         } else {
-            request.put("use_cached", boolParam(params, "use_cached", true));
-            request.put("force_refresh", boolParam(params, "force_refresh", false));
+            boolean manualGenerate = boolParam(params, "generate", false)
+                    || boolParam(params, "force_refresh", false)
+                    || boolParam(params, "save", false);
+            request.put("use_cached", boolParam(params, "use_cached", !manualGenerate));
+            request.put("force_refresh", boolParam(params, "force_refresh", manualGenerate));
             request.put("cache_only", false);
             request.put("save", boolParam(params, "save", true));
         }

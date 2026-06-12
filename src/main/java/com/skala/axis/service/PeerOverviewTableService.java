@@ -42,6 +42,13 @@ public class PeerOverviewTableService {
             new DisplayPeer(3, "hyundai_autoever", "현대 오토에버"),
             new DisplayPeer(4, "posco_dx", "포스코 DX")
     );
+    private static final Pattern INTERNAL_EVIDENCE_MARKER = Pattern.compile(
+            "\\b(?:raw_article_business_signals|raw_articles|peer_llm_analysis_snapshots|peer_companies|"
+                    + "business_area|signal_type|raw_article_id|source_signal_ids|source_raw_article_ids|"
+                    + "evidence_refs|evidence_id|signal_id|profile_context|input_snapshot|output_payload|"
+                    + "top_keyword_evidence|top_keyword_reason|peer_id)\\b|signal:\\d+",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -2269,8 +2276,8 @@ public class PeerOverviewTableService {
                             WHEN sa.final_score = 0 THEN COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
                                 || ' 원문 기반 사업 신호에서 통과 후보가 없어 핵심 키워드를 노출하지 않습니다.'
                             ELSE COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
-                                || ' 원문 기반 사업 신호의 business_area와 signal_type, 요약, 근거 문장에서 실제 등장한 표현만 점수화했습니다. '
-                                || '기업별 후보 사전 없이 해당 분기에 확인된 사업 표현과 일반 기술 신호를 분리해 선택했습니다.'
+                                || ' 공개 원문의 제목·요약·근거 문장에서 실제 등장한 사업명, 서비스명, 제품명, 기술명을 기준으로 점수화했습니다. '
+                                || '해당 분기에 확인된 사업 표현과 기술 신호를 분리해 선택했습니다.'
                         END AS top_keyword_reason,
                         CASE
                             WHEN sa.final_score = 0 THEN '분기 원문 기반 사업 신호 통과 후보 없음'
@@ -2395,8 +2402,8 @@ public class PeerOverviewTableService {
                 topKeyword.isBlank() ? null : topKeyword,
                 businessLabel.isBlank() ? null : businessLabel,
                 technologyLabel.isBlank() ? null : technologyLabel,
-                blankToNull(stringValue(payload.get("top_keyword_reason"))),
-                blankToNull(stringValue(payload.get("top_keyword_basis"))),
+                blankToNull(publicEvidenceText(stringValue(payload.get("top_keyword_reason")))),
+                blankToNull(publicEvidenceText(stringValue(payload.get("top_keyword_basis")))),
                 score,
                 buildLlmKeywordEvidenceLines(payload, businessKeyword, technologyKeyword),
                 stringList(payload.get("top_keyword_evidence_urls"))
@@ -2409,8 +2416,14 @@ public class PeerOverviewTableService {
             Map<String, Object> technologyKeyword
     ) {
         List<String> storedLines = stringList(payload.get("top_keyword_evidence"));
-        if (!storedLines.isEmpty()) {
-            return storedLines;
+        if (!storedLines.isEmpty() && storedLines.stream().noneMatch(this::containsInternalEvidenceMarker)) {
+            List<String> publicLines = storedLines.stream()
+                    .map(this::publicEvidenceText)
+                    .filter(value -> !value.isBlank())
+                    .toList();
+            if (!publicLines.isEmpty()) {
+                return publicLines;
+            }
         }
 
         List<String> generated = new ArrayList<>();
@@ -2445,12 +2458,26 @@ public class PeerOverviewTableService {
                                 peerName.isBlank() ? "해당 기업" : peerName,
                                 axisLabel,
                                 label,
-                                evidenceSummary.isBlank() ? "저장된 근거 요약 없음" : evidenceSummary,
+                                evidenceSummary.isBlank() ? "저장된 근거 요약 없음" : publicEvidenceText(evidenceSummary),
                                 reason.isBlank()
                                         ? "이 원문 내용을 보아 해당 기업의 진행 방향을 보여주는 대표 키워드로 선정했습니다."
-                                        : reason
+                                        : publicEvidenceText(reason)
                         )
         );
+    }
+
+    private boolean containsInternalEvidenceMarker(String value) {
+        return value != null && INTERNAL_EVIDENCE_MARKER.matcher(value).find();
+    }
+
+    private String publicEvidenceText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String cleaned = INTERNAL_EVIDENCE_MARKER.matcher(value).replaceAll("공개 근거");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("(공개 근거[와과, ]*){2,}", "공개 근거 ");
+        return cleaned.replaceAll("^[,;\\s]+|[,;\\s]+$", "");
     }
 
     private String firstNonBlank(String... values) {
