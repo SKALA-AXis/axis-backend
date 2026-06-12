@@ -104,6 +104,7 @@ public class GlobalTrendsService {
         row.put("impact_matrix", payload.getOrDefault("impact_matrix", List.of()));
         row.put("forecasts", payload.getOrDefault("forecasts", List.of()));
         row.put("leading_companies", payload.getOrDefault("leading_companies", List.of()));
+        row.put("evidence_source_links", payload.getOrDefault("evidence_source_links", List.of()));
         row.put("intensity", payload.getOrDefault("intensity", ""));
         row.put("frequency_delta_pct", payload.getOrDefault("frequency_delta_pct", 0));
         return row;
