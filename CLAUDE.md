@@ -31,6 +31,7 @@ axis-backend가 하지 않는 일
 4. 명세를 400줄 단위로 확인하며 작업하고, 단계별 테스트를 유지합니다.
 5. 실제 DB 구현 전 도메인은 샘플 데이터를 반환하지 않고, 빈 실제 응답 구조 또는 명시적인 실패/미저장 상태를 반환합니다.
 6. 화면에 표시될 수 있는 임시 데이터는 실제 결과처럼 반환하지 않습니다.
+7. push 전 게이트: `./gradlew test` 통과 후 push (CI 와 동일 — 일부만 돌리고 push 금지).
 
 ## 현재 주요 구조
 
@@ -40,22 +41,12 @@ src/main/java/com/skala/axis/
 │   ├── SecurityConfig.java
 │   ├── WebClientConfig.java
 │   └── SchedulerConfig.java
-├── controller/
-│   ├── AuthController.java
-│   ├── CardController.java
-│   ├── MonitoringController.java
-│   ├── BriefingController.java
-│   ├── AlertController.java
-│   ├── BookmarkController.java
-│   ├── MixerController.java
-│   ├── SettingsController.java
-│   ├── AdminController.java
-│   ├── PipelineController.java
-│   ├── HealthController.java
-│   ├── ImageController.java
-│   ├── IssueCardController.java
-│   ├── PeerController.java
-│   └── SearchController.java
+├── controller/                  # 25개 (2026-06-11 실측)
+│   ├── Auth, Card, IssueCard, Briefing, Alert, Bookmark, Mixer, Settings
+│   ├── Admin, Monitoring, Peer, Search, Pipeline, Health, Image
+│   ├── Dashboard, KeywordGraph, GlobalTrends, Insight, RawArticle
+│   ├── Assistant, Notification, MyNotificationPreference
+│   └── AgentDiagnostics, FrontendCompatibility   # dev/내부용
 ├── service/
 │   ├── AiClientService.java
 │   ├── IssueCardService.java
@@ -184,6 +175,6 @@ POST   /api/pipeline/trigger
 ## 주의
 
 - `axis-backend` 밖의 파일 수정이 필요하면 먼저 요청합니다.
-- `bin/`은 빌드 산출물로 취급합니다.
+- `bin/`은 빌드 산출물 — gitignore 처리됨(2026-06-11), 커밋 금지.
 - `.env` 계열 파일은 커밋하지 않습니다.
 - 운영/공유 DB에서 `ddl-auto=create|update`를 사용하지 않습니다.
