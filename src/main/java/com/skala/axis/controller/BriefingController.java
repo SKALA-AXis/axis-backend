@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.Map;
 
 @Slf4j
@@ -39,7 +40,13 @@ public class BriefingController {
 
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefingSummary(@RequestParam Map<String, String> params) {
-        LocalDate anchorDate = parseAnchorDate(params.get("anchor_date"));
+        String briefingType = normalizeBriefingType(params.get("briefing_type"));
+        LocalDate anchorDate = parseSummaryAnchorDate(params, briefingType);
+        if (briefingType != null) {
+            return briefingReportService.findPayloadForPeriod(briefingType, anchorDate)
+                    .map(payload -> ResponseEntity.ok(ApiResponse.success(payload)))
+                    .orElseGet(() -> briefingUnavailable("BRIEFING_REPORT_UNAVAILABLE"));
+        }
         return briefingReportService.findOverview(anchorDate)
                 .map(payload -> ResponseEntity.ok(ApiResponse.success(payload)))
                 .orElseGet(() -> briefingUnavailable("BRIEFING_REPORT_UNAVAILABLE"));
@@ -115,6 +122,55 @@ public class BriefingController {
     private static LocalDate parseAnchorDate(String raw) {
         try {
             return raw == null || raw.isBlank() ? LocalDate.now() : LocalDate.parse(raw);
+        } catch (Exception ignored) {
+            return LocalDate.now();
+        }
+    }
+
+    private static LocalDate parseSummaryAnchorDate(Map<String, String> params, String briefingType) {
+        String explicitAnchor = params.get("anchor_date");
+        if (explicitAnchor != null && !explicitAnchor.isBlank()) {
+            return parseAnchorDate(explicitAnchor);
+        }
+        if ("daily".equals(briefingType)) {
+            return parseAnchorDate(params.get("date"));
+        }
+        if ("monthly".equals(briefingType)) {
+            return parseMonthStart(params.get("month"));
+        }
+        if ("weekly".equals(briefingType)) {
+            return parseWeekAnchor(params.get("month"), params.get("week_index"));
+        }
+        return parseAnchorDate(null);
+    }
+
+    private static String normalizeBriefingType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String value = raw.trim().toLowerCase();
+        return switch (value) {
+            case "daily", "weekly", "monthly" -> value;
+            default -> null;
+        };
+    }
+
+    private static LocalDate parseMonthStart(String raw) {
+        try {
+            return raw == null || raw.isBlank() ? LocalDate.now() : YearMonth.parse(raw).atDay(1);
+        } catch (Exception ignored) {
+            return LocalDate.now();
+        }
+    }
+
+    private static LocalDate parseWeekAnchor(String rawMonth, String rawWeekIndex) {
+        try {
+            YearMonth month = rawMonth == null || rawMonth.isBlank()
+                    ? YearMonth.from(LocalDate.now())
+                    : YearMonth.parse(rawMonth);
+            int weekIndex = Math.max(1, Math.min(5, Integer.parseInt(rawWeekIndex == null ? "1" : rawWeekIndex)));
+            int endDay = Math.min(month.lengthOfMonth(), weekIndex * 7);
+            return month.atDay(endDay);
         } catch (Exception ignored) {
             return LocalDate.now();
         }

@@ -21,6 +21,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,14 +43,14 @@ public class CardNewsService {
     private final RawArticleRepository rawArticleRepository;
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
-        LocalDateTime since = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).withNano(0);
-        List<CardNews> cards = cardNewsRepository.findTodayCards(since, CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, null);
+        LocalDate today = LocalDate.now(DISPLAY_ZONE);
+        List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
+        return mapCards(cards, peerId, importance, null, today, true);
     }
 
     public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
         List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, eventType);
+        return mapCards(cards, peerId, importance, eventType, null, false);
     }
 
     public CardNewsResponse getById(String id) {
@@ -63,7 +64,9 @@ public class CardNewsService {
             List<CardNews> cards,
             String peerId,
             String importance,
-            String eventType
+            String eventType,
+            LocalDate basisDate,
+            boolean importanceFirst
     ) {
         List<CardNews> filtered = cards.stream()
                 .filter(card -> !isSelfCompanyCard(card))
@@ -73,7 +76,18 @@ public class CardNewsService {
                 .toList();
 
         Map<Long, RawArticle> rawArticleById = rawArticleById(filtered);
+        Comparator<CardNews> basisComparator = Comparator
+                .comparing((CardNews card) -> sortableBasisAt(card, rawArticleById))
+                .reversed();
+        Comparator<CardNews> importanceComparator = Comparator
+                .comparing((CardNews card) -> card.getImportanceScore() == null ? -1f : card.getImportanceScore())
+                .reversed();
+        Comparator<CardNews> comparator = importanceFirst
+                ? importanceComparator.thenComparing(basisComparator)
+                : basisComparator.thenComparing(importanceComparator);
         return filtered.stream()
+                .filter(card -> basisDate == null || basisDate.equals(cardBasisDate(card, rawArticleById)))
+                .sorted(comparator)
                 .map(card -> toResponse(card, rawArticleById))
                 .collect(Collectors.toList());
     }
@@ -102,7 +116,8 @@ public class CardNewsService {
         }
 
         List<String> summaryLines = summaryLines(card);
-        String publishedDate = publishedDate(primarySource, primaryRawArticle, card.getCreatedAt());
+        LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
+        String publishedDate = publishedDate(primarySource, primaryRawArticle, basisAt, card.getCreatedAt());
         String sourceUrl = stringValue(primarySource.get("url"), primaryRawArticle == null ? null : primaryRawArticle.getUrl());
         String sourceName = displaySourceName(primarySource, sourceUrl);
         List<Map<String, Object>> responseSources = new ArrayList<>(sources);
@@ -204,6 +219,70 @@ public class CardNewsService {
 
         return rawArticleRepository.findAllById(articleIds).stream()
                 .collect(Collectors.toMap(RawArticle::getId, article -> article, (left, right) -> left, LinkedHashMap::new));
+    }
+
+    private LocalDate cardBasisDate(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
+        String basisDate = localDateInDisplayZone(basisAt);
+        return basisDate == null ? null : LocalDate.parse(basisDate);
+    }
+
+    private LocalDateTime sortableBasisAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
+        return basisAt == null ? LocalDateTime.MIN : basisAt;
+    }
+
+    private LocalDateTime cardBasisAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        LocalDateTime latestPublishedAt = latestSourcePublishedAt(card, rawArticleById);
+        return latestPublishedAt == null ? card.getCreatedAt() : latestPublishedAt;
+    }
+
+    private LocalDateTime latestSourcePublishedAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        List<LocalDateTime> candidates = new ArrayList<>();
+        effectiveSources(card).stream()
+                .map(source -> parseSourcePublishedAt(source.get("published_at")))
+                .filter(Objects::nonNull)
+                .forEach(candidates::add);
+
+        LinkedHashSet<Long> articleIds = new LinkedHashSet<>();
+        if (card.getPrimaryRawArticleId() != null) {
+            articleIds.add(card.getPrimaryRawArticleId());
+        }
+        if (card.getSourceRawArticleIds() != null) {
+            Arrays.stream(card.getSourceRawArticleIds())
+                    .filter(Objects::nonNull)
+                    .forEach(articleIds::add);
+        }
+        articleIds.stream()
+                .map(rawArticleById::get)
+                .filter(Objects::nonNull)
+                .map(RawArticle::getPublishedAt)
+                .filter(Objects::nonNull)
+                .forEach(candidates::add);
+
+        return candidates.stream().max(LocalDateTime::compareTo).orElse(null);
+    }
+
+    private LocalDateTime parseSourcePublishedAt(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        try {
+            return OffsetDateTime.parse(text).atZoneSameInstant(DISPLAY_ZONE).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            // Fall through to local date-time/date parsing for legacy source payloads.
+        }
+        try {
+            return LocalDateTime.parse(text);
+        } catch (DateTimeParseException ignored) {
+            // Fall through.
+        }
+        try {
+            return LocalDate.parse(text.substring(0, Math.min(10, text.length()))).atStartOfDay();
+        } catch (DateTimeParseException | IndexOutOfBoundsException ignored) {
+            return null;
+        }
     }
 
     private boolean matchesPeer(CardNews card, String peerId) {
@@ -499,7 +578,16 @@ public class CardNewsService {
         return stringValue(article.getMetadata().get("subtitle"), null);
     }
 
-    private String publishedDate(Map<String, Object> primarySource, RawArticle primaryRawArticle, LocalDateTime createdAt) {
+    private String publishedDate(
+            Map<String, Object> primarySource,
+            RawArticle primaryRawArticle,
+            LocalDateTime basisAt,
+            LocalDateTime createdAt
+    ) {
+        String basisDate = localDateInDisplayZone(basisAt);
+        if (basisDate != null) {
+            return basisDate;
+        }
         String publishedAt = stringValue(primarySource.get("published_at"), null);
         String sourceDate = localDateInDisplayZone(publishedAt);
         if (sourceDate != null) {
