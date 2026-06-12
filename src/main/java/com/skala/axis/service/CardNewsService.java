@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
+    private static final String SELF_PEER_ID = "sk_ax";
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
@@ -53,6 +54,7 @@ public class CardNewsService {
 
     public CardNewsResponse getById(String id) {
         CardNews card = cardNewsRepository.findByIdAndStatus(id, CardNewsStatus.ACTIVE)
+                .filter(cardItem -> !isSelfCompanyCard(cardItem))
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
         return toResponse(card, rawArticleById(List.of(card)));
     }
@@ -64,6 +66,7 @@ public class CardNewsService {
             String eventType
     ) {
         List<CardNews> filtered = cards.stream()
+                .filter(card -> !isSelfCompanyCard(card))
                 .filter(card -> matchesPeer(card, peerId))
                 .filter(card -> importance == null || importance.isBlank() || importance.equals(card.getImportance()))
                 .filter(card -> eventType == null || eventType.isBlank() || eventType.equals(card.getEventType()))
@@ -210,6 +213,12 @@ public class CardNewsService {
         return peerId.equals(resolvedPeerId(card))
                 || peerId.equals(card.getPeerId())
                 || peerId.equals(card.getPeerCompanyId());
+    }
+
+    private boolean isSelfCompanyCard(CardNews card) {
+        return SELF_PEER_ID.equals(resolvedPeerId(card))
+                || SELF_PEER_ID.equals(card.getPeerId())
+                || SELF_PEER_ID.equals(card.getPeerCompanyId());
     }
 
     private String resolvedPeerId(CardNews card) {
