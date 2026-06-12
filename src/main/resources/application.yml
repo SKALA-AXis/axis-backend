@@ -56,7 +56,7 @@ axis:
     app-base-url: ${AXIS_APP_BASE_URL:http://localhost:3100}
     bootstrap-admin-emails: ${BOOTSTRAP_ADMIN_EMAILS:}
   cors:
-    allowed-origins: ${AXIS_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3100}
+    allowed-origins: ${AXIS_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
   share:
     base-url: ${AXIS_SHARE_BASE_URL:https://axis.local}
   scheduler:
