@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
+    private static final String SELF_PEER_ID = "sk_ax";
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
@@ -53,6 +54,7 @@ public class CardNewsService {
 
     public CardNewsResponse getById(String id) {
         CardNews card = cardNewsRepository.findByIdAndStatus(id, CardNewsStatus.ACTIVE)
+                .filter(cardItem -> !isSelfCompanyCard(cardItem))
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
         return toResponse(card, rawArticleById(List.of(card)));
     }
@@ -64,6 +66,7 @@ public class CardNewsService {
             String eventType
     ) {
         List<CardNews> filtered = cards.stream()
+                .filter(card -> !isSelfCompanyCard(card))
                 .filter(card -> matchesPeer(card, peerId))
                 .filter(card -> importance == null || importance.isBlank() || importance.equals(card.getImportance()))
                 .filter(card -> eventType == null || eventType.isBlank() || eventType.equals(card.getEventType()))
@@ -114,6 +117,7 @@ public class CardNewsService {
             }
             responseSources.add(fallbackSource);
         }
+        int sourceCount = sourceCount(card, responseSources);
         Float trustScore = trustScore(responseSources, card.getValidationScScore());
         String coverImageUrl = firstNonBlank(
                 imageUrl(coverImage),
@@ -175,7 +179,8 @@ public class CardNewsService {
                 .actionItems(suggestedActions)
                 .implication(responseImplication)
                 .sources(responseSources)
-                .sourceCount(responseSources.size())
+                .sourceRawArticleIds(sourceRawArticleIds(card))
+                .sourceCount(sourceCount)
                 .validationPass(card.getValidationPass())
                 .isHumanReviewed(Boolean.TRUE.equals(card.getIsHumanReviewed()))
                 .build();
@@ -208,6 +213,12 @@ public class CardNewsService {
         return peerId.equals(resolvedPeerId(card))
                 || peerId.equals(card.getPeerId())
                 || peerId.equals(card.getPeerCompanyId());
+    }
+
+    private boolean isSelfCompanyCard(CardNews card) {
+        return SELF_PEER_ID.equals(resolvedPeerId(card))
+                || SELF_PEER_ID.equals(card.getPeerId())
+                || SELF_PEER_ID.equals(card.getPeerCompanyId());
     }
 
     private String resolvedPeerId(CardNews card) {
@@ -255,6 +266,51 @@ public class CardNewsService {
         appendSources(deduped, card.getSources());
         appendSources(deduped, card.getSourceArticles());
         return List.copyOf(deduped.values());
+    }
+
+    private int sourceCount(CardNews card, List<Map<String, Object>> responseSources) {
+        List<Long> sourceRawArticleIds = sourceRawArticleIds(card);
+        if (!sourceRawArticleIds.isEmpty()) {
+            return sourceRawArticleIds.size();
+        }
+        List<Long> provenanceIds = longList(nestedMap(card.getEvidencePayload(), "provenance").get("raw_article_ids"));
+        if (!provenanceIds.isEmpty()) {
+            return (int) provenanceIds.stream().filter(Objects::nonNull).distinct().count();
+        }
+        List<Long> evidenceIds = longList(nestedMap(card.getEvidencePayload(), "evidence_chain").get("raw_article_ids"));
+        if (!evidenceIds.isEmpty()) {
+            return (int) evidenceIds.stream().filter(Objects::nonNull).distinct().count();
+        }
+        return Math.max(responseSources.size(), 1);
+    }
+
+    private List<Long> sourceRawArticleIds(CardNews card) {
+        if (card.getSourceRawArticleIds() != null && card.getSourceRawArticleIds().length > 0) {
+            return Arrays.stream(card.getSourceRawArticleIds())
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private List<Long> longList(Object value) {
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(this::longValue)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        if (value instanceof Object[] array) {
+            return Arrays.stream(array)
+                    .map(this::longValue)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        Long single = longValue(value);
+        return single == null ? List.of() : List.of(single);
     }
 
     private void appendSources(Map<String, Map<String, Object>> deduped, Object candidates) {
@@ -577,6 +633,20 @@ public class CardNewsService {
             return Float.parseFloat(String.valueOf(value));
         } catch (NumberFormatException e) {
             return defaultValue;
+        }
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
