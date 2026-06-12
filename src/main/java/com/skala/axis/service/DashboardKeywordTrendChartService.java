@@ -57,9 +57,6 @@ public class DashboardKeywordTrendChartService {
     @Value("${axis.dashboard.keyword-spike-delta-threshold:50}")
     private BigDecimal spikeDeltaThreshold;
 
-    @Value("${axis.dashboard.keyword-spike-average-multiplier:2.5}")
-    private BigDecimal spikeAverageMultiplier;
-
     @Value("${axis.dashboard.keyword-trends-cache-ttl-seconds:900}")
     private long cacheTtlSeconds;
 
@@ -181,7 +178,7 @@ public class DashboardKeywordTrendChartService {
             return new KeywordTrendPayload(
                     searchPoints,
                     series,
-                    buildSpikeInsights(chartRows, rows, seriesByRank),
+                    buildSpikeInsights(chartRows, seriesByRank),
                     String.join(", ", sourceNames)
             );
         } catch (DataAccessException ignored) {
@@ -253,50 +250,26 @@ public class DashboardKeywordTrendChartService {
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private BigDecimal absOrZero(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value.abs();
-    }
-
-    private boolean isSpikeRow(KeywordTrendRow row, List<KeywordTrendRow> lookbackRows) {
+    private boolean isSpikeRow(KeywordTrendRow row) {
         if (row.prevRatio() == null || row.ratioDelta() == null) {
             return false;
         }
 
-        BigDecimal absDelta = row.ratioDelta().abs();
-        if (absDelta.compareTo(spikeDeltaThreshold.abs()) < 0) {
+        BigDecimal delta = row.ratioDelta();
+        if (delta.compareTo(spikeDeltaThreshold) < 0) {
             return false;
         }
 
-        List<BigDecimal> groupDeltas = lookbackRows.stream()
-                .filter(candidate -> row.groupName().equals(candidate.groupName()))
-                .map(KeywordTrendRow::ratioDelta)
-                .filter(delta -> delta != null)
-                .map(BigDecimal::abs)
-                .filter(delta -> delta.compareTo(BigDecimal.ZERO) > 0)
-                .toList();
-        if (groupDeltas.isEmpty()) {
-            return false;
-        }
-
-        BigDecimal maxDelta = groupDeltas.stream().max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
-        if (absDelta.compareTo(maxDelta) >= 0) {
-            return true;
-        }
-
-        BigDecimal averageDelta = groupDeltas.stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .divide(BigDecimal.valueOf(groupDeltas.size()), 4, RoundingMode.HALF_UP);
-        return absDelta.compareTo(averageDelta.multiply(spikeAverageMultiplier)) >= 0;
+        return true;
     }
 
     private List<Map<String, Object>> buildSpikeInsights(
             List<KeywordTrendRow> rows,
-            List<KeywordTrendRow> lookbackRows,
             Map<Integer, SeriesMeta> seriesByRank
     ) {
         return rows.stream()
                 .filter(row -> row.groupRank() != null && row.groupRank() >= 1 && row.groupRank() <= MAX_GROUPS)
-                .filter(row -> isSpikeRow(row, lookbackRows))
+                .filter(this::isSpikeRow)
                 .sorted(
                         Comparator.comparing(KeywordTrendRow::period)
                                 .thenComparing(KeywordTrendRow::groupRank)
@@ -313,15 +286,14 @@ public class DashboardKeywordTrendChartService {
                     if (causeFactors.isEmpty()) {
                         causeFactors = buildEvidenceCauseFactors(row, evidence);
                     }
-                    String directionLabel = row.ratioDelta().signum() < 0 ? "급락" : "급등";
-                    String reason = buildCauseReason(row, directionLabel, causeAnalysis, evidence, causeFactors);
+                    String reason = buildCauseReason(row, causeAnalysis, evidence, causeFactors);
                     String skAxPoint = buildSkAxPoint(evidence);
 
                     Map<String, Object> insight = new LinkedHashMap<>();
                     insight.put("key", key);
                     insight.put("time", TREND_DATE_FORMATTER.format(row.period()));
-                    insight.put("title", row.groupName() + " 관련 검색 관심도 " + directionLabel);
-                    insight.put("valueLabel", formatRatioValue(row.ratio()) + " / " + formatDeltaValue(row.ratioDelta()));
+                    insight.put("title", row.groupName() + " 관련 검색 급등");
+                    insight.put("valueLabel", formatDeltaValue(row.ratioDelta()));
                     insight.put("reason", reason);
                     insight.put("skAxPoint", skAxPoint);
                     insight.put("causeFactors", causeFactors);
@@ -373,7 +345,6 @@ public class DashboardKeywordTrendChartService {
 
     private String buildCauseReason(
             KeywordTrendRow row,
-            String directionLabel,
             Map<String, Object> causeAnalysis,
             List<Map<String, Object>> evidence,
             List<Map<String, Object>> causeFactors
@@ -390,25 +361,25 @@ public class DashboardKeywordTrendChartService {
                     .reduce((left, right) -> left + ", " + right)
                     .orElse("");
             if (evidenceCauseText != null) {
-                return row.groupName() + " 관련 검색 관심도 " + directionLabel + "은 " + evidenceCauseText
+                return row.groupName() + " 관련 검색 급등은 " + evidenceCauseText
                         + " 여기에 세부 키워드 " + driverText
                         + " 흐름이 겹치며 발생한 것으로 보입니다.";
             }
-            return row.groupName() + " 관련 검색 관심도 " + directionLabel + "은 섹터 내 " + driverText
+            return row.groupName() + " 관련 검색 급등은 섹터 내 " + driverText
                     + " 흐름이 급등일 당일까지 집중되며 발생한 것으로 보입니다.";
         }
 
         if (evidenceCauseText != null) {
-            return row.groupName() + " 관련 검색 관심도 " + directionLabel + "은 " + evidenceCauseText
+            return row.groupName() + " 관련 검색 급등은 " + evidenceCauseText
                     + " 이 때문에 검색 수요가 커진 것으로 보입니다.";
         }
 
         if (evidence.isEmpty()) {
-            return row.groupName() + " 관련 검색 관심도가 전일 대비 "
+            return row.groupName() + " 관련 검색 증감폭이 전일 대비 "
                     + formatDeltaValue(row.ratioDelta())
-                    + " 변동했습니다. 아직 같은 기간에 바로 연결되는 출처가 충분하지 않습니다.";
+                    + " 상승했습니다. 아직 같은 기간에 바로 연결되는 출처가 충분하지 않습니다.";
         }
-        return directionLabel + "일 당일까지 '" + row.groupName() + "' 관련 출처 "
+        return "급등일 당일까지 '" + row.groupName() + "' 관련 출처 "
                 + evidence.size()
                 + "건에서 같은 흐름이 확인됐습니다. 원문 링크로 실제 기사와 날짜를 확인해 주세요.";
     }

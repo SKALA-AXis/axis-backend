@@ -32,6 +32,12 @@ axis-backend가 하지 않는 일
 5. 실제 DB 구현 전 도메인은 샘플 데이터를 반환하지 않고, 빈 실제 응답 구조 또는 명시적인 실패/미저장 상태를 반환합니다.
 6. 화면에 표시될 수 있는 임시 데이터는 실제 결과처럼 반환하지 않습니다.
 7. push 전 게이트: `./gradlew test` 통과 후 push (CI 와 동일 — 일부만 돌리고 push 금지).
+8. **AI 호출 실패 시 fallback 패턴**: AI/외부 의존 실패가 전체 응답을 죽이지 않게,
+   해당 위젯만 빈 read-model 또는 fallback 데이터로 채워 200 을 유지합니다
+   (DashboardController 의 stock chart live/fallback, Mixer 의 비동기 단일 호출 fallback 등).
+   단 원칙 5·6 에 따라 fallback 임을 응답 message/provenance 로 드러냅니다.
+9. **dev/내부 전용 경로는 OpenAPI 계약 비대상**: `/api/dev/agents/**`(AgentDiagnostics),
+   FrontendCompatibility, cron-generate 류는 openapi.yaml 에 없으며 계약 스모크 대상이 아닙니다.
 
 ## 현재 주요 구조
 
@@ -178,3 +184,9 @@ POST   /api/pipeline/trigger
 - `bin/`은 빌드 산출물 — gitignore 처리됨(2026-06-11), 커밋 금지.
 - `.env` 계열 파일은 커밋하지 않습니다.
 - 운영/공유 DB에서 `ddl-auto=create|update`를 사용하지 않습니다.
+- **DB 마이그레이션 안전 규칙** (infra `docs/conventions/CONVENTION.md` §15, 2026-06-12 V44 유령 마이그레이션 사고 후):
+  - 공유 클러스터 DB에 flyway migrate 는 **배포 경로로만** (develop 머지 → ArgoCD 배포 pod).
+  - 로컬 스키마 실험은 docker postgres 에서만 — override 전에 `lsof -i :5432` 로 port-forward 점유 확인.
+  - 운영 DB는 `axis.environment='prod'` 마커 + `beforeMigrate__prod_guard.sql` 이 배포 경로 밖 migrate 를 차단.
+  - 이미 적용된 마이그레이션 파일 수정 금지 — 변경은 새 V번호로.
+  - schema.sql 관계: **V40까지 스냅샷 + 이후 동기화, V41+ 진실은 이 레포 Flyway** (infra `docs/DB_METADATA.md`).

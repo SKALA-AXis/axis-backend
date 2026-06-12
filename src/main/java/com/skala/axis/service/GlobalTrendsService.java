@@ -103,7 +103,10 @@ public class GlobalTrendsService {
         row.put("peer_alignment", payload.getOrDefault("peer_alignment", List.of()));
         row.put("impact_matrix", payload.getOrDefault("impact_matrix", List.of()));
         row.put("forecasts", payload.getOrDefault("forecasts", List.of()));
+        row.put("final_one_liner", payload.getOrDefault("final_one_liner", ""));
+        row.put("overall_summary", payload.getOrDefault("overall_summary", ""));
         row.put("leading_companies", payload.getOrDefault("leading_companies", List.of()));
+        row.put("evidence_source_links", payload.getOrDefault("evidence_source_links", List.of()));
         row.put("intensity", payload.getOrDefault("intensity", ""));
         row.put("frequency_delta_pct", payload.getOrDefault("frequency_delta_pct", 0));
         return row;
