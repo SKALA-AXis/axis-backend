@@ -467,6 +467,7 @@ public class CardNewsService {
             return null;
         }
         return firstNonBlank(
+                stringValue(image.get("url"), null),
                 stringValue(image.get("image_url"), null),
                 stringValue(image.get("asset_url"), null),
                 stringValue(image.get("source_url"), null)
