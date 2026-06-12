@@ -1,12 +1,16 @@
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.skala.axis.config.AuthPrincipal;
+import com.skala.axis.domain.UserRole;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -20,6 +24,42 @@ import static org.mockito.Mockito.when;
 class AssistantConversationServiceTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
+
+    @Test
+    void prepareChatRequestReplacesConversationIdWhenOwnerDoesNotMatch() {
+        UUID requestedConversationId = UUID.randomUUID();
+        UUID currentUserId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        AssistantConversationService service = new AssistantConversationService(
+                jdbcTemplate,
+                new ObjectMapper()
+        );
+
+        when(jdbcTemplate.queryForList(
+                argThat(sql -> sql != null && sql.contains("FROM assistant_conversations")),
+                eq(requestedConversationId)
+        )).thenReturn(List.of(Map.of(
+                "user_id", otherUserId.toString(),
+                "device_id_hash", "",
+                "status", "active"
+        )));
+
+        Map<String, Object> result = service.prepareChatRequest(
+                Map.of(
+                        "conversation_id", requestedConversationId.toString(),
+                        "message", "오늘 인사이트 요약해줘"
+                ),
+                new UsernamePasswordAuthenticationToken(
+                        new AuthPrincipal(currentUserId, "axis.user@sk.com", UserRole.USER),
+                        null,
+                        List.of()
+                )
+        );
+
+        assertThat(result.get("conversation_id"))
+                .isNotEqualTo(requestedConversationId.toString())
+                .isEqualTo(result.get("session_id"));
+    }
 
     @Test
     void deleteConversationSoftDeletesAndIgnoresPurgeFailure() {

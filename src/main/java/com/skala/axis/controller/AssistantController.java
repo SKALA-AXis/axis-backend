@@ -253,6 +253,8 @@ public class AssistantController {
                 errorMessage == null ? "axis-ai unavailable" : errorMessage
         );
         response.put("follow_up_suggestions", List.of());
+        response.put("status", "degraded");
+        response.put("result_kind", "assistant_unavailable");
         response.put("error_code", errorCode);
         response.put("blocked", true);
         response.put("blocked_reason", errorCode);
@@ -273,6 +275,7 @@ public class AssistantController {
         provenance.put("is_fixture", false);
         if (errorCode != null && !errorCode.isBlank()) {
             provenance.put("error_code", errorCode);
+            provenance.put("result_kind", "assistant_unavailable");
         }
         if (errorMessage != null && !errorMessage.isBlank()) {
             provenance.put("error", errorMessage);

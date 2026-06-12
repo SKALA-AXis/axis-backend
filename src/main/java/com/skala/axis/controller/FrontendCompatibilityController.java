@@ -1,16 +1,19 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.service.BriefingReportService;
 import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
 import com.skala.axis.service.RawArticleQueryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +29,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FrontendCompatibilityController {
     private final CardNewsService cardNewsService;
+    private final BriefingReportService briefingReportService;
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final RawArticleQueryService rawArticleQueryService;
@@ -40,7 +44,10 @@ public class FrontendCompatibilityController {
 
     @GetMapping("/briefings")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefings() {
-        return ResponseEntity.ok(ApiResponse.success(emptyBriefingsData()));
+        return briefingReportService.findOverview(LocalDate.now())
+                .map(payload -> ResponseEntity.ok(ApiResponse.success(payload)))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(ApiResponse.<Map<String, Object>>error("BRIEFING_REPORT_UNAVAILABLE", "저장된 브리핑 결과가 없습니다.")));
     }
 
     @GetMapping("/alerts")
@@ -89,20 +96,6 @@ public class FrontendCompatibilityController {
         summary.put("notifications", List.of());
         summary.put("keywordNewsCount", "0");
         return summary;
-    }
-
-    private static Map<String, Object> emptyBriefingsData() {
-        Map<String, Object> snapshot = Map.of(
-                "title", "",
-                "summary", "",
-                "sections", List.of()
-        );
-        return Map.of(
-                "dailySnapshot", snapshot,
-                "weeklySnapshot", snapshot,
-                "evidenceSources", List.of(),
-                "history", List.of()
-        );
     }
 
     private static Map<String, Object> emptyAlerts() {
