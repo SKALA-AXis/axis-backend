@@ -224,12 +224,14 @@ OpenAPI v3 명세의 외부 API 경로를 400줄 단위로 확인하고, 각 구
 ```text
 src/main/java/com/skala/axis/
 ├── config/          Security, WebClient, Scheduler 설정
-├── controller/      OpenAPI 외부 API 경로
+├── controller/      OpenAPI 외부 API 경로 (25개) + dev/내부용 (OpenAPI 비대상)
 ├── domain/          JPA Entity
 ├── dto/             공통 응답 및 기존 DTO
 ├── exception/       공통 에러 응답 처리
+├── query/           JDBC 기반 read-model 조회
 ├── repository/      Spring Data JPA Repository
-└── service/         비즈니스 로직, AI 호출, 실제 저장소 조회
+├── security/        인증/인가
+└── service/         비즈니스 로직, AI 호출, SES 발송, 실제 저장소 조회
 ```
 
 ## 개발 원칙
@@ -238,5 +240,7 @@ src/main/java/com/skala/axis/
 - 정상 응답은 `{ success, data, timestamp }` 구조를 유지합니다.
 - 에러 응답은 OpenAPI의 공통 에러 코드 계열을 사용합니다.
 - Entity를 외부 응답으로 직접 노출하는 구현은 새 API에서 피합니다.
-- DB 변경이 필요하면 `axis-infra/db/schema.sql`을 직접 수정하지 않고, `axis-backend/src/main/resources/db/migration`에 Flyway 마이그레이션을 추가합니다.
+- DB 변경이 필요하면 `axis-infra/db/schema.sql`을 직접 수정하지 않고, `axis-backend/src/main/resources/db/migration`에 Flyway 마이그레이션을 추가합니다 (V41+ 진실은 Flyway, schema.sql 은 스냅샷+동기화).
+- **공유 클러스터 DB에 flyway migrate 는 배포 경로로만.** 로컬 스키마 실험은 docker postgres 에서 — 운영 DB는 `beforeMigrate__prod_guard.sql` 가드가 배포 경로 밖 migrate 를 차단합니다 (infra CONVENTION §15).
+- 이미 적용된 마이그레이션 파일은 수정하지 않습니다 — 변경은 새 V번호로.
 - AI 호출은 `AiClientService`를 통해서만 수행합니다.
