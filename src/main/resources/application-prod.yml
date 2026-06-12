@@ -4,6 +4,10 @@ spring:
   # 누가 default 를 false 로 바꿔도 cluster 는 안전 (defense in depth).
   flyway:
     enabled: true
+    placeholders:
+      # 운영 DB 가드(beforeMigrate__prod_guard.sql) 통과 키 — 배포 경로(prod 프로필)만
+      # 'cluster' 를 가진다. 로컬에서 운영 DB 로 migrate 시도 시 가드가 차단.
+      axis_migrate_source: cluster
   jpa:
     show-sql: false
 logging:

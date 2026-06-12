@@ -30,6 +30,10 @@ spring:
     baseline-version: 0
     validate-on-migrate: true
     out-of-order: false                    # V 번호 단조 증가만 허용 — 순서 어긋나면 빌드 실패
+    placeholders:
+      # beforeMigrate__prod_guard.sql 가드용. 'cluster' 는 prod 프로필만 가진다 —
+      # 운영 DB(axis.environment='prod' 마커)에 그 외 값으로 migrate 시도 시 차단.
+      axis_migrate_source: local
 
 ai:
   server:
