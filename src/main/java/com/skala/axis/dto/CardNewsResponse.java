@@ -106,6 +106,9 @@ public class CardNewsResponse {
 
     private List<Map<String, Object>> sources;
 
+    @JsonProperty("source_raw_article_ids")
+    private List<Long> sourceRawArticleIds;
+
     @JsonProperty("source_count")
     private Integer sourceCount;
 
