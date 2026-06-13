@@ -1,6 +1,10 @@
 package com.skala.axis.service;
 
+import com.skala.axis.dto.SearchRequest;
+import com.skala.axis.dto.SearchResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -8,25 +12,39 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GlobalSearchService {
     private static final int DEFAULT_LIMIT = 8;
     private static final int MAX_LIMIT = 30;
     private static final List<String> ALL_SCOPES = List.of("BRIEFING", "CARD_NEWS", "KEYWORD_GRAPH", "PEER_PLUS");
+    // AI 의미 검색이 이 시간 안에 못 돌아오면 ILIKE 키워드 검색으로 폴백한다.
+    private static final Duration SEMANTIC_SEARCH_BUDGET = Duration.ofSeconds(3);
+    // 의미 검색 1위 = 95점: 제목 완전일치(110)보다는 낮고 부분일치(85)보다는 높게 끼워 넣는다.
+    private static final double SEMANTIC_SCORE_TOP = 95.0;
+    private static final double SEMANTIC_SCORE_STEP = 4.0;
+    private static final double SEMANTIC_SCORE_FLOOR = 50.0;
 
     private final JdbcTemplate jdbcTemplate;
+    private final AiClientService aiClientService;
+
+    @Value("${axis.search.semantic.enabled:true}")
+    private boolean semanticSearchEnabled;
 
     @Transactional(readOnly = true)
     public Map<String, Object> search(Map<String, Object> request) {
@@ -122,6 +140,125 @@ public class GlobalSearchService {
     }
 
     private List<Map<String, Object>> searchCardNews(SearchCriteria criteria) {
+        List<Map<String, Object>> semantic = criteria.hasQuery() && semanticSearchEnabled
+                ? searchCardNewsSemantic(criteria)
+                : List.of();
+        if (semantic.size() >= criteria.limitPerScope()) {
+            return semantic;
+        }
+        List<Map<String, Object>> keyword = searchCardNewsKeyword(criteria);
+        if (semantic.isEmpty()) {
+            return keyword;
+        }
+        // 의미 검색 결과 우선, 키워드 결과는 중복 제거 후 보충.
+        Set<Object> seenIds = new LinkedHashSet<>();
+        semantic.forEach(item -> seenIds.add(item.get("id")));
+        List<Map<String, Object>> merged = new ArrayList<>(semantic);
+        keyword.stream()
+                .filter(item -> !seenIds.contains(item.get("id")))
+                .limit(Math.max(0, criteria.limitPerScope() - merged.size()))
+                .forEach(merged::add);
+        return merged;
+    }
+
+    /**
+     * axis-ai /search (BGE-M3 하이브리드 + 리랭킹) 위임 — 동의어·의미 매칭.
+     * SearchHit.rdb_id(raw_articles FK)를 card_news.primary_raw_article_id 로 역매핑해
+     * 화면 아이템으로 복원한다. AI 장애·시간 초과·결과 없음은 전부 빈 목록 → 호출부가 ILIKE 폴백.
+     */
+    private List<Map<String, Object>> searchCardNewsSemantic(SearchCriteria criteria) {
+        List<SearchResponse.Hit> hits;
+        try {
+            SearchResponse response = aiClientService
+                    .search(new SearchRequest(criteria.query(), null, null, criteria.limitPerScope()))
+                    .block(SEMANTIC_SEARCH_BUDGET);
+            hits = response == null || response.getHits() == null ? List.of() : response.getHits();
+        } catch (Exception e) {
+            log.debug("semantic search 폴백(ILIKE) | query={} cause={}", criteria.query(), e.toString());
+            return List.of();
+        }
+        List<Long> rdbIds = hits.stream()
+                .map(SearchResponse.Hit::getRdbId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (rdbIds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Map<String, Object>> rowsByRdbId = hydrateCardNewsByRawArticleIds(criteria, rdbIds);
+        List<Map<String, Object>> items = new ArrayList<>();
+        Set<Object> seenCardIds = new LinkedHashSet<>();
+        for (Long rdbId : rdbIds) {
+            Map<String, Object> row = rowsByRdbId.get(rdbId);
+            if (row == null || !seenCardIds.add(row.get("id"))) {
+                continue;
+            }
+            double score = Math.max(SEMANTIC_SCORE_FLOOR, SEMANTIC_SCORE_TOP - SEMANTIC_SCORE_STEP * items.size());
+            items.add(item(
+                    "CARD_NEWS",
+                    stringValue(row.get("id")),
+                    stringValue(row.get("title")),
+                    stringValue(row.get("subtitle")),
+                    nullToDefault(stringValue(row.get("company_name")), "카드뉴스"),
+                    "issues",
+                    stringValue(row.get("item_date")),
+                    score,
+                    Map.of(
+                            "importance", nullToEmpty(stringValue(row.get("importance"))),
+                            "eventType", nullToEmpty(stringValue(row.get("event_type")))
+                    )
+            ));
+        }
+        return items;
+    }
+
+    private Map<Long, Map<String, Object>> hydrateCardNewsByRawArticleIds(SearchCriteria criteria, List<Long> rdbIds) {
+        SqlParts parts = new SqlParts();
+        addDateRange(parts, criteria, "cn.created_at::date");
+        String dateFilter = parts.hasConditions() ? " AND " + parts.whereSql() : "";
+        String placeholders = String.join(", ", java.util.Collections.nCopies(rdbIds.size(), "?"));
+        String sql = """
+                SELECT
+                    cn.id,
+                    cn.title,
+                    COALESCE(NULLIF(cn.primary_keyword_category, ''), NULLIF(cn.event_type, ''), NULLIF(cn.importance, ''), '카드뉴스') AS subtitle,
+                    COALESCE(pc.name, cn.company) AS company_name,
+                    cn.created_at::date AS item_date,
+                    cn.importance,
+                    cn.event_type,
+                    cn.primary_raw_article_id
+                FROM card_news cn
+                LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
+                WHERE cn.status = 'ACTIVE' AND cn.primary_raw_article_id IN (%s)%s
+                """.formatted(placeholders, dateFilter);
+        List<Object> params = new ArrayList<>(rdbIds);
+        params.addAll(parts.params());
+        List<Map<String, Object>> rows = jdbcTemplate.query(sql, this::cardNewsHydrateRow, params.toArray());
+        Map<Long, Map<String, Object>> byRdbId = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object rdbId = row.get("primary_raw_article_id");
+            if (rdbId instanceof Number number) {
+                byRdbId.putIfAbsent(number.longValue(), row);
+            }
+        }
+        return byRdbId;
+    }
+
+    private Map<String, Object> cardNewsHydrateRow(ResultSet rs, int rowNum) throws SQLException {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", rs.getString("id"));
+        row.put("title", rs.getString("title"));
+        row.put("subtitle", rs.getString("subtitle"));
+        row.put("company_name", rs.getString("company_name"));
+        row.put("item_date", rs.getString("item_date"));
+        row.put("importance", rs.getString("importance"));
+        row.put("event_type", rs.getString("event_type"));
+        row.put("primary_raw_article_id", rs.getLong("primary_raw_article_id"));
+        return row;
+    }
+
+    private List<Map<String, Object>> searchCardNewsKeyword(SearchCriteria criteria) {
         String searchText = "cn.global_search_text";
         SqlParts parts = baseWhere(criteria, "cn.created_at::date", searchText);
         String sql = """
