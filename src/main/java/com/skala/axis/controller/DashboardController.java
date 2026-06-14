@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -57,6 +58,16 @@ public class DashboardController {
         Map<String, Object> request = todayInsightRequest(params, false, true);
         LocalDate anchorDate = parseAnchorDate(request.get("anchor_date"));
 
+        // 사전 생성(cron 08:10 / warmup)된 today_insight_reports 가 있으면 DB 에서 바로 반환한다.
+        // 화면 새로고침 hot-path 에서 단일 axis-ai pod 로의 동기 round-trip(.block)을 제거 —
+        // 동시 접속 시 단일 ai 워커 직렬화로 인한 지연/먹통 완화. DB 는 ai 캐시와 동일 소스이며
+        // (cron save=true 로 저장) GET(save=false)은 생성하지 않으므로 staleness 차이가 없다.
+        Optional<Map<String, Object>> stored = todayInsightReportService.findLatestOnOrBefore(anchorDate);
+        if (stored.isPresent()) {
+            return ResponseEntity.ok(ApiResponse.success(stored.get()));
+        }
+
+        // 저장된 리포트가 아직 없을 때(콜드 스타트 등)만 axis-ai cache_only 경로로 조회한다.
         try {
             Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
             if (result != null && !result.isEmpty()) {
