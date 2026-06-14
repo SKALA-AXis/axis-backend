@@ -151,6 +151,16 @@ public class CardNewsService {
         if (insights.isEmpty() && potentialImpact != null && !potentialImpact.isBlank()) {
             insights = List.of(potentialImpact);
         }
+        List<Map<String, Object>> insightDetails = structuredTextItems(
+                responseImplication,
+                List.of("key_implication_blocks", "key_implication_items"),
+                insights
+        );
+        List<Map<String, Object>> actionDetails = structuredTextItems(
+                responseImplication,
+                List.of("response_direction_blocks", "suggested_action_items", "skax_checkpoint_blocks"),
+                suggestedActions
+        );
 
         return CardNewsResponse.builder()
                 .id(card.getId())
@@ -192,6 +202,8 @@ public class CardNewsService {
                 .detailPoints(List.of())
                 .insights(insights)
                 .actionItems(suggestedActions)
+                .insightDetails(insightDetails)
+                .actionDetails(actionDetails)
                 .implication(responseImplication)
                 .sources(responseSources)
                 .sourceRawArticleIds(sourceRawArticleIds(card))
@@ -530,6 +542,71 @@ public class CardNewsService {
         }
         Map<String, Object> single = objectMap(value);
         return single.isEmpty() ? List.of() : List.of(single);
+    }
+
+    private List<Map<String, Object>> structuredTextItems(
+            Map<String, Object> source,
+            List<String> keys,
+            List<String> fallbackLines
+    ) {
+        for (String key : keys) {
+            List<Map<String, Object>> blocks = normalizeStructuredTextBlocks(mapList(source.get(key)));
+            if (!blocks.isEmpty()) {
+                return blocks;
+            }
+        }
+        return structuredTextBlocksFromLines(fallbackLines);
+    }
+
+    private List<Map<String, Object>> normalizeStructuredTextBlocks(List<Map<String, Object>> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        for (Map<String, Object> item : values) {
+            String main = firstNonBlank(
+                    stringValue(item.get("main"), null),
+                    stringValue(item.get("sentence"), null)
+            );
+            String detail = firstNonBlank(
+                    stringValue(item.get("detail"), null),
+                    stringValue(item.get("evidence_sentence"), null)
+            );
+            if (main == null) {
+                continue;
+            }
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("main", main);
+            block.put("detail", detail == null ? "" : detail);
+            blocks.add(block);
+        }
+        return blocks;
+    }
+
+    private List<Map<String, Object>> structuredTextBlocksFromLines(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        for (String line : lines) {
+            Map<String, Object> block = splitMainDetailBlock(line);
+            if (!stringValue(block.get("main"), "").isBlank()) {
+                blocks.add(block);
+            }
+        }
+        return blocks;
+    }
+
+    private Map<String, Object> splitMainDetailBlock(String line) {
+        String text = line == null ? "" : line.trim().replaceAll("\\s+", " ");
+        text = text.replaceFirst("^핵심\\s*(?:시사점|대응)\\s*[:：]\\s*", "").trim();
+        String[] parts = text.split("\\s*근거\\s*/?\\s*설명\\s*[:：]\\s*", 2);
+        String main = parts.length > 0 ? parts[0].trim() : "";
+        String detail = parts.length > 1 ? parts[1].trim() : "";
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("main", main);
+        block.put("detail", detail);
+        return block;
     }
 
     private Map<String, Object> objectMap(Object value) {
