@@ -72,13 +72,13 @@ public class PeerOverviewTableService {
                 return current.payload();
             }
 
-            Map<String, Object> refreshed = loadPeerOverviewTable();
+            Map<String, Object> refreshed = loadPeerOverviewTable(latestDataVersion);
             cachedPeerOverviewTable = new CachedPeerOverviewTable(refreshed, Instant.now(), latestDataVersion);
             return refreshed;
         }
     }
 
-    private Map<String, Object> loadPeerOverviewTable() {
+    private Map<String, Object> loadPeerOverviewTable(Instant dataUpdatedAt) {
         String period = resolveCommonPeriod();
         Map<String, SupplementalRow> supplementalRows = loadLlmKeywordRows(period);
         List<Map<String, Object>> rows = loadRows(period, supplementalRows);
@@ -97,6 +97,7 @@ public class PeerOverviewTableService {
                 "comparisonInsights", comparisonInsights,
                 "swotInsights", swotInsights,
                 "analysisTraces", analysisTraces,
+                "dataUpdatedAt", formatDataUpdatedAt(dataUpdatedAt),
                 "rows", rows
         );
     }
@@ -149,6 +150,7 @@ public class PeerOverviewTableService {
         String period = resolvePositioningCommonPeriod();
         boolean mixedPeriods = period == null;
         List<Map<String, Object>> points = mixedPeriods ? loadLatestPositioningPoints() : loadPositioningPoints(period);
+        Instant dataUpdatedAt = loadLatestPeerOverviewDataVersion();
         return mapOf(
                 "periodLabel", mixedPeriods ? "peer별 최신 분기" : period,
                 "coverageLabel", mixedPeriods
@@ -159,8 +161,13 @@ public class PeerOverviewTableService {
                 "yAxisLabel", "매출 성장률 (YoY, %)",
                 "referenceRevenueKrwBn", 30000,
                 "referenceGrowthPct", 5,
+                "dataUpdatedAt", formatDataUpdatedAt(dataUpdatedAt),
                 "points", points
         );
+    }
+
+    private String formatDataUpdatedAt(Instant dataUpdatedAt) {
+        return dataUpdatedAt == null || Instant.EPOCH.equals(dataUpdatedAt) ? null : dataUpdatedAt.toString();
     }
 
     private String resolveCommonPeriod() {

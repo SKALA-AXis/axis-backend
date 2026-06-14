@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -175,11 +176,18 @@ public class DashboardKeywordTrendChartService {
                 return KeywordTrendPayload.empty();
             }
 
+            Instant dataUpdatedAt = chartRows.stream()
+                    .map(KeywordTrendRow::collectedAt)
+                    .filter(value -> value != null)
+                    .max(Comparator.naturalOrder())
+                    .orElse(null);
+
             return new KeywordTrendPayload(
                     searchPoints,
                     series,
                     buildSpikeInsights(chartRows, seriesByRank),
-                    String.join(", ", sourceNames)
+                    String.join(", ", sourceNames),
+                    dataUpdatedAt
             );
         } catch (DataAccessException ignored) {
             return KeywordTrendPayload.empty();
@@ -214,8 +222,14 @@ public class DashboardKeywordTrendChartService {
                 rs.getBigDecimal("prev_ratio"),
                 rs.getBigDecimal("ratio_delta"),
                 rs.getString("source_name"),
-                rs.getString("cause_analysis")
+                rs.getString("cause_analysis"),
+                toInstant(rs, "collected_at")
         );
+    }
+
+    private Instant toInstant(ResultSet rs, String column) throws SQLException {
+        Timestamp value = rs.getTimestamp(column);
+        return value == null ? null : value.toInstant();
     }
 
     private List<KeywordTrendRow> selectDisplayedRows(List<KeywordTrendRow> rows) {
@@ -835,7 +849,8 @@ public class DashboardKeywordTrendChartService {
             BigDecimal prevRatio,
             BigDecimal ratioDelta,
             String sourceName,
-            String causeAnalysisJson
+            String causeAnalysisJson,
+            Instant collectedAt
     ) {
         private KeywordTrendRow withRank(Integer nextRank) {
             return new KeywordTrendRow(
@@ -847,7 +862,8 @@ public class DashboardKeywordTrendChartService {
                     prevRatio,
                     ratioDelta,
                     sourceName,
-                    causeAnalysisJson
+                    causeAnalysisJson,
+                    collectedAt
             );
         }
     }
@@ -872,10 +888,11 @@ public class DashboardKeywordTrendChartService {
             List<Map<String, Object>> searchPoints,
             List<Map<String, Object>> series,
             List<Map<String, Object>> insights,
-            String sourceName
+            String sourceName,
+            Instant dataUpdatedAt
     ) {
         private static KeywordTrendPayload empty() {
-            return new KeywordTrendPayload(List.of(), List.of(), List.of(), null);
+            return new KeywordTrendPayload(List.of(), List.of(), List.of(), null, null);
         }
 
         private Map<String, Object> toResponseMap(Instant cachedAt, boolean stale) {
@@ -884,6 +901,7 @@ public class DashboardKeywordTrendChartService {
             response.put("keywordSeries", series);
             response.put("keywordInsights", insights);
             response.put("sourceName", sourceName);
+            response.put("dataUpdatedAt", dataUpdatedAt == null ? null : dataUpdatedAt.toString());
             response.put("cachedAt", cachedAt == null || Instant.EPOCH.equals(cachedAt) ? null : cachedAt.toString());
             response.put("stale", stale);
             return response;

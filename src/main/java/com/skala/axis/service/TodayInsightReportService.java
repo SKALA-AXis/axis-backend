@@ -52,7 +52,11 @@ public class TodayInsightReportService {
         try {
             Map<String, Object> payload = objectMapper.readValue(String.valueOf(rawPayload), MAP_TYPE);
             String reportDate = String.valueOf(row.getOrDefault("report_date", ""));
+            Object createdAt = row.get("created_at");
             payload.putIfAbsent("report_date", reportDate);
+            if (createdAt != null) {
+                payload.put("data_updated_at", createdAt.toString());
+            }
             payload.put("served_anchor_date", anchorDate.toString());
 
             Map<String, Object> provenance = new HashMap<>();
