@@ -136,7 +136,7 @@ public class BriefingController {
             return parseAnchorDate(params.get("date"));
         }
         if ("monthly".equals(briefingType)) {
-            return parseMonthStart(params.get("month"));
+            return parseMonthAnchor(params.get("month"));
         }
         if ("weekly".equals(briefingType)) {
             return parseWeekAnchor(params.get("month"), params.get("week_index"));
@@ -155,9 +155,17 @@ public class BriefingController {
         };
     }
 
-    private static LocalDate parseMonthStart(String raw) {
+    private static LocalDate parseMonthAnchor(String raw) {
         try {
-            return raw == null || raw.isBlank() ? LocalDate.now() : YearMonth.parse(raw).atDay(1);
+            LocalDate today = LocalDate.now();
+            YearMonth month = raw == null || raw.isBlank()
+                    ? YearMonth.from(today)
+                    : YearMonth.parse(raw);
+            YearMonth currentMonth = YearMonth.from(today);
+            if (!month.isBefore(currentMonth)) {
+                return today;
+            }
+            return month.atEndOfMonth();
         } catch (Exception ignored) {
             return LocalDate.now();
         }
@@ -169,7 +177,17 @@ public class BriefingController {
                     ? YearMonth.from(LocalDate.now())
                     : YearMonth.parse(rawMonth);
             int weekIndex = Math.max(1, Math.min(5, Integer.parseInt(rawWeekIndex == null ? "1" : rawWeekIndex)));
+            int startDay = Math.min(month.lengthOfMonth(), ((weekIndex - 1) * 7) + 1);
             int endDay = Math.min(month.lengthOfMonth(), weekIndex * 7);
+            LocalDate today = LocalDate.now();
+            LocalDate start = month.atDay(startDay);
+            LocalDate end = month.atDay(endDay);
+            if (YearMonth.from(today).equals(month) && !today.isBefore(start) && !today.isAfter(end)) {
+                return today;
+            }
+            if (start.isAfter(today)) {
+                return today;
+            }
             return month.atDay(endDay);
         } catch (Exception ignored) {
             return LocalDate.now();
