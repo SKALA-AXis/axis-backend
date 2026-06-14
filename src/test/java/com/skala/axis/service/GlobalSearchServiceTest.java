@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -153,6 +154,30 @@ class GlobalSearchServiceTest {
         verify(aiClientService, never()).search(any(SearchRequest.class));
     }
 
+    @Test
+    @DisplayName("브리핑 검색은 payload/legacy_payload 본문과 검색어 토큰을 함께 조회한다")
+    void briefingSearchMatchesPayloadAndQueryTerms() {
+        when(jdbcTemplate.query(contains("br.legacy_payload::text"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), any(Object[].class)))
+                .thenReturn(List.of(briefingItem("BR-001", 88.0)));
+
+        Map<String, Object> result = service.search(Map.of(
+                "query", "AI 반도체",
+                "scopes", List.of("BRIEFING"),
+                "limit", 8
+        ));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("items");
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).get("type")).isEqualTo("BRIEFING");
+
+        ArgumentCaptor<Object[]> paramsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).query(contains("br.legacy_payload::text"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), paramsCaptor.capture());
+        assertThat(List.of(paramsCaptor.getValue())).contains("%AI 반도체%", "%AI%", "%반도체%");
+    }
+
     private static Map<String, Object> keywordItem(String id, double score) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", id);
@@ -163,6 +188,21 @@ class GlobalSearchServiceTest {
         item.put("target", "issues");
         item.put("targetId", id);
         item.put("date", "2026-06-09");
+        item.put("score", score);
+        item.put("metadata", Map.of());
+        return item;
+    }
+
+    private static Map<String, Object> briefingItem(String id, double score) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", id);
+        item.put("type", "BRIEFING");
+        item.put("title", "브리핑 " + id);
+        item.put("snippet", "본문 매칭 브리핑");
+        item.put("badge", "브리핑");
+        item.put("target", "briefings");
+        item.put("targetId", id);
+        item.put("date", "2026-06-12");
         item.put("score", score);
         item.put("metadata", Map.of());
         return item;

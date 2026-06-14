@@ -32,7 +32,7 @@ import java.util.Set;
 public class GlobalSearchService {
     private static final int DEFAULT_LIMIT = 8;
     private static final int MAX_LIMIT = 30;
-    private static final List<String> ALL_SCOPES = List.of("BRIEFING", "CARD_NEWS", "KEYWORD_GRAPH", "PEER_PLUS");
+    private static final List<String> ALL_SCOPES = List.of("BRIEFING", "CARD_NEWS", "PEER_PLUS");
     // AI 의미 검색이 이 시간 안에 못 돌아오면 ILIKE 키워드 검색으로 폴백한다.
     private static final Duration SEMANTIC_SEARCH_BUDGET = Duration.ofSeconds(3);
     // 의미 검색 1위 = 95점: 제목 완전일치(110)보다는 낮고 부분일치(85)보다는 높게 끼워 넣는다.
@@ -57,9 +57,6 @@ public class GlobalSearchService {
         if (criteria.includes("CARD_NEWS")) {
             items.addAll(searchCardNews(criteria));
         }
-        if (criteria.includes("KEYWORD_GRAPH")) {
-            items.addAll(searchKeywordGraph(criteria));
-        }
         if (criteria.includes("PEER_PLUS")) {
             items.addAll(searchPeers(criteria));
         }
@@ -72,7 +69,7 @@ public class GlobalSearchService {
             return stringValue(right.get("date")).compareTo(stringValue(left.get("date")));
         });
 
-        int limit = Math.min(criteria.limit(), items.size());
+        int limit = criteria.isMultiScope() ? items.size() : Math.min(criteria.limit(), items.size());
         List<Map<String, Object>> limitedItems = items.subList(0, limit);
         Map<String, Long> counts = new LinkedHashMap<>();
         ALL_SCOPES.forEach(scope -> counts.put(scope, items.stream().filter(item -> scope.equals(item.get("type"))).count()));
@@ -93,16 +90,39 @@ public class GlobalSearchService {
     }
 
     private List<Map<String, Object>> searchBriefings(SearchCriteria criteria) {
-        String searchText = "br.global_search_text";
+        String searchText = """
+                concat_ws(
+                    ' ',
+                    br.title,
+                    br.briefing_type,
+                    br.period_label,
+                    br.key_summary,
+                    br.sk_implication,
+                    br.global_search_text,
+                    br.payload::text,
+                    br.legacy_payload::text,
+                    array_to_string(br.related_card_ids, ' '),
+                    br.provenance::text
+                )
+                """;
+        String termMatchSql = briefingTermMatchSql(criteria, searchText);
         String briefingDate = "COALESCE(br.report_date, br.date_to, br.date_from)";
         SqlParts parts = new SqlParts();
         if (criteria.hasQuery()) {
             if (criteria.queryDate() != null) {
-                parts.add("(" + searchText + " ILIKE ? OR " + briefingDate + " = ?)",
-                        criteria.likePattern(),
-                        Date.valueOf(criteria.queryDate()));
-            } else {
+                List<Object> values = new ArrayList<>();
+                values.add(criteria.likePattern());
+                values.addAll(criteria.termLikePatterns());
+                values.add(Date.valueOf(criteria.queryDate()));
+                parts.add("(" + searchText + " ILIKE ? OR " + termMatchSql + " OR " + briefingDate + " = ?)",
+                        values.toArray());
+            } else if (criteria.termLikePatterns().isEmpty()) {
                 parts.add(searchText + " ILIKE ?", criteria.likePattern());
+            } else {
+                List<Object> values = new ArrayList<>();
+                values.add(criteria.likePattern());
+                values.addAll(criteria.termLikePatterns());
+                parts.add("(" + searchText + " ILIKE ? OR " + termMatchSql + ")", values.toArray());
             }
         }
         addDateRange(parts, criteria, briefingDate);
@@ -118,25 +138,41 @@ public class GlobalSearchService {
                     br.briefing_type,
                     br.status,
                     CASE
-                        WHEN lower(br.title) = lower(?) THEN 120
-                        WHEN %s = ? THEN 95
-                        WHEN lower(br.title) LIKE lower(?) THEN 90
-                        WHEN lower(COALESCE(br.key_summary, '')) LIKE lower(?) THEN 75
+                        WHEN lower(br.title) = lower(?) THEN 130
+                        WHEN %s = ? THEN 120
+                        WHEN lower(br.title) LIKE lower(?) THEN 115
+                        WHEN lower(COALESCE(br.key_summary, '')) LIKE lower(?) THEN 105
+                        WHEN lower(COALESCE(br.sk_implication, '')) LIKE lower(?) THEN 100
+                        WHEN %s ILIKE ? THEN 96
+                        WHEN %s THEN 88
                         ELSE 45
                     END AS score
                 FROM briefing_reports br
                 WHERE %s
                 ORDER BY score DESC, COALESCE(br.report_date, br.date_to, br.date_from) DESC, br.created_at DESC
                 LIMIT ?
-                """.formatted(briefingDate, parts.whereSql());
+                """.formatted(briefingDate, searchText, termMatchSql, parts.whereSql());
         List<Object> params = new ArrayList<>();
         params.add(criteria.query());
         params.add(criteria.queryDate() == null ? Date.valueOf(LocalDate.of(1900, 1, 1)) : Date.valueOf(criteria.queryDate()));
         params.add(criteria.likePattern());
         params.add(criteria.likePattern());
+        params.add(criteria.likePattern());
+        params.add(criteria.likePattern());
+        params.addAll(criteria.termLikePatterns());
         params.addAll(parts.params());
         params.add(criteria.limitPerScope());
         return jdbcTemplate.query(sql, this::briefingItem, params.toArray());
+    }
+
+    private String briefingTermMatchSql(SearchCriteria criteria, String searchText) {
+        if (criteria.termLikePatterns().isEmpty()) {
+            return "FALSE";
+        }
+        return criteria.termLikePatterns().stream()
+                .map(ignored -> searchText + " ILIKE ?")
+                .reduce((left, right) -> left + " AND " + right)
+                .orElse("FALSE");
     }
 
     private List<Map<String, Object>> searchCardNews(SearchCriteria criteria) {
@@ -291,34 +327,6 @@ public class GlobalSearchService {
         return jdbcTemplate.query(sql, this::cardNewsItem, params.toArray());
     }
 
-    private List<Map<String, Object>> searchKeywordGraph(SearchCriteria criteria) {
-        SqlParts parts = new SqlParts();
-        if (criteria.hasQuery()) {
-            parts.add("lower(keyword) LIKE lower(?)", criteria.likePattern());
-        }
-        addDateRange(parts, criteria, "cn.created_at::date");
-        String sql = """
-                SELECT
-                    keyword,
-                    COUNT(*) AS hit_count,
-                    MAX(cn.created_at::date) AS item_date,
-                    array_agg(DISTINCT COALESCE(pc.name, cn.company) ORDER BY COALESCE(pc.name, cn.company)) AS companies,
-                    MAX(CASE WHEN lower(keyword) = lower(?) THEN 100 ELSE 62 END) AS score
-                FROM card_news cn
-                LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
-                CROSS JOIN LATERAL unnest(COALESCE(cn.keywords, ARRAY[]::text[])) AS keyword
-                WHERE cn.status = 'ACTIVE' AND %s
-                GROUP BY keyword
-                ORDER BY score DESC, hit_count DESC, item_date DESC
-                LIMIT ?
-                """.formatted(parts.hasConditions() ? parts.whereSql() : "TRUE");
-        List<Object> params = new ArrayList<>();
-        params.add(criteria.query());
-        params.addAll(parts.params());
-        params.add(criteria.limitPerScope());
-        return jdbcTemplate.query(sql, this::keywordGraphItem, params.toArray());
-    }
-
     private List<Map<String, Object>> searchPeers(SearchCriteria criteria) {
         String searchText = "pc.global_search_text";
         SqlParts parts = baseWhere(criteria, "COALESCE(pc.financial_updated_at, pc.created_at)::date", searchText);
@@ -394,21 +402,6 @@ public class GlobalSearchService {
                 rs.getString("item_date"),
                 rs.getDouble("score"),
                 Map.of("importance", nullToEmpty(rs.getString("importance")), "eventType", nullToEmpty(rs.getString("event_type")))
-        );
-    }
-
-    private Map<String, Object> keywordGraphItem(ResultSet rs, int rowNum) throws SQLException {
-        String keyword = rs.getString("keyword");
-        return item(
-                "KEYWORD_GRAPH",
-                keyword,
-                keyword,
-                "관련 카드뉴스 " + rs.getLong("hit_count") + "건",
-                "키워드 그래프",
-                "keywordGraph",
-                rs.getString("item_date"),
-                rs.getDouble("score"),
-                Map.of("companies", nullToEmpty(rs.getString("companies")))
         );
     }
 
@@ -503,6 +496,22 @@ public class GlobalSearchService {
 
         String likePattern() {
             return "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        }
+
+        List<String> termLikePatterns() {
+            if (!hasQuery()) {
+                return List.of();
+            }
+            return java.util.Arrays.stream(query.split("\\s+"))
+                    .map(String::trim)
+                    .filter(term -> !term.isBlank())
+                    .distinct()
+                    .map(term -> "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+                    .toList();
+        }
+
+        boolean isMultiScope() {
+            return scopes.size() > 1;
         }
 
         int limitPerScope() {

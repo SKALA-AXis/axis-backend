@@ -239,11 +239,7 @@ public class DashboardController {
                 .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
                 .orElseGet(() -> {
                     log.warn("TodayInsight 저장 결과 없음 | anchor={} status_payload={}", anchorDate, statusPayload);
-                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                            .body(ApiResponse.<Map<String, Object>>error(
-                                    "TODAY_INSIGHT_RESULT_UNAVAILABLE",
-                                    AiServerException.CALL_FAILED_MESSAGE
-                            ));
+                    return ResponseEntity.ok(ApiResponse.success(statusPayload));
                 });
     }
 
