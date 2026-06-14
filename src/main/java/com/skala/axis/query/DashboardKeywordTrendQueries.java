@@ -66,6 +66,7 @@ public final class DashboardKeywordTrendQueries {
                     d.ratio,
                     d.cause_analysis,
                     d.source_name,
+                    d.collected_at,
                     d.prev_ratio
                 FROM history d
             )
