@@ -42,7 +42,7 @@ public class SearchController {
         return Map.of(
                 "query", query,
                 "items", java.util.List.of(),
-                "counts", Map.of("BRIEFING", 0, "CARD_NEWS", 0, "KEYWORD_GRAPH", 0, "PEER_PLUS", 0),
+                "counts", Map.of("BRIEFING", 0, "CARD_NEWS", 0, "PEER_PLUS", 0),
                 "total", 0,
                 "hasMore", false
         );

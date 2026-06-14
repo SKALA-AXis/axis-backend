@@ -102,6 +102,12 @@ public class CardNewsResponse {
 
     private List<String> actionItems;
 
+    @JsonProperty("insight_details")
+    private List<Map<String, Object>> insightDetails;
+
+    @JsonProperty("action_details")
+    private List<Map<String, Object>> actionDetails;
+
     private Map<String, Object> implication;
 
     private List<Map<String, Object>> sources;
