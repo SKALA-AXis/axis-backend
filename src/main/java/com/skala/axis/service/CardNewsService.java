@@ -1,5 +1,7 @@
 package com.skala.axis.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.RawArticle;
@@ -37,9 +39,12 @@ public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
     private static final String SELF_PEER_ID = "sk_ax";
+    private static final TypeReference<List<Map<String, Object>>> MAP_LIST_TYPE = new TypeReference<>() {};
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
+    private final ObjectMapper objectMapper;
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
         LocalDateTime since = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).withNano(0);
@@ -102,7 +107,8 @@ public class CardNewsService {
         }
 
         List<String> summaryLines = summaryLines(card);
-        String publishedDate = publishedDate(primarySource, primaryRawArticle, card.getCreatedAt());
+        String cardPublishedDate = localDateInDisplayZone(card.getCreatedAt());
+        String sourcePublishedDate = publishedDate(primarySource, primaryRawArticle, card.getCreatedAt());
         String sourceUrl = stringValue(primarySource.get("url"), primaryRawArticle == null ? null : primaryRawArticle.getUrl());
         String sourceName = displaySourceName(primarySource, sourceUrl);
         List<Map<String, Object>> responseSources = new ArrayList<>(sources);
@@ -112,8 +118,8 @@ public class CardNewsService {
             fallbackSource.put("title", firstNonBlank(card.getTitle(), sourceName, "대표 원문"));
             fallbackSource.put("url", sourceUrl);
             fallbackSource.put("source_name", sourceName);
-            if (publishedDate != null) {
-                fallbackSource.put("published_at", publishedDate);
+            if (sourcePublishedDate != null) {
+                fallbackSource.put("published_at", sourcePublishedDate);
             }
             responseSources.add(fallbackSource);
         }
@@ -144,7 +150,7 @@ public class CardNewsService {
                 .title(card.getTitle())
                 .subtitle(rawArticleSubtitle(primaryRawArticle))
                 .category(categoryLabel(sector, card.getPrimaryKeywordCategory()))
-                .date(legacyDate(publishedDate, card.getCreatedAt()))
+                .date(legacyDate(cardPublishedDate, card.getCreatedAt()))
                 .eventType(card.getEventType())
                 .sector(sector)
                 .sectors(sectors)
@@ -164,7 +170,7 @@ public class CardNewsService {
                 .keywordFrequency(card.getKeywordFrequency() == null ? Map.of() : card.getKeywordFrequency())
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
-                .publishedDate(publishedDate)
+                .publishedDate(cardPublishedDate)
                 .createdAt(card.getCreatedAt())
                 .summaryLines(summaryLines)
                 .summary(summaryLines)
@@ -449,6 +455,10 @@ public class CardNewsService {
             }
             return result;
         }
+        Object parsed = parsedJsonValue(value);
+        if (parsed != value) {
+            return mapList(parsed);
+        }
         Map<String, Object> single = objectMap(value);
         return single.isEmpty() ? List.of() : List.of(single);
     }
@@ -459,7 +469,32 @@ public class CardNewsService {
             map.forEach((key, item) -> result.put(String.valueOf(key), item));
             return result;
         }
+        Object parsed = parsedJsonValue(value);
+        if (parsed != value) {
+            return objectMap(parsed);
+        }
         return Map.of();
+    }
+
+    private Object parsedJsonValue(Object value) {
+        if (value == null || value instanceof Map<?, ?> || value instanceof List<?>) {
+            return value;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isBlank()) {
+            return value;
+        }
+        try {
+            if (text.startsWith("[")) {
+                return objectMapper.readValue(text, MAP_LIST_TYPE);
+            }
+            if (text.startsWith("{")) {
+                return objectMapper.readValue(text, MAP_TYPE);
+            }
+        } catch (Exception ignored) {
+            return value;
+        }
+        return value;
     }
 
     private String imageUrl(Map<String, Object> image) {
