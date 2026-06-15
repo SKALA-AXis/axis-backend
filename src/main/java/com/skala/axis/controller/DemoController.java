@@ -4,6 +4,7 @@ import com.skala.axis.domain.SentAlert;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.repository.SentAlertRepository;
 import com.skala.axis.security.CronInternalAuth;
+import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.EventAlertService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,9 +19,10 @@ import java.util.Map;
 /**
  * 시연용 — "중요 뉴스 게시" 데모 뉴스룸 페이지(클러스터 {@code /demo-newsroom})가 호출.
  *
- * <p>폼 입력을 {@link EventAlertService} 의 게이트→dedup→SES 발송 경로로 그대로 흘려보낸다
- * (card_news 미저장 — 운영 데이터 오염 없음). Bearer {@code ${CRON_INTERNAL_TOKEN}} 검증.
- * 발표 후 제거 가능한 throwaway 표면이다.</p>
+ * <p>기사 원문(제목+본문)을 받아 <b>서비스가 스스로 분류</b>(axis-ai {@code /classify} —
+ * 운영 수집 파이프라인과 동일 로직)한 뒤, 그 event_type·중요도로 {@link EventAlertService}
+ * 게이트→dedup→SES 발송을 태운다. card_news 미저장(운영 데이터 오염 없음).
+ * Bearer {@code ${CRON_INTERNAL_TOKEN}} 검증. 발표 후 제거 가능한 throwaway 표면.</p>
  */
 @RestController
 @RequestMapping("/api/demo")
@@ -28,6 +30,7 @@ import java.util.Map;
 public class DemoController {
 
     private final EventAlertService eventAlertService;
+    private final AiClientService aiClientService;
     private final SentAlertRepository sentAlertRepository;
     private final CronInternalAuth cronInternalAuth;
 
@@ -46,21 +49,50 @@ public class DemoController {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error("INVALID_REQUEST", "title 은 필수입니다."));
         }
-        String eventType = str(body, "eventType");
+        String content = str(body, "content");
         String peerId = str(body, "peerId");
-        String summary = str(body, "summary");
-        boolean hasFinancial = hasText(body.get("amount"));
-        Float score = parseScore(body.get("score"));
 
+        // 1) 서비스가 스스로 분류 — 운영 수집 파이프라인과 동일 로직(axis-ai /classify).
+        Map<String, Object> classified;
+        try {
+            classified = aiClientService.classifyArticle(title, content, peerId).block();
+        } catch (Exception e) {
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                    "outcome", "CLASSIFY_FAILED",
+                    "alerted", false,
+                    "error", e.getMessage() == null ? "ai_unavailable" : e.getMessage(),
+                    "title", title
+            )));
+        }
+        if (classified == null) {
+            return ResponseEntity.ok(ApiResponse.success(Map.of(
+                    "outcome", "CLASSIFY_FAILED", "alerted", false, "title", title)));
+        }
+
+        String eventType = str(classified, "event_type");
+        Float score = toFloat(classified.get("importance_score"));
+        String reasoning = str(classified, "reasoning");
+        String summary = (reasoning == null || reasoning.isBlank())
+                ? (content == null ? "" : content) : reasoning;
+
+        // 2) 분류 결과(event_type·중요도)로 게이트→dedup→발송. 점수는 AI 판정값을 그대로 사용.
         EventAlertService.AlertOutcome outcome =
-                eventAlertService.evaluateDemo(peerId, eventType, title, summary, hasFinancial, score);
+                eventAlertService.evaluateDemo(peerId, eventType, title, summary, false, score);
 
-        return ResponseEntity.ok(ApiResponse.success(Map.of(
-                "outcome", outcome.name(),
-                "alerted", outcome == EventAlertService.AlertOutcome.SENT,
-                "eventType", eventType == null ? "" : eventType,
-                "title", title
-        )));
+        // 3) 분류 결과 + 알림 판단을 함께 반환 — 데모에서 'AI가 스스로 판단' 을 가시화.
+        Map<String, Object> classification = new LinkedHashMap<>();
+        classification.put("eventType", eventType);
+        classification.put("importance", str(classified, "importance"));
+        classification.put("importanceScore", score);
+        classification.put("sector", str(classified, "sector"));
+        classification.put("reasoning", reasoning);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("outcome", outcome.name());
+        result.put("alerted", outcome == EventAlertService.AlertOutcome.SENT);
+        result.put("classification", classification);
+        result.put("title", title);
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     @GetMapping("/sent-alerts")
@@ -89,11 +121,10 @@ public class DemoController {
         return value == null ? null : String.valueOf(value);
     }
 
-    private static boolean hasText(Object value) {
-        return value != null && !String.valueOf(value).isBlank();
-    }
-
-    private static Float parseScore(Object value) {
+    private static Float toFloat(Object value) {
+        if (value instanceof Number number) {
+            return number.floatValue();
+        }
         if (value == null) {
             return null;
         }
