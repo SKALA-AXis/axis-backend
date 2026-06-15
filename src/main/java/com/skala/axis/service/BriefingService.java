@@ -49,6 +49,10 @@ public class BriefingService {
     @Value("${axis.auth.app-base-url:http://localhost:3100}")
     private String appBaseUrl;
 
+    /** 비즈니스 푸터 문의처. */
+    @Value("${axis.briefing.contact:axis.admin@sk.com}")
+    private String contactEmail;
+
     public void generateAndSend() {
         List<CardNewsResponse> todayCards = cardNewsService.getTodayCards(null, null);
         if (todayCards.isEmpty()) {
@@ -106,30 +110,98 @@ public class BriefingService {
                 if (!badge.isBlank()) {
                     sb.append("[").append(badge).append("] ");
                 }
-                sb.append(card.getTitle()).append("\n");
-                sb.append("  ").append(cardNewsLink(card)).append("\n");
+                sb.append(card.getTitle());
+                String imp = importanceLabel(card);
+                if (!imp.isBlank()) {
+                    sb.append(" (중요도 ").append(imp).append(")");
+                }
+                sb.append("\n");
+                sb.append("  자세히 보기: ").append(cardNewsLink(card)).append("\n");
             }
             sb.append("\n");
         }
-        sb.append("— SK AX 사업전략팀 AXIS\n");
+        sb.append("──────────────────────────────\n");
+        sb.append("SK AX 사업전략팀 · AXIS (AX Intelligence Signal)\n");
+        sb.append("본 메일은 발신 전용입니다. 문의: ").append(contactEmail).append("\n");
+        sb.append("© 2026 SK AX\n");
         return sb.toString();
     }
 
     /**
-     * 카드 line head 의 메타 badge 텍스트.
+     * 카드 line head 의 메타 badge — {@code "삼성SDS · 수주·계약"} (회사명 · 이벤트유형).
      *
-     * <p>예: {@code "samsung_sds · infra"} — peer id · sector.
-     * peer / sector 중 누락된 항목은 자동 skip.</p>
+     * <p>섹터는 이미 섹션 헤더라 생략. 회사 id/event_type 을 사람이 읽는 라벨로 변환한다.
+     * 둘 다 없으면 빈 문자열.</p>
      */
     private String cardBadgeText(CardNewsResponse card) {
-        java.util.List<String> parts = new java.util.ArrayList<>(2);
-        if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
-            parts.add(card.getPeerId());
+        List<String> parts = new ArrayList<>(2);
+        String company = companyName(card.getPeerId());
+        if (!company.isBlank()) {
+            parts.add(company);
         }
-        if (card.getSector() != null && !card.getSector().isBlank()) {
-            parts.add(card.getSector());
+        String eventLabel = eventTypeLabel(card.getEventType());
+        if (!eventLabel.isBlank()) {
+            parts.add(eventLabel);
         }
         return String.join(" · ", parts);
+    }
+
+    /** peer id → 사람이 읽는 회사명. (※ peer 하드코딩 — 향후 PeerCompanyProvider(B-R1)로 중앙화 예정) */
+    private String companyName(String peerId) {
+        if (peerId == null || peerId.isBlank()) {
+            return "";
+        }
+        return switch (peerId.trim().toLowerCase(Locale.ROOT)) {
+            case "samsung_sds" -> "삼성SDS";
+            case "lg_cns" -> "LG CNS";
+            case "hyundai_autoever" -> "현대오토에버";
+            case "posco_dx" -> "포스코DX";
+            case "nvidia" -> "NVIDIA";
+            case "apple" -> "Apple";
+            case "microsoft" -> "Microsoft";
+            case "google" -> "Google";
+            case "amazon" -> "Amazon";
+            case "meta" -> "Meta";
+            default -> peerId;
+        };
+    }
+
+    /** event_type → 사람이 읽는 라벨. */
+    private String eventTypeLabel(String eventType) {
+        if (eventType == null || eventType.isBlank()) {
+            return "";
+        }
+        return switch (eventType.trim().toLowerCase(Locale.ROOT)) {
+            case "contract" -> "수주·계약";
+            case "ma" -> "M&A·인수";
+            case "partnership" -> "파트너십";
+            case "personnel" -> "인사·조직";
+            case "tech_release", "tech" -> "기술·제품";
+            case "regulation" -> "규제·정책";
+            case "financial" -> "실적·재무";
+            case "expansion" -> "사업확장";
+            case "new_biz" -> "신규사업";
+            case "company" -> "기업동향";
+            default -> eventType;
+        };
+    }
+
+    /** 중요도 밴드 → 정성 라벨(높음/중간/낮음). band 없으면 점수로 추정. */
+    private String importanceLabel(CardNewsResponse card) {
+        String band = card.getImportance();
+        if (band == null || band.isBlank()) {
+            Float score = card.getImportanceScore() != null ? card.getImportanceScore() : card.getExposureScore();
+            if (score == null) {
+                return "";
+            }
+            band = score >= 0.65f ? "high" : score >= 0.40f ? "medium" : "low";
+        }
+        return switch (band.trim().toLowerCase(Locale.ROOT)) {
+            case "high" -> "높음";
+            case "medium" -> "중간";
+            case "low" -> "낮음";
+            default -> "";
+        };
     }
 
     private String buildBriefingHtml(List<CardNewsResponse> cards) {
@@ -160,23 +232,40 @@ public class BriefingService {
                     .append(htmlEscape(display.description())).append("</p>");
             sb.append("<ul style=\"list-style:none;padding:0;margin:0;\">");
             for (CardNewsResponse card : sectorCards) {
-                sb.append("<li style=\"padding:8px 0;border-bottom:1px solid #e5e7eb;\">");
+                sb.append("<li style=\"padding:10px 0;border-bottom:1px solid #e5e7eb;\">");
                 String badge = cardBadgeText(card);
+                String imp = importanceLabel(card);
+                sb.append("<div style=\"margin-bottom:4px;\">");
                 if (!badge.isBlank()) {
-                    sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
-                            .append(htmlEscape(badge)).append("]</span> ");
+                    sb.append("<span style=\"color:#6b7280;font-size:12px;\">")
+                            .append(htmlEscape(badge)).append("</span>");
                 }
+                if (!imp.isBlank()) {
+                    sb.append("<span style=\"margin-left:6px;font-size:11px;font-weight:600;color:#ffffff;")
+                            .append("background:#1d4ed8;padding:1px 8px;border-radius:10px;\">")
+                            .append(htmlEscape(imp)).append("</span>");
+                }
+                sb.append("</div>");
                 String link = htmlEscape(cardNewsLink(card));
-                sb.append("<a href=\"").append(link).append("\" style=\"color:#111827;text-decoration:none;font-weight:600;\">")
-                        .append(htmlEscape(card.getTitle()))
-                        .append("</a>");
+                sb.append("<a href=\"").append(link)
+                        .append("\" style=\"color:#111827;text-decoration:none;font-weight:600;font-size:15px;\">")
+                        .append(htmlEscape(card.getTitle())).append("</a>");
+                sb.append("<div style=\"margin-top:3px;\"><a href=\"").append(link)
+                        .append("\" style=\"color:#1d4ed8;text-decoration:none;font-size:12px;\">카드 자세히 보기 →</a></div>");
                 sb.append("</li>");
             }
             sb.append("</ul></section>");
         }
 
         sb.append("<footer style=\"margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;");
-        sb.append("color:#6b7280;font-size:12px;\">SK AX 사업전략팀 AXIS · 자동 발송</footer>");
+        sb.append("color:#6b7280;font-size:12px;line-height:1.7;\">");
+        sb.append("<div style=\"font-weight:600;color:#374151;\">SK AX 사업전략팀 · AXIS</div>");
+        sb.append("<div>AX Intelligence Signal — Peer사 전략 동향 자동 브리핑</div>");
+        sb.append("<div>본 메일은 발신 전용입니다. 문의: <a href=\"mailto:")
+                .append(htmlEscape(contactEmail)).append("\" style=\"color:#1d4ed8;\">")
+                .append(htmlEscape(contactEmail)).append("</a></div>");
+        sb.append("<div style=\"margin-top:6px;color:#9ca3af;\">© 2026 SK AX. All rights reserved.</div>");
+        sb.append("</footer>");
         sb.append("</body></html>");
         return sb.toString();
     }
