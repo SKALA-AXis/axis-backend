@@ -85,6 +85,18 @@ axis:
     important-keywords: ${AXIS_NOTIFICATION_IMPORTANT_KEYWORDS:수주,계약,실적,투자}
     max-keywords: ${AXIS_NOTIFICATION_MAX_KEYWORDS:20}
     max-keyword-length: ${AXIS_NOTIFICATION_MAX_KEYWORD_LENGTH:30}
+  alert:
+    # 대형 이벤트(수주·파트너십·M&A) 1회성 이메일 알림. exposure 점수는 정밀도가 낮아
+    # event-types(1차) AND (importance ≥ min-score OR financial_refs 존재)(2차) 게이트로만 발송.
+    # 수신자는 일일 브리핑과 공유(briefing.recipients). 발송은 SesMailService(SES+IRSA)만.
+    enabled: ${AXIS_ALERT_ENABLED:true}
+    event-types: ${AXIS_ALERT_EVENT_TYPES:ma,contract,partnership}
+    min-score: ${AXIS_ALERT_MIN_SCORE:0.65}
+    scan-lookback-minutes: ${AXIS_ALERT_SCAN_LOOKBACK_MINUTES:90}
+    # 자동 스캔 — 매시 :15(07–22시), 야간 셧다운(23–07 KST) 회피.
+    scan-cron: "${AXIS_ALERT_SCAN_CRON:0 15 7-22 * * *}"
+    # 보조 dedup — 같은 peer+event_type 재발송 억제 일수. 0=비활성(cluster_id dedup 만).
+    peer-event-suppress-days: ${AXIS_ALERT_PEER_EVENT_SUPPRESS_DAYS:0}
 
 # 이메일 발송 — AWS SES V2 SDK + IRSA (ses-mailer-sa) — Slack 폐기 (v4).
 # 자세한 spec: axis-infra/docs/SES_INTEGRATION.md
