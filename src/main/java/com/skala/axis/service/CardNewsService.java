@@ -250,11 +250,11 @@ public class CardNewsService {
     }
 
     private LocalDateTime cardBasisAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
-        LocalDateTime latestPublishedAt = latestSourcePublishedAt(card, rawArticleById);
-        return latestPublishedAt == null ? card.getCreatedAt() : latestPublishedAt;
+        LocalDateTime earliestPublishedAt = earliestSourcePublishedAt(card, rawArticleById);
+        return earliestPublishedAt == null ? card.getCreatedAt() : earliestPublishedAt;
     }
 
-    private LocalDateTime latestSourcePublishedAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+    private LocalDateTime earliestSourcePublishedAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
         List<LocalDateTime> candidates = new ArrayList<>();
         effectiveSources(card).stream()
                 .map(source -> parseSourcePublishedAt(source.get("published_at")))
@@ -277,7 +277,7 @@ public class CardNewsService {
                 .filter(Objects::nonNull)
                 .forEach(candidates::add);
 
-        return candidates.stream().max(LocalDateTime::compareTo).orElse(null);
+        return candidates.stream().min(LocalDateTime::compareTo).orElse(null);
     }
 
     private LocalDateTime parseSourcePublishedAt(Object value) {
