@@ -1,5 +1,7 @@
 package com.skala.axis.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.RawArticle;
@@ -38,9 +40,12 @@ public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
     private static final String SELF_PEER_ID = "sk_ax";
+    private static final TypeReference<List<Map<String, Object>>> MAP_LIST_TYPE = new TypeReference<>() {};
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
+    private final ObjectMapper objectMapper;
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
         LocalDate today = LocalDate.now(DISPLAY_ZONE);
@@ -540,6 +545,10 @@ public class CardNewsService {
             }
             return result;
         }
+        Object parsed = parsedJsonValue(value);
+        if (parsed != value) {
+            return mapList(parsed);
+        }
         Map<String, Object> single = objectMap(value);
         return single.isEmpty() ? List.of() : List.of(single);
     }
@@ -615,7 +624,32 @@ public class CardNewsService {
             map.forEach((key, item) -> result.put(String.valueOf(key), item));
             return result;
         }
+        Object parsed = parsedJsonValue(value);
+        if (parsed != value) {
+            return objectMap(parsed);
+        }
         return Map.of();
+    }
+
+    private Object parsedJsonValue(Object value) {
+        if (value == null || value instanceof Map<?, ?> || value instanceof List<?>) {
+            return value;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isBlank()) {
+            return value;
+        }
+        try {
+            if (text.startsWith("[")) {
+                return objectMapper.readValue(text, MAP_LIST_TYPE);
+            }
+            if (text.startsWith("{")) {
+                return objectMapper.readValue(text, MAP_TYPE);
+            }
+        } catch (Exception ignored) {
+            return value;
+        }
+        return value;
     }
 
     private String imageUrl(Map<String, Object> image) {

@@ -1,5 +1,6 @@
 package com.skala.axis.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.RawArticle;
@@ -37,7 +38,7 @@ class CardNewsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CardNewsService(cardNewsRepository, rawArticleRepository);
+        service = new CardNewsService(cardNewsRepository, rawArticleRepository, new ObjectMapper());
     }
 
     @Test

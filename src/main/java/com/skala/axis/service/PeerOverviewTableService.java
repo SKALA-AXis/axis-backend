@@ -236,14 +236,19 @@ public class PeerOverviewTableService {
                 LIMIT 1
                 """;
 
-        return jdbcTemplate.query(
-                sql,
-                ps -> {
-                    bindFinancialPeerIds(ps, 1);
-                    ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
-                },
-                rs -> rs.next() ? rs.getString("period") : null
-        );
+        try {
+            return jdbcTemplate.query(
+                    sql,
+                    ps -> {
+                        bindFinancialPeerIds(ps, 1);
+                        ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
+                    },
+                    rs -> rs.next() ? rs.getString("period") : null
+            );
+        } catch (DataAccessException ex) {
+            log.warn("PeerOverviewTable | raw financial metric period unavailable, using peer_financials fallback", ex);
+            return resolveCommonPeriodFromPeerFinancials();
+        }
     }
 
     private String resolvePositioningCommonPeriod() {
@@ -1520,6 +1525,137 @@ public class PeerOverviewTableService {
                     NULL::text AS dart_rcept_no
                 FROM period_series
                 WHERE period = ?
+                ORDER BY CASE peer_id
+                    WHEN 'sk_ax' THEN 0
+                    WHEN 'samsung_sds' THEN 1
+                    WHEN 'lg_cns' THEN 2
+                    WHEN 'hyundai_autoever' THEN 3
+                    WHEN 'posco_dx' THEN 4
+                    ELSE 99
+                END
+                """;
+
+        try {
+            return jdbcTemplate.query(
+                    sql,
+                    ps -> {
+                        bindFinancialPeerIds(ps, 1);
+                        ps.setString(FINANCIAL_PEER_IDS.size() + 1, period);
+                    },
+                    (rs, rowNum) -> mapFinancialRow(rs)
+            );
+        } catch (DataAccessException ex) {
+            log.warn("PeerOverviewTable | raw financial rows unavailable, using peer_financials fallback", ex);
+            return loadPeerFinancialRows(period);
+        }
+    }
+
+    private String resolveCommonPeriodFromPeerFinancials() {
+        String sql = """
+                SELECT period
+                FROM peer_financials
+                WHERE peer_id IN (?, ?, ?, ?, ?)
+                  AND period ~ '^[0-9]{4}Q[1-4]$'
+                  AND revenue_total_krwbn IS NOT NULL
+                  AND operating_profit_krwbn IS NOT NULL
+                GROUP BY period
+                HAVING COUNT(DISTINCT peer_id) = ?
+                ORDER BY
+                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
+                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
+                    period DESC
+                LIMIT 1
+                """;
+
+        return jdbcTemplate.query(
+                sql,
+                ps -> {
+                    bindFinancialPeerIds(ps, 1);
+                    ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
+                },
+                rs -> rs.next() ? rs.getString("period") : null
+        );
+    }
+
+    private List<Map<String, Object>> loadPeerFinancialRows(String period) {
+        if (period == null || period.isBlank()) {
+            return List.of();
+        }
+
+        String sql = """
+                WITH normalized_periods AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        CASE
+                            WHEN COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) = 1 THEN
+                                (COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text || 'Q4'
+                            ELSE
+                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), ''), '')
+                                    || 'Q'
+                                    || (COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) - 1)::text
+                        END AS previous_period,
+                        revenue_total_krwbn,
+                        operating_profit_krwbn,
+                        CASE
+                            WHEN raw_payload ? 'operating_margin_pct'
+                            THEN ROUND((raw_payload ->> 'operating_margin_pct')::numeric, 2)::double precision
+                            WHEN revenue_total_krwbn IS NOT NULL
+                             AND revenue_total_krwbn <> 0
+                             AND operating_profit_krwbn IS NOT NULL
+                            THEN ROUND((operating_profit_krwbn / revenue_total_krwbn * 100)::numeric, 2)::double precision
+                            ELSE NULL
+                        END AS operating_margin_pct,
+                        dart_rcept_no
+                    FROM peer_financials
+                    WHERE peer_id IN (?, ?, ?, ?, ?)
+                      AND period ~ '^[0-9]{4}Q[1-4]$'
+                ),
+                period_series AS (
+                    SELECT
+                        current_period.peer_id,
+                        current_period.revenue_total_krwbn,
+                        current_period.operating_profit_krwbn,
+                        current_period.operating_margin_pct,
+                        current_period.dart_rcept_no,
+                        previous_period.revenue_total_krwbn AS prev_revenue_total_krwbn,
+                        previous_period.operating_profit_krwbn AS prev_operating_profit_krwbn,
+                        previous_period.operating_margin_pct AS prev_operating_margin_pct
+                    FROM normalized_periods current_period
+                    LEFT JOIN normalized_periods previous_period
+                      ON previous_period.peer_id = current_period.peer_id
+                     AND previous_period.period = current_period.previous_period
+                    WHERE current_period.period = ?
+                )
+                SELECT
+                    peer_id AS id,
+                    revenue_total_krwbn,
+                    CASE
+                        WHEN prev_revenue_total_krwbn IS NOT NULL
+                         AND prev_revenue_total_krwbn <> 0
+                         AND revenue_total_krwbn IS NOT NULL
+                        THEN ROUND(((revenue_total_krwbn - prev_revenue_total_krwbn) / ABS(prev_revenue_total_krwbn) * 100)::numeric, 2)
+                        ELSE NULL
+                    END AS revenue_qoq_pct,
+                    operating_profit_krwbn,
+                    CASE
+                        WHEN prev_operating_profit_krwbn IS NOT NULL
+                         AND prev_operating_profit_krwbn <> 0
+                         AND operating_profit_krwbn IS NOT NULL
+                        THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / ABS(prev_operating_profit_krwbn) * 100)::numeric, 2)
+                        ELSE NULL
+                    END AS operating_profit_qoq_pct,
+                    NULL::double precision AS net_income_krwbn,
+                    NULL::numeric AS net_income_qoq_pct,
+                    operating_margin_pct,
+                    CASE
+                        WHEN prev_operating_margin_pct IS NOT NULL
+                         AND operating_margin_pct IS NOT NULL
+                        THEN ROUND((operating_margin_pct - prev_operating_margin_pct)::numeric, 2)
+                        ELSE NULL
+                    END AS operating_margin_qoq_delta_pctp,
+                    dart_rcept_no
+                FROM period_series
                 ORDER BY CASE peer_id
                     WHEN 'sk_ax' THEN 0
                     WHEN 'samsung_sds' THEN 1
