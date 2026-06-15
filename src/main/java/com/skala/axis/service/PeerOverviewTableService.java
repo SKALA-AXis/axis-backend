@@ -42,6 +42,13 @@ public class PeerOverviewTableService {
             new DisplayPeer(3, "hyundai_autoever", "현대 오토에버"),
             new DisplayPeer(4, "posco_dx", "포스코 DX")
     );
+    private static final Pattern INTERNAL_EVIDENCE_MARKER = Pattern.compile(
+            "\\b(?:raw_article_business_signals|raw_articles|peer_llm_analysis_snapshots|peer_companies|"
+                    + "business_area|signal_type|raw_article_id|source_signal_ids|source_raw_article_ids|"
+                    + "evidence_refs|evidence_id|signal_id|profile_context|input_snapshot|output_payload|"
+                    + "top_keyword_evidence|top_keyword_reason|peer_id)\\b|signal:\\d+",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -65,13 +72,13 @@ public class PeerOverviewTableService {
                 return current.payload();
             }
 
-            Map<String, Object> refreshed = loadPeerOverviewTable();
+            Map<String, Object> refreshed = loadPeerOverviewTable(latestDataVersion);
             cachedPeerOverviewTable = new CachedPeerOverviewTable(refreshed, Instant.now(), latestDataVersion);
             return refreshed;
         }
     }
 
-    private Map<String, Object> loadPeerOverviewTable() {
+    private Map<String, Object> loadPeerOverviewTable(Instant dataUpdatedAt) {
         String period = resolveCommonPeriod();
         Map<String, SupplementalRow> supplementalRows = loadLlmKeywordRows(period);
         List<Map<String, Object>> rows = loadRows(period, supplementalRows);
@@ -90,6 +97,7 @@ public class PeerOverviewTableService {
                 "comparisonInsights", comparisonInsights,
                 "swotInsights", swotInsights,
                 "analysisTraces", analysisTraces,
+                "dataUpdatedAt", formatDataUpdatedAt(dataUpdatedAt),
                 "rows", rows
         );
     }
@@ -142,6 +150,7 @@ public class PeerOverviewTableService {
         String period = resolvePositioningCommonPeriod();
         boolean mixedPeriods = period == null;
         List<Map<String, Object>> points = mixedPeriods ? loadLatestPositioningPoints() : loadPositioningPoints(period);
+        Instant dataUpdatedAt = loadLatestPeerOverviewDataVersion();
         return mapOf(
                 "periodLabel", mixedPeriods ? "peer별 최신 분기" : period,
                 "coverageLabel", mixedPeriods
@@ -152,8 +161,13 @@ public class PeerOverviewTableService {
                 "yAxisLabel", "매출 성장률 (YoY, %)",
                 "referenceRevenueKrwBn", 30000,
                 "referenceGrowthPct", 5,
+                "dataUpdatedAt", formatDataUpdatedAt(dataUpdatedAt),
                 "points", points
         );
+    }
+
+    private String formatDataUpdatedAt(Instant dataUpdatedAt) {
+        return dataUpdatedAt == null || Instant.EPOCH.equals(dataUpdatedAt) ? null : dataUpdatedAt.toString();
     }
 
     private String resolveCommonPeriod() {
@@ -222,14 +236,19 @@ public class PeerOverviewTableService {
                 LIMIT 1
                 """;
 
-        return jdbcTemplate.query(
-                sql,
-                ps -> {
-                    bindFinancialPeerIds(ps, 1);
-                    ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
-                },
-                rs -> rs.next() ? rs.getString("period") : null
-        );
+        try {
+            return jdbcTemplate.query(
+                    sql,
+                    ps -> {
+                        bindFinancialPeerIds(ps, 1);
+                        ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
+                    },
+                    rs -> rs.next() ? rs.getString("period") : null
+            );
+        } catch (DataAccessException ex) {
+            log.warn("PeerOverviewTable | raw financial metric period unavailable, using peer_financials fallback", ex);
+            return resolveCommonPeriodFromPeerFinancials();
+        }
     }
 
     private String resolvePositioningCommonPeriod() {
@@ -1516,6 +1535,137 @@ public class PeerOverviewTableService {
                 END
                 """;
 
+        try {
+            return jdbcTemplate.query(
+                    sql,
+                    ps -> {
+                        bindFinancialPeerIds(ps, 1);
+                        ps.setString(FINANCIAL_PEER_IDS.size() + 1, period);
+                    },
+                    (rs, rowNum) -> mapFinancialRow(rs)
+            );
+        } catch (DataAccessException ex) {
+            log.warn("PeerOverviewTable | raw financial rows unavailable, using peer_financials fallback", ex);
+            return loadPeerFinancialRows(period);
+        }
+    }
+
+    private String resolveCommonPeriodFromPeerFinancials() {
+        String sql = """
+                SELECT period
+                FROM peer_financials
+                WHERE peer_id IN (?, ?, ?, ?, ?)
+                  AND period ~ '^[0-9]{4}Q[1-4]$'
+                  AND revenue_total_krwbn IS NOT NULL
+                  AND operating_profit_krwbn IS NOT NULL
+                GROUP BY period
+                HAVING COUNT(DISTINCT peer_id) = ?
+                ORDER BY
+                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
+                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
+                    period DESC
+                LIMIT 1
+                """;
+
+        return jdbcTemplate.query(
+                sql,
+                ps -> {
+                    bindFinancialPeerIds(ps, 1);
+                    ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
+                },
+                rs -> rs.next() ? rs.getString("period") : null
+        );
+    }
+
+    private List<Map<String, Object>> loadPeerFinancialRows(String period) {
+        if (period == null || period.isBlank()) {
+            return List.of();
+        }
+
+        String sql = """
+                WITH normalized_periods AS (
+                    SELECT
+                        peer_id,
+                        period,
+                        CASE
+                            WHEN COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) = 1 THEN
+                                (COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text || 'Q4'
+                            ELSE
+                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), ''), '')
+                                    || 'Q'
+                                    || (COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) - 1)::text
+                        END AS previous_period,
+                        revenue_total_krwbn,
+                        operating_profit_krwbn,
+                        CASE
+                            WHEN raw_payload ? 'operating_margin_pct'
+                            THEN ROUND((raw_payload ->> 'operating_margin_pct')::numeric, 2)::double precision
+                            WHEN revenue_total_krwbn IS NOT NULL
+                             AND revenue_total_krwbn <> 0
+                             AND operating_profit_krwbn IS NOT NULL
+                            THEN ROUND((operating_profit_krwbn / revenue_total_krwbn * 100)::numeric, 2)::double precision
+                            ELSE NULL
+                        END AS operating_margin_pct,
+                        dart_rcept_no
+                    FROM peer_financials
+                    WHERE peer_id IN (?, ?, ?, ?, ?)
+                      AND period ~ '^[0-9]{4}Q[1-4]$'
+                ),
+                period_series AS (
+                    SELECT
+                        current_period.peer_id,
+                        current_period.revenue_total_krwbn,
+                        current_period.operating_profit_krwbn,
+                        current_period.operating_margin_pct,
+                        current_period.dart_rcept_no,
+                        previous_period.revenue_total_krwbn AS prev_revenue_total_krwbn,
+                        previous_period.operating_profit_krwbn AS prev_operating_profit_krwbn,
+                        previous_period.operating_margin_pct AS prev_operating_margin_pct
+                    FROM normalized_periods current_period
+                    LEFT JOIN normalized_periods previous_period
+                      ON previous_period.peer_id = current_period.peer_id
+                     AND previous_period.period = current_period.previous_period
+                    WHERE current_period.period = ?
+                )
+                SELECT
+                    peer_id AS id,
+                    revenue_total_krwbn,
+                    CASE
+                        WHEN prev_revenue_total_krwbn IS NOT NULL
+                         AND prev_revenue_total_krwbn <> 0
+                         AND revenue_total_krwbn IS NOT NULL
+                        THEN ROUND(((revenue_total_krwbn - prev_revenue_total_krwbn) / ABS(prev_revenue_total_krwbn) * 100)::numeric, 2)
+                        ELSE NULL
+                    END AS revenue_qoq_pct,
+                    operating_profit_krwbn,
+                    CASE
+                        WHEN prev_operating_profit_krwbn IS NOT NULL
+                         AND prev_operating_profit_krwbn <> 0
+                         AND operating_profit_krwbn IS NOT NULL
+                        THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / ABS(prev_operating_profit_krwbn) * 100)::numeric, 2)
+                        ELSE NULL
+                    END AS operating_profit_qoq_pct,
+                    NULL::double precision AS net_income_krwbn,
+                    NULL::numeric AS net_income_qoq_pct,
+                    operating_margin_pct,
+                    CASE
+                        WHEN prev_operating_margin_pct IS NOT NULL
+                         AND operating_margin_pct IS NOT NULL
+                        THEN ROUND((operating_margin_pct - prev_operating_margin_pct)::numeric, 2)
+                        ELSE NULL
+                    END AS operating_margin_qoq_delta_pctp,
+                    dart_rcept_no
+                FROM period_series
+                ORDER BY CASE peer_id
+                    WHEN 'sk_ax' THEN 0
+                    WHEN 'samsung_sds' THEN 1
+                    WHEN 'lg_cns' THEN 2
+                    WHEN 'hyundai_autoever' THEN 3
+                    WHEN 'posco_dx' THEN 4
+                    ELSE 99
+                END
+                """;
+
         return jdbcTemplate.query(
                 sql,
                 ps -> {
@@ -2269,8 +2419,8 @@ public class PeerOverviewTableService {
                             WHEN sa.final_score = 0 THEN COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
                                 || ' 원문 기반 사업 신호에서 통과 후보가 없어 핵심 키워드를 노출하지 않습니다.'
                             ELSE COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
-                                || ' 원문 기반 사업 신호의 business_area와 signal_type, 요약, 근거 문장에서 실제 등장한 표현만 점수화했습니다. '
-                                || '기업별 후보 사전 없이 해당 분기에 확인된 사업 표현과 일반 기술 신호를 분리해 선택했습니다.'
+                                || ' 공개 원문의 제목·요약·근거 문장에서 실제 등장한 사업명, 서비스명, 제품명, 기술명을 기준으로 점수화했습니다. '
+                                || '해당 분기에 확인된 사업 표현과 기술 신호를 분리해 선택했습니다.'
                         END AS top_keyword_reason,
                         CASE
                             WHEN sa.final_score = 0 THEN '분기 원문 기반 사업 신호 통과 후보 없음'
@@ -2395,8 +2545,8 @@ public class PeerOverviewTableService {
                 topKeyword.isBlank() ? null : topKeyword,
                 businessLabel.isBlank() ? null : businessLabel,
                 technologyLabel.isBlank() ? null : technologyLabel,
-                blankToNull(stringValue(payload.get("top_keyword_reason"))),
-                blankToNull(stringValue(payload.get("top_keyword_basis"))),
+                blankToNull(publicEvidenceText(stringValue(payload.get("top_keyword_reason")))),
+                blankToNull(publicEvidenceText(stringValue(payload.get("top_keyword_basis")))),
                 score,
                 buildLlmKeywordEvidenceLines(payload, businessKeyword, technologyKeyword),
                 stringList(payload.get("top_keyword_evidence_urls"))
@@ -2409,8 +2559,14 @@ public class PeerOverviewTableService {
             Map<String, Object> technologyKeyword
     ) {
         List<String> storedLines = stringList(payload.get("top_keyword_evidence"));
-        if (!storedLines.isEmpty()) {
-            return storedLines;
+        if (!storedLines.isEmpty() && storedLines.stream().noneMatch(this::containsInternalEvidenceMarker)) {
+            List<String> publicLines = storedLines.stream()
+                    .map(this::publicEvidenceText)
+                    .filter(value -> !value.isBlank())
+                    .toList();
+            if (!publicLines.isEmpty()) {
+                return publicLines;
+            }
         }
 
         List<String> generated = new ArrayList<>();
@@ -2445,12 +2601,26 @@ public class PeerOverviewTableService {
                                 peerName.isBlank() ? "해당 기업" : peerName,
                                 axisLabel,
                                 label,
-                                evidenceSummary.isBlank() ? "저장된 근거 요약 없음" : evidenceSummary,
+                                evidenceSummary.isBlank() ? "저장된 근거 요약 없음" : publicEvidenceText(evidenceSummary),
                                 reason.isBlank()
                                         ? "이 원문 내용을 보아 해당 기업의 진행 방향을 보여주는 대표 키워드로 선정했습니다."
-                                        : reason
+                                        : publicEvidenceText(reason)
                         )
         );
+    }
+
+    private boolean containsInternalEvidenceMarker(String value) {
+        return value != null && INTERNAL_EVIDENCE_MARKER.matcher(value).find();
+    }
+
+    private String publicEvidenceText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String cleaned = INTERNAL_EVIDENCE_MARKER.matcher(value).replaceAll("공개 근거");
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("(공개 근거[와과, ]*){2,}", "공개 근거 ");
+        return cleaned.replaceAll("^[,;\\s]+|[,;\\s]+$", "");
     }
 
     private String firstNonBlank(String... values) {

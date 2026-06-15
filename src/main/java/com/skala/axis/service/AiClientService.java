@@ -63,6 +63,15 @@ public class AiClientService {
         return Mono.error(error);
     }
 
+    /** 단일 기사 분류 — axis-ai {@code /classify}(운영 분류기 재사용). 데모 인젝트가 사용. */
+    public Mono<Map<String, Object>> classifyArticle(String title, String content, String company) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("title", title == null ? "" : title);
+        body.put("content", content == null ? "" : content);
+        body.put("company", company == null ? "" : company);
+        return postRaw("/classify", body, Duration.ofSeconds(90));
+    }
+
     public Mono<SearchResponse> search(SearchRequest request) {
         return aiWebClient.post()
                 .uri("/search")

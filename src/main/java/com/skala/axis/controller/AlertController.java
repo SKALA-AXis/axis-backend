@@ -1,6 +1,8 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.security.CronInternalAuth;
+import com.skala.axis.service.EventAlertService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,12 +15,37 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AlertController {
 
+    private final EventAlertService eventAlertService;
+    private final CronInternalAuth cronInternalAuth;
+
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listAlerts(
             @RequestParam(defaultValue = "false") boolean unreadOnly,
             @RequestParam(defaultValue = "20") int limit
     ) {
         return ResponseEntity.ok(ApiResponse.success(emptyAlerts()));
+    }
+
+    /**
+     * 대형 이벤트 알림 수동/Cron 스캔 — 최근 후보 카드 전수 평가 후 게이트 통과분 1회 발송.
+     * Bearer ${CRON_INTERNAL_TOKEN} 검증(CronInternalAuth). 자동 발송은 SchedulerConfig.
+     */
+    @PostMapping("/scan")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> scan(
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        if (!cronInternalAuth.isAuthorized(authorization)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.success(Map.of("status", "unauthorized")));
+        }
+        EventAlertService.ScanResult result = eventAlertService.scanRecent("manual");
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "status", "ok",
+                "candidates", result.candidates(),
+                "sent", result.sent(),
+                "skipped", result.skipped(),
+                "failed", result.failed()
+        )));
     }
 
     @PostMapping("/rules")

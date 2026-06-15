@@ -27,22 +27,30 @@ public class BriefingReportService {
     private final ObjectMapper objectMapper;
 
     public Optional<Map<String, Object>> findOverview(LocalDate anchorDate) {
-        List<BriefingRow> rows = findLatestCompletedRows(anchorDate, 20);
+        List<BriefingRow> rows = new ArrayList<>(findRowsForOverview(anchorDate));
         if (rows.isEmpty()) {
             return Optional.empty();
         }
 
         BriefingRow daily = firstByType(rows, "daily").orElse(rows.get(0));
         Optional<BriefingRow> weekly = firstByType(rows, "weekly");
+        Optional<BriefingRow> monthly = firstByType(rows, "monthly");
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("dailySnapshot", snapshot(daily));
         result.put("weeklySnapshot", weekly.map(this::snapshot).orElseGet(() -> unavailableSnapshot("주간")));
+        result.put("monthlySnapshot", monthly.map(this::snapshot).orElseGet(() -> unavailableSnapshot("월간")));
         result.put("evidenceSources", evidenceSources(rows));
         result.put("history", rows.stream().map(this::historyItem).toList());
         result.put("result_kind", "saved_briefings");
         result.put("anchor_date", anchorDate.toString());
         return Optional.of(result);
+    }
+
+    public Optional<Map<String, Object>> findPayloadForPeriod(String briefingType, LocalDate anchorDate) {
+        return findCompletedRowForAnchor(briefingType, anchorDate)
+                .or(() -> findLatestCompletedRow(briefingType, anchorDate))
+                .map(this::payloadWithMetadata);
     }
 
     public Optional<Map<String, Object>> findLatestPayload(String briefingType, LocalDate anchorDate) {
@@ -156,6 +164,65 @@ public class BriefingReportService {
         }
     }
 
+    private List<BriefingRow> findRowsForOverview(LocalDate anchorDate) {
+        List<BriefingRow> rows = new ArrayList<>();
+        for (String type : List.of("daily", "weekly", "monthly")) {
+            findCompletedRowForAnchor(type, anchorDate)
+                    .or(() -> findLatestCompletedRow(type, anchorDate))
+                    .ifPresent(rows::add);
+        }
+
+        for (BriefingRow row : findLatestCompletedRows(anchorDate, 20)) {
+            if (rows.stream().noneMatch(existing -> existing.id().equals(row.id()))) {
+                rows.add(row);
+            }
+            if (rows.size() >= 20) {
+                break;
+            }
+        }
+        return rows;
+    }
+
+    private Optional<BriefingRow> findCompletedRowForAnchor(String briefingType, LocalDate anchorDate) {
+        try {
+            List<BriefingRow> rows = jdbcTemplate.query(
+                    """
+                            SELECT id,
+                                   title,
+                                   briefing_type,
+                                   date_from::text AS date_from,
+                                   date_to::text AS date_to,
+                                   COALESCE(report_date, date_to)::text AS report_date,
+                                   period_label,
+                                   status,
+                                   progress::double precision AS progress,
+                                   key_summary,
+                                   sk_implication,
+                                   cardinality(COALESCE(related_card_ids, '{}'::text[])) AS primary_count,
+                                   payload::text AS payload_json,
+                                   COALESCE(provenance, '{}'::jsonb)::text AS provenance_json,
+                                   created_at::text AS created_at,
+                                   completed_at::text AS completed_at
+                              FROM briefing_reports
+                             WHERE briefing_type = ?
+                               AND CAST(? AS date) BETWEEN date_from AND date_to
+                               AND status IN ('completed', 'completed_partial')
+                             ORDER BY completed_at DESC NULLS LAST,
+                                      created_at DESC
+                             LIMIT 1
+                            """,
+                    (rs, rowNum) -> mapRow(rs),
+                    briefingType,
+                    anchorDate.toString()
+            );
+            return rows.stream().findFirst();
+        } catch (DataAccessException e) {
+            log.warn("Briefing report period query failed | type={} anchor={} error={}",
+                    briefingType, anchorDate, rootMessage(e));
+            return Optional.empty();
+        }
+    }
+
     private Optional<BriefingRow> findLatestCompletedRow(String briefingType, LocalDate anchorDate) {
         try {
             List<BriefingRow> rows = jdbcTemplate.query(
@@ -231,7 +298,7 @@ public class BriefingReportService {
     }
 
     private Map<String, Object> snapshotFromPayload(BriefingRow row) {
-        String key = "weekly".equals(row.briefingType()) ? "weeklySnapshot" : "dailySnapshot";
+        String key = snapshotKey(row.briefingType());
         Map<String, Object> direct = mapValue(row.payload().get(key));
         if (!direct.isEmpty()) {
             return normalizeSnapshot(direct);
@@ -240,6 +307,14 @@ public class BriefingReportService {
         Map<String, Object> frontend = mapValue(row.payload().get("frontend_briefings"));
         Map<String, Object> nested = mapValue(frontend.get(key));
         return nested.isEmpty() ? Map.of() : normalizeSnapshot(nested);
+    }
+
+    private String snapshotKey(String briefingType) {
+        return switch (briefingType) {
+            case "weekly" -> "weeklySnapshot";
+            case "monthly" -> "monthlySnapshot";
+            default -> "dailySnapshot";
+        };
     }
 
     private Map<String, Object> normalizeSnapshot(Map<String, Object> source) {

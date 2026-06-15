@@ -71,13 +71,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/dashboard/**", "/api/cards/**").permitAll()
                         // CronJob entrypoints — Bearer ${CRON_INTERNAL_TOKEN} 검증은 CronInternalAuth 에서 수행.
                         // 이 경로를 화이트리스트하지 않으면 axis-cron-ingestion-{a,b,c,d}, axis-cron-delivery 가 401 로 실패함.
+                        // /api/alerts/scan(대형 이벤트 알림 스캔), /api/demo/**(시연 인젝트)도 동일하게 토큰 검증.
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/api/pipeline/trigger",
                                 "/api/pipeline/delivery",
-                                "/api/dashboard/today-insight/cron-generate"
+                                "/api/dashboard/today-insight/cron-generate",
+                                "/api/alerts/scan",
+                                "/api/demo/publish"
                         ).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/pipeline/status").permitAll();
+                        .requestMatchers(HttpMethod.GET, "/api/pipeline/status", "/api/demo/sent-alerts").permitAll();
                 if (agentTestEnabled) {
                     auth.requestMatchers("/api/dev/agents/**").permitAll();
                 }
@@ -95,10 +98,10 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
-            @Value("${axis.cors.allowed-origins:http://localhost:3000,http://localhost:3100}") String allowedOrigins
+            @Value("${axis.cors.allowed-origins:http://localhost:*,http://127.0.0.1:*}") String allowedOrigins
     ) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(splitCsv(allowedOrigins));
+        configuration.setAllowedOriginPatterns(splitCsv(allowedOrigins));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
         configuration.setAllowCredentials(true);

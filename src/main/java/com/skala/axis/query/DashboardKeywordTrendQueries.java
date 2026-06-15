@@ -23,6 +23,7 @@ public final class DashboardKeywordTrendQueries {
             ),
             deduped AS (
                 SELECT
+                    collected_at,
                     group_name,
                     period,
                     ratio,
@@ -65,6 +66,7 @@ public final class DashboardKeywordTrendQueries {
                     d.ratio,
                     d.cause_analysis,
                     d.source_name,
+                    d.collected_at,
                     d.prev_ratio
                 FROM history d
             )
@@ -77,7 +79,8 @@ public final class DashboardKeywordTrendQueries {
                 prev_ratio,
                 ROUND(ratio - COALESCE(prev_ratio, ratio), 2) AS ratio_delta,
                 cause_analysis::text AS cause_analysis,
-                source_name
+                source_name,
+                collected_at
             FROM windowed
             ORDER BY period ASC, group_name ASC
             """;

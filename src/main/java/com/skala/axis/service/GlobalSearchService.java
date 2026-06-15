@@ -1,6 +1,10 @@
 package com.skala.axis.service;
 
+import com.skala.axis.dto.SearchRequest;
+import com.skala.axis.dto.SearchResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -8,25 +12,39 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GlobalSearchService {
     private static final int DEFAULT_LIMIT = 8;
     private static final int MAX_LIMIT = 30;
-    private static final List<String> ALL_SCOPES = List.of("BRIEFING", "CARD_NEWS", "KEYWORD_GRAPH", "PEER_PLUS");
+    private static final List<String> ALL_SCOPES = List.of("BRIEFING", "CARD_NEWS", "PEER_PLUS");
+    // AI 의미 검색이 이 시간 안에 못 돌아오면 ILIKE 키워드 검색으로 폴백한다.
+    private static final Duration SEMANTIC_SEARCH_BUDGET = Duration.ofSeconds(3);
+    // 의미 검색 1위 = 95점: 제목 완전일치(110)보다는 낮고 부분일치(85)보다는 높게 끼워 넣는다.
+    private static final double SEMANTIC_SCORE_TOP = 95.0;
+    private static final double SEMANTIC_SCORE_STEP = 4.0;
+    private static final double SEMANTIC_SCORE_FLOOR = 50.0;
 
     private final JdbcTemplate jdbcTemplate;
+    private final AiClientService aiClientService;
+
+    @Value("${axis.search.semantic.enabled:true}")
+    private boolean semanticSearchEnabled;
 
     @Transactional(readOnly = true)
     public Map<String, Object> search(Map<String, Object> request) {
@@ -38,9 +56,6 @@ public class GlobalSearchService {
         }
         if (criteria.includes("CARD_NEWS")) {
             items.addAll(searchCardNews(criteria));
-        }
-        if (criteria.includes("KEYWORD_GRAPH")) {
-            items.addAll(searchKeywordGraph(criteria));
         }
         if (criteria.includes("PEER_PLUS")) {
             items.addAll(searchPeers(criteria));
@@ -54,7 +69,7 @@ public class GlobalSearchService {
             return stringValue(right.get("date")).compareTo(stringValue(left.get("date")));
         });
 
-        int limit = Math.min(criteria.limit(), items.size());
+        int limit = criteria.isMultiScope() ? items.size() : Math.min(criteria.limit(), items.size());
         List<Map<String, Object>> limitedItems = items.subList(0, limit);
         Map<String, Long> counts = new LinkedHashMap<>();
         ALL_SCOPES.forEach(scope -> counts.put(scope, items.stream().filter(item -> scope.equals(item.get("type"))).count()));
@@ -75,16 +90,39 @@ public class GlobalSearchService {
     }
 
     private List<Map<String, Object>> searchBriefings(SearchCriteria criteria) {
-        String searchText = "br.global_search_text";
+        String searchText = """
+                concat_ws(
+                    ' ',
+                    br.title,
+                    br.briefing_type,
+                    br.period_label,
+                    br.key_summary,
+                    br.sk_implication,
+                    br.global_search_text,
+                    br.payload::text,
+                    br.legacy_payload::text,
+                    array_to_string(br.related_card_ids, ' '),
+                    br.provenance::text
+                )
+                """;
+        String termMatchSql = briefingTermMatchSql(criteria, searchText);
         String briefingDate = "COALESCE(br.report_date, br.date_to, br.date_from)";
         SqlParts parts = new SqlParts();
         if (criteria.hasQuery()) {
             if (criteria.queryDate() != null) {
-                parts.add("(" + searchText + " ILIKE ? OR " + briefingDate + " = ?)",
-                        criteria.likePattern(),
-                        Date.valueOf(criteria.queryDate()));
-            } else {
+                List<Object> values = new ArrayList<>();
+                values.add(criteria.likePattern());
+                values.addAll(criteria.termLikePatterns());
+                values.add(Date.valueOf(criteria.queryDate()));
+                parts.add("(" + searchText + " ILIKE ? OR " + termMatchSql + " OR " + briefingDate + " = ?)",
+                        values.toArray());
+            } else if (criteria.termLikePatterns().isEmpty()) {
                 parts.add(searchText + " ILIKE ?", criteria.likePattern());
+            } else {
+                List<Object> values = new ArrayList<>();
+                values.add(criteria.likePattern());
+                values.addAll(criteria.termLikePatterns());
+                parts.add("(" + searchText + " ILIKE ? OR " + termMatchSql + ")", values.toArray());
             }
         }
         addDateRange(parts, criteria, briefingDate);
@@ -100,28 +138,163 @@ public class GlobalSearchService {
                     br.briefing_type,
                     br.status,
                     CASE
-                        WHEN lower(br.title) = lower(?) THEN 120
-                        WHEN %s = ? THEN 95
-                        WHEN lower(br.title) LIKE lower(?) THEN 90
-                        WHEN lower(COALESCE(br.key_summary, '')) LIKE lower(?) THEN 75
+                        WHEN lower(br.title) = lower(?) THEN 130
+                        WHEN %s = ? THEN 120
+                        WHEN lower(br.title) LIKE lower(?) THEN 115
+                        WHEN lower(COALESCE(br.key_summary, '')) LIKE lower(?) THEN 105
+                        WHEN lower(COALESCE(br.sk_implication, '')) LIKE lower(?) THEN 100
+                        WHEN %s ILIKE ? THEN 96
+                        WHEN %s THEN 88
                         ELSE 45
                     END AS score
                 FROM briefing_reports br
                 WHERE %s
                 ORDER BY score DESC, COALESCE(br.report_date, br.date_to, br.date_from) DESC, br.created_at DESC
                 LIMIT ?
-                """.formatted(briefingDate, parts.whereSql());
+                """.formatted(briefingDate, searchText, termMatchSql, parts.whereSql());
         List<Object> params = new ArrayList<>();
         params.add(criteria.query());
         params.add(criteria.queryDate() == null ? Date.valueOf(LocalDate.of(1900, 1, 1)) : Date.valueOf(criteria.queryDate()));
         params.add(criteria.likePattern());
         params.add(criteria.likePattern());
+        params.add(criteria.likePattern());
+        params.add(criteria.likePattern());
+        params.addAll(criteria.termLikePatterns());
         params.addAll(parts.params());
         params.add(criteria.limitPerScope());
         return jdbcTemplate.query(sql, this::briefingItem, params.toArray());
     }
 
+    private String briefingTermMatchSql(SearchCriteria criteria, String searchText) {
+        if (criteria.termLikePatterns().isEmpty()) {
+            return "FALSE";
+        }
+        return criteria.termLikePatterns().stream()
+                .map(ignored -> searchText + " ILIKE ?")
+                .reduce((left, right) -> left + " AND " + right)
+                .orElse("FALSE");
+    }
+
     private List<Map<String, Object>> searchCardNews(SearchCriteria criteria) {
+        List<Map<String, Object>> semantic = criteria.hasQuery() && semanticSearchEnabled
+                ? searchCardNewsSemantic(criteria)
+                : List.of();
+        if (semantic.size() >= criteria.limitPerScope()) {
+            return semantic;
+        }
+        List<Map<String, Object>> keyword = searchCardNewsKeyword(criteria);
+        if (semantic.isEmpty()) {
+            return keyword;
+        }
+        // 의미 검색 결과 우선, 키워드 결과는 중복 제거 후 보충.
+        Set<Object> seenIds = new LinkedHashSet<>();
+        semantic.forEach(item -> seenIds.add(item.get("id")));
+        List<Map<String, Object>> merged = new ArrayList<>(semantic);
+        keyword.stream()
+                .filter(item -> !seenIds.contains(item.get("id")))
+                .limit(Math.max(0, criteria.limitPerScope() - merged.size()))
+                .forEach(merged::add);
+        return merged;
+    }
+
+    /**
+     * axis-ai /search (BGE-M3 하이브리드 + 리랭킹) 위임 — 동의어·의미 매칭.
+     * SearchHit.rdb_id(raw_articles FK)를 card_news.primary_raw_article_id 로 역매핑해
+     * 화면 아이템으로 복원한다. AI 장애·시간 초과·결과 없음은 전부 빈 목록 → 호출부가 ILIKE 폴백.
+     */
+    private List<Map<String, Object>> searchCardNewsSemantic(SearchCriteria criteria) {
+        List<SearchResponse.Hit> hits;
+        try {
+            SearchResponse response = aiClientService
+                    .search(new SearchRequest(criteria.query(), null, null, criteria.limitPerScope()))
+                    .block(SEMANTIC_SEARCH_BUDGET);
+            hits = response == null || response.getHits() == null ? List.of() : response.getHits();
+        } catch (Exception e) {
+            log.debug("semantic search 폴백(ILIKE) | query={} cause={}", criteria.query(), e.toString());
+            return List.of();
+        }
+        List<Long> rdbIds = hits.stream()
+                .map(SearchResponse.Hit::getRdbId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (rdbIds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Map<String, Object>> rowsByRdbId = hydrateCardNewsByRawArticleIds(criteria, rdbIds);
+        List<Map<String, Object>> items = new ArrayList<>();
+        Set<Object> seenCardIds = new LinkedHashSet<>();
+        for (Long rdbId : rdbIds) {
+            Map<String, Object> row = rowsByRdbId.get(rdbId);
+            if (row == null || !seenCardIds.add(row.get("id"))) {
+                continue;
+            }
+            double score = Math.max(SEMANTIC_SCORE_FLOOR, SEMANTIC_SCORE_TOP - SEMANTIC_SCORE_STEP * items.size());
+            items.add(item(
+                    "CARD_NEWS",
+                    stringValue(row.get("id")),
+                    stringValue(row.get("title")),
+                    stringValue(row.get("subtitle")),
+                    nullToDefault(stringValue(row.get("company_name")), "카드뉴스"),
+                    "issues",
+                    stringValue(row.get("item_date")),
+                    score,
+                    Map.of(
+                            "importance", nullToEmpty(stringValue(row.get("importance"))),
+                            "eventType", nullToEmpty(stringValue(row.get("event_type")))
+                    )
+            ));
+        }
+        return items;
+    }
+
+    private Map<Long, Map<String, Object>> hydrateCardNewsByRawArticleIds(SearchCriteria criteria, List<Long> rdbIds) {
+        SqlParts parts = new SqlParts();
+        addDateRange(parts, criteria, "cn.created_at::date");
+        String dateFilter = parts.hasConditions() ? " AND " + parts.whereSql() : "";
+        String placeholders = String.join(", ", java.util.Collections.nCopies(rdbIds.size(), "?"));
+        String sql = """
+                SELECT
+                    cn.id,
+                    cn.title,
+                    COALESCE(NULLIF(cn.primary_keyword_category, ''), NULLIF(cn.event_type, ''), NULLIF(cn.importance, ''), '카드뉴스') AS subtitle,
+                    COALESCE(pc.name, cn.company) AS company_name,
+                    cn.created_at::date AS item_date,
+                    cn.importance,
+                    cn.event_type,
+                    cn.primary_raw_article_id
+                FROM card_news cn
+                LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
+                WHERE cn.status = 'ACTIVE' AND cn.primary_raw_article_id IN (%s)%s
+                """.formatted(placeholders, dateFilter);
+        List<Object> params = new ArrayList<>(rdbIds);
+        params.addAll(parts.params());
+        List<Map<String, Object>> rows = jdbcTemplate.query(sql, this::cardNewsHydrateRow, params.toArray());
+        Map<Long, Map<String, Object>> byRdbId = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object rdbId = row.get("primary_raw_article_id");
+            if (rdbId instanceof Number number) {
+                byRdbId.putIfAbsent(number.longValue(), row);
+            }
+        }
+        return byRdbId;
+    }
+
+    private Map<String, Object> cardNewsHydrateRow(ResultSet rs, int rowNum) throws SQLException {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", rs.getString("id"));
+        row.put("title", rs.getString("title"));
+        row.put("subtitle", rs.getString("subtitle"));
+        row.put("company_name", rs.getString("company_name"));
+        row.put("item_date", rs.getString("item_date"));
+        row.put("importance", rs.getString("importance"));
+        row.put("event_type", rs.getString("event_type"));
+        row.put("primary_raw_article_id", rs.getLong("primary_raw_article_id"));
+        return row;
+    }
+
+    private List<Map<String, Object>> searchCardNewsKeyword(SearchCriteria criteria) {
         String searchText = "cn.global_search_text";
         SqlParts parts = baseWhere(criteria, "cn.created_at::date", searchText);
         String sql = """
@@ -152,34 +325,6 @@ public class GlobalSearchService {
         params.addAll(parts.params());
         params.add(criteria.limitPerScope());
         return jdbcTemplate.query(sql, this::cardNewsItem, params.toArray());
-    }
-
-    private List<Map<String, Object>> searchKeywordGraph(SearchCriteria criteria) {
-        SqlParts parts = new SqlParts();
-        if (criteria.hasQuery()) {
-            parts.add("lower(keyword) LIKE lower(?)", criteria.likePattern());
-        }
-        addDateRange(parts, criteria, "cn.created_at::date");
-        String sql = """
-                SELECT
-                    keyword,
-                    COUNT(*) AS hit_count,
-                    MAX(cn.created_at::date) AS item_date,
-                    array_agg(DISTINCT COALESCE(pc.name, cn.company) ORDER BY COALESCE(pc.name, cn.company)) AS companies,
-                    MAX(CASE WHEN lower(keyword) = lower(?) THEN 100 ELSE 62 END) AS score
-                FROM card_news cn
-                LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
-                CROSS JOIN LATERAL unnest(COALESCE(cn.keywords, ARRAY[]::text[])) AS keyword
-                WHERE cn.status = 'ACTIVE' AND %s
-                GROUP BY keyword
-                ORDER BY score DESC, hit_count DESC, item_date DESC
-                LIMIT ?
-                """.formatted(parts.hasConditions() ? parts.whereSql() : "TRUE");
-        List<Object> params = new ArrayList<>();
-        params.add(criteria.query());
-        params.addAll(parts.params());
-        params.add(criteria.limitPerScope());
-        return jdbcTemplate.query(sql, this::keywordGraphItem, params.toArray());
     }
 
     private List<Map<String, Object>> searchPeers(SearchCriteria criteria) {
@@ -257,21 +402,6 @@ public class GlobalSearchService {
                 rs.getString("item_date"),
                 rs.getDouble("score"),
                 Map.of("importance", nullToEmpty(rs.getString("importance")), "eventType", nullToEmpty(rs.getString("event_type")))
-        );
-    }
-
-    private Map<String, Object> keywordGraphItem(ResultSet rs, int rowNum) throws SQLException {
-        String keyword = rs.getString("keyword");
-        return item(
-                "KEYWORD_GRAPH",
-                keyword,
-                keyword,
-                "관련 카드뉴스 " + rs.getLong("hit_count") + "건",
-                "키워드 그래프",
-                "keywordGraph",
-                rs.getString("item_date"),
-                rs.getDouble("score"),
-                Map.of("companies", nullToEmpty(rs.getString("companies")))
         );
     }
 
@@ -366,6 +496,22 @@ public class GlobalSearchService {
 
         String likePattern() {
             return "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        }
+
+        List<String> termLikePatterns() {
+            if (!hasQuery()) {
+                return List.of();
+            }
+            return java.util.Arrays.stream(query.split("\\s+"))
+                    .map(String::trim)
+                    .filter(term -> !term.isBlank())
+                    .distinct()
+                    .map(term -> "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+                    .toList();
+        }
+
+        boolean isMultiScope() {
+            return scopes.size() > 1;
         }
 
         int limitPerScope() {

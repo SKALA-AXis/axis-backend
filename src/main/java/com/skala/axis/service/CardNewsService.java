@@ -23,6 +23,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,14 +48,14 @@ public class CardNewsService {
     private final ObjectMapper objectMapper;
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
-        LocalDateTime since = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).withNano(0);
-        List<CardNews> cards = cardNewsRepository.findTodayCards(since, CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, null);
+        LocalDate today = LocalDate.now(DISPLAY_ZONE);
+        List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
+        return mapCards(cards, peerId, importance, null, today, true);
     }
 
     public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
         List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, eventType);
+        return mapCards(cards, peerId, importance, eventType, null, false);
     }
 
     public CardNewsResponse getById(String id) {
@@ -68,7 +69,9 @@ public class CardNewsService {
             List<CardNews> cards,
             String peerId,
             String importance,
-            String eventType
+            String eventType,
+            LocalDate basisDate,
+            boolean importanceFirst
     ) {
         List<CardNews> filtered = cards.stream()
                 .filter(card -> !isSelfCompanyCard(card))
@@ -78,7 +81,18 @@ public class CardNewsService {
                 .toList();
 
         Map<Long, RawArticle> rawArticleById = rawArticleById(filtered);
+        Comparator<CardNews> basisComparator = Comparator
+                .comparing((CardNews card) -> sortableBasisAt(card, rawArticleById))
+                .reversed();
+        Comparator<CardNews> importanceComparator = Comparator
+                .comparing((CardNews card) -> card.getImportanceScore() == null ? -1f : card.getImportanceScore())
+                .reversed();
+        Comparator<CardNews> comparator = importanceFirst
+                ? importanceComparator.thenComparing(basisComparator)
+                : basisComparator.thenComparing(importanceComparator);
         return filtered.stream()
+                .filter(card -> basisDate == null || basisDate.equals(cardBasisDate(card, rawArticleById)))
+                .sorted(comparator)
                 .map(card -> toResponse(card, rawArticleById))
                 .collect(Collectors.toList());
     }
@@ -107,8 +121,8 @@ public class CardNewsService {
         }
 
         List<String> summaryLines = summaryLines(card);
-        String cardPublishedDate = localDateInDisplayZone(card.getCreatedAt());
-        String sourcePublishedDate = publishedDate(primarySource, primaryRawArticle, card.getCreatedAt());
+        LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
+        String publishedDate = publishedDate(primarySource, primaryRawArticle, basisAt, card.getCreatedAt());
         String sourceUrl = stringValue(primarySource.get("url"), primaryRawArticle == null ? null : primaryRawArticle.getUrl());
         String sourceName = displaySourceName(primarySource, sourceUrl);
         List<Map<String, Object>> responseSources = new ArrayList<>(sources);
@@ -118,8 +132,8 @@ public class CardNewsService {
             fallbackSource.put("title", firstNonBlank(card.getTitle(), sourceName, "대표 원문"));
             fallbackSource.put("url", sourceUrl);
             fallbackSource.put("source_name", sourceName);
-            if (sourcePublishedDate != null) {
-                fallbackSource.put("published_at", sourcePublishedDate);
+            if (publishedDate != null) {
+                fallbackSource.put("published_at", publishedDate);
             }
             responseSources.add(fallbackSource);
         }
@@ -142,6 +156,16 @@ public class CardNewsService {
         if (insights.isEmpty() && potentialImpact != null && !potentialImpact.isBlank()) {
             insights = List.of(potentialImpact);
         }
+        List<Map<String, Object>> insightDetails = structuredTextItems(
+                responseImplication,
+                List.of("key_implication_blocks", "key_implication_items"),
+                insights
+        );
+        List<Map<String, Object>> actionDetails = structuredTextItems(
+                responseImplication,
+                List.of("response_direction_blocks", "suggested_action_items", "skax_checkpoint_blocks"),
+                suggestedActions
+        );
 
         return CardNewsResponse.builder()
                 .id(card.getId())
@@ -150,7 +174,7 @@ public class CardNewsService {
                 .title(card.getTitle())
                 .subtitle(rawArticleSubtitle(primaryRawArticle))
                 .category(categoryLabel(sector, card.getPrimaryKeywordCategory()))
-                .date(legacyDate(cardPublishedDate, card.getCreatedAt()))
+                .date(legacyDate(publishedDate, card.getCreatedAt()))
                 .eventType(card.getEventType())
                 .sector(sector)
                 .sectors(sectors)
@@ -170,7 +194,7 @@ public class CardNewsService {
                 .keywordFrequency(card.getKeywordFrequency() == null ? Map.of() : card.getKeywordFrequency())
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
-                .publishedDate(cardPublishedDate)
+                .publishedDate(publishedDate)
                 .createdAt(card.getCreatedAt())
                 .summaryLines(summaryLines)
                 .summary(summaryLines)
@@ -183,6 +207,8 @@ public class CardNewsService {
                 .detailPoints(List.of())
                 .insights(insights)
                 .actionItems(suggestedActions)
+                .insightDetails(insightDetails)
+                .actionDetails(actionDetails)
                 .implication(responseImplication)
                 .sources(responseSources)
                 .sourceRawArticleIds(sourceRawArticleIds(card))
@@ -210,6 +236,70 @@ public class CardNewsService {
 
         return rawArticleRepository.findAllById(articleIds).stream()
                 .collect(Collectors.toMap(RawArticle::getId, article -> article, (left, right) -> left, LinkedHashMap::new));
+    }
+
+    private LocalDate cardBasisDate(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
+        String basisDate = localDateInDisplayZone(basisAt);
+        return basisDate == null ? null : LocalDate.parse(basisDate);
+    }
+
+    private LocalDateTime sortableBasisAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
+        return basisAt == null ? LocalDateTime.MIN : basisAt;
+    }
+
+    private LocalDateTime cardBasisAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        LocalDateTime latestPublishedAt = latestSourcePublishedAt(card, rawArticleById);
+        return latestPublishedAt == null ? card.getCreatedAt() : latestPublishedAt;
+    }
+
+    private LocalDateTime latestSourcePublishedAt(CardNews card, Map<Long, RawArticle> rawArticleById) {
+        List<LocalDateTime> candidates = new ArrayList<>();
+        effectiveSources(card).stream()
+                .map(source -> parseSourcePublishedAt(source.get("published_at")))
+                .filter(Objects::nonNull)
+                .forEach(candidates::add);
+
+        LinkedHashSet<Long> articleIds = new LinkedHashSet<>();
+        if (card.getPrimaryRawArticleId() != null) {
+            articleIds.add(card.getPrimaryRawArticleId());
+        }
+        if (card.getSourceRawArticleIds() != null) {
+            Arrays.stream(card.getSourceRawArticleIds())
+                    .filter(Objects::nonNull)
+                    .forEach(articleIds::add);
+        }
+        articleIds.stream()
+                .map(rawArticleById::get)
+                .filter(Objects::nonNull)
+                .map(RawArticle::getPublishedAt)
+                .filter(Objects::nonNull)
+                .forEach(candidates::add);
+
+        return candidates.stream().max(LocalDateTime::compareTo).orElse(null);
+    }
+
+    private LocalDateTime parseSourcePublishedAt(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        try {
+            return OffsetDateTime.parse(text).atZoneSameInstant(DISPLAY_ZONE).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            // Fall through to local date-time/date parsing for legacy source payloads.
+        }
+        try {
+            return LocalDateTime.parse(text);
+        } catch (DateTimeParseException ignored) {
+            // Fall through.
+        }
+        try {
+            return LocalDate.parse(text.substring(0, Math.min(10, text.length()))).atStartOfDay();
+        } catch (DateTimeParseException | IndexOutOfBoundsException ignored) {
+            return null;
+        }
     }
 
     private boolean matchesPeer(CardNews card, String peerId) {
@@ -463,6 +553,71 @@ public class CardNewsService {
         return single.isEmpty() ? List.of() : List.of(single);
     }
 
+    private List<Map<String, Object>> structuredTextItems(
+            Map<String, Object> source,
+            List<String> keys,
+            List<String> fallbackLines
+    ) {
+        for (String key : keys) {
+            List<Map<String, Object>> blocks = normalizeStructuredTextBlocks(mapList(source.get(key)));
+            if (!blocks.isEmpty()) {
+                return blocks;
+            }
+        }
+        return structuredTextBlocksFromLines(fallbackLines);
+    }
+
+    private List<Map<String, Object>> normalizeStructuredTextBlocks(List<Map<String, Object>> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        for (Map<String, Object> item : values) {
+            String main = firstNonBlank(
+                    stringValue(item.get("main"), null),
+                    stringValue(item.get("sentence"), null)
+            );
+            String detail = firstNonBlank(
+                    stringValue(item.get("detail"), null),
+                    stringValue(item.get("evidence_sentence"), null)
+            );
+            if (main == null) {
+                continue;
+            }
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("main", main);
+            block.put("detail", detail == null ? "" : detail);
+            blocks.add(block);
+        }
+        return blocks;
+    }
+
+    private List<Map<String, Object>> structuredTextBlocksFromLines(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        for (String line : lines) {
+            Map<String, Object> block = splitMainDetailBlock(line);
+            if (!stringValue(block.get("main"), "").isBlank()) {
+                blocks.add(block);
+            }
+        }
+        return blocks;
+    }
+
+    private Map<String, Object> splitMainDetailBlock(String line) {
+        String text = line == null ? "" : line.trim().replaceAll("\\s+", " ");
+        text = text.replaceFirst("^핵심\\s*(?:시사점|대응)\\s*[:：]\\s*", "").trim();
+        String[] parts = text.split("\\s*근거\\s*/?\\s*설명\\s*[:：]\\s*", 2);
+        String main = parts.length > 0 ? parts[0].trim() : "";
+        String detail = parts.length > 1 ? parts[1].trim() : "";
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("main", main);
+        block.put("detail", detail);
+        return block;
+    }
+
     private Map<String, Object> objectMap(Object value) {
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
@@ -534,7 +689,16 @@ public class CardNewsService {
         return stringValue(article.getMetadata().get("subtitle"), null);
     }
 
-    private String publishedDate(Map<String, Object> primarySource, RawArticle primaryRawArticle, LocalDateTime createdAt) {
+    private String publishedDate(
+            Map<String, Object> primarySource,
+            RawArticle primaryRawArticle,
+            LocalDateTime basisAt,
+            LocalDateTime createdAt
+    ) {
+        String basisDate = localDateInDisplayZone(basisAt);
+        if (basisDate != null) {
+            return basisDate;
+        }
         String publishedAt = stringValue(primarySource.get("published_at"), null);
         String sourceDate = localDateInDisplayZone(publishedAt);
         if (sourceDate != null) {

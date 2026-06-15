@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -57,6 +58,16 @@ public class DashboardController {
         Map<String, Object> request = todayInsightRequest(params, false, true);
         LocalDate anchorDate = parseAnchorDate(request.get("anchor_date"));
 
+        // 사전 생성(cron 08:10 / warmup)된 today_insight_reports 가 있으면 DB 에서 바로 반환한다.
+        // 화면 새로고침 hot-path 에서 단일 axis-ai pod 로의 동기 round-trip(.block)을 제거 —
+        // 동시 접속 시 단일 ai 워커 직렬화로 인한 지연/먹통 완화. DB 는 ai 캐시와 동일 소스이며
+        // (cron save=true 로 저장) GET(save=false)은 생성하지 않으므로 staleness 차이가 없다.
+        Optional<Map<String, Object>> stored = todayInsightReportService.findLatestOnOrBefore(anchorDate);
+        if (stored.isPresent()) {
+            return ResponseEntity.ok(ApiResponse.success(stored.get()));
+        }
+
+        // 저장된 리포트가 아직 없을 때(콜드 스타트 등)만 axis-ai cache_only 경로로 조회한다.
         try {
             Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
             if (result != null && !result.isEmpty()) {
@@ -114,12 +125,17 @@ public class DashboardController {
 
     @PostMapping("/today-insight/warmup")
     public ResponseEntity<ApiResponse<Map<String, Object>>> warmupTodayInsight(@RequestParam Map<String, String> params) {
-        Map<String, Object> request = todayInsightRequest(params, true, true);
+        boolean generateNow = boolParam(params, "generate", false)
+                || boolParam(params, "force_refresh", false)
+                || boolParam(params, "save", false);
+        Map<String, Object> request = todayInsightRequest(params, true, !generateNow);
         if (!todayInsightWarmupInFlight.compareAndSet(false, true)) {
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(Map.of(
                     "status", "already_running",
                     "anchor_date", request.get("anchor_date"),
                     "cache_only", request.get("cache_only"),
+                    "force_refresh", request.get("force_refresh"),
+                    "save", request.get("save"),
                     "refresh_policy", request.get("refresh_policy"),
                     "update_policy", "daily_0810_kst"
             )));
@@ -138,6 +154,8 @@ public class DashboardController {
                 "status", "accepted",
                 "anchor_date", request.get("anchor_date"),
                 "cache_only", request.get("cache_only"),
+                "force_refresh", request.get("force_refresh"),
+                "save", request.get("save"),
                 "refresh_policy", request.get("refresh_policy"),
                 "update_policy", "daily_0810_kst"
         )));
@@ -158,8 +176,11 @@ public class DashboardController {
             request.put("cache_only", true);
             request.put("save", false);
         } else {
-            request.put("use_cached", boolParam(params, "use_cached", true));
-            request.put("force_refresh", boolParam(params, "force_refresh", false));
+            boolean manualGenerate = boolParam(params, "generate", false)
+                    || boolParam(params, "force_refresh", false)
+                    || boolParam(params, "save", false);
+            request.put("use_cached", boolParam(params, "use_cached", !manualGenerate));
+            request.put("force_refresh", boolParam(params, "force_refresh", manualGenerate));
             request.put("cache_only", false);
             request.put("save", boolParam(params, "save", true));
         }
@@ -229,11 +250,7 @@ public class DashboardController {
                 .map(latest -> ResponseEntity.ok(ApiResponse.success(latest)))
                 .orElseGet(() -> {
                     log.warn("TodayInsight 저장 결과 없음 | anchor={} status_payload={}", anchorDate, statusPayload);
-                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                            .body(ApiResponse.<Map<String, Object>>error(
-                                    "TODAY_INSIGHT_RESULT_UNAVAILABLE",
-                                    AiServerException.CALL_FAILED_MESSAGE
-                            ));
+                    return ResponseEntity.ok(ApiResponse.success(statusPayload));
                 });
     }
 
