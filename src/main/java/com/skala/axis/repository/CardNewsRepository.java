@@ -7,12 +7,23 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface CardNewsRepository extends JpaRepository<CardNews, String> {
     @Query("SELECT c FROM CardNews c WHERE c.status = :status AND c.createdAt >= :since ORDER BY c.importanceScore DESC")
     List<CardNews> findTodayCards(@Param("since") LocalDateTime since, @Param("status") CardNewsStatus status);
+
+    /**
+     * 대형 이벤트 알림 후보 — 지정 event_type(소문자) 의 최근 ACTIVE 카드.
+     * 게이트/중복 판정은 {@code EventAlertService} 가 수행.
+     */
+    @Query("SELECT c FROM CardNews c WHERE c.status = :status AND c.createdAt >= :since "
+            + "AND lower(c.eventType) IN :eventTypes ORDER BY c.createdAt DESC")
+    List<CardNews> findAlertCandidates(@Param("since") LocalDateTime since,
+                                       @Param("status") CardNewsStatus status,
+                                       @Param("eventTypes") Collection<String> eventTypes);
 
     List<CardNews> findByPeerIdOrderByCreatedAtDesc(String peerId);
 

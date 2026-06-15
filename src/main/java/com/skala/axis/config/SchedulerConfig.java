@@ -2,6 +2,7 @@ package com.skala.axis.config;
 
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingService;
+import com.skala.axis.service.EventAlertService;
 import com.skala.axis.service.TodayInsightCronRequestFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,7 @@ import java.util.Map;
 public class SchedulerConfig {
     private final AiClientService aiClientService;
     private final BriefingService briefingService;
+    private final EventAlertService eventAlertService;
 
     @Value("${axis.scheduler.ingestion-peer-ids}")
     private List<String> ingestionPeerIds;
@@ -35,6 +37,17 @@ public class SchedulerConfig {
     public void sendDailyBriefing() {
         log.info("일일 브리핑 전송 시작");
         briefingService.generateAndSend();
+    }
+
+    /**
+     * 대형 이벤트(수주·파트너십·M&A) 1회성 알림 자동 스캔.
+     * 기본 매시 :15(07–22시) — 노드 야간 셧다운(23–07 KST) 창을 피한다.
+     */
+    @Scheduled(cron = "${axis.alert.scan-cron:0 15 7-22 * * *}", zone = "Asia/Seoul")
+    public void scanEventAlerts() {
+        EventAlertService.ScanResult result = eventAlertService.scanRecent("auto");
+        log.info("대형 이벤트 알림 자동 스캔 완료 — 후보 {} 발송 {} 스킵 {} 실패 {}",
+                result.candidates(), result.sent(), result.skipped(), result.failed());
     }
 
     @Scheduled(cron = "${axis.scheduler.today-insight-cron:0 10 8 * * MON-FRI}", zone = "Asia/Seoul")
