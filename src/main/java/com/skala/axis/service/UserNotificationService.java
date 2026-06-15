@@ -9,6 +9,7 @@ import com.skala.axis.repository.UserNotificationRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class UserNotificationService {
+    private static final int MAX_LIST_LIMIT = 100;
+
     private final AuthService authService;
     private final CardNewsRepository cardNewsRepository;
     private final UserNotificationRepository notificationRepository;
@@ -43,25 +46,38 @@ public class UserNotificationService {
 
     @Transactional
     public Map<String, Object> list(UUID userId, boolean unreadOnly, int limit) {
+        return list(userId, unreadOnly, limit, 0);
+    }
+
+    @Transactional
+    public Map<String, Object> list(UUID userId, boolean unreadOnly, int limit, int page) {
         User user = authService.requireUser(userId);
         syncRecentCardNewsNotifications(user);
-        int cappedLimit = Math.min(Math.max(1, limit), 50);
-        PageRequest page = PageRequest.of(0, cappedLimit + 1);
-        List<UserNotification> notifications = unreadOnly
-                ? notificationRepository.findByUserIdAndReadAtIsNullAndDeletedAtIsNullOrderByCreatedAtDesc(userId, page)
-                : notificationRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId, page);
-        boolean hasNext = notifications.size() > cappedLimit;
+        int safePage = Math.max(0, page);
+        int cappedLimit = Math.min(Math.max(1, limit), MAX_LIST_LIMIT);
+        PageRequest pageRequest = PageRequest.of(safePage, cappedLimit);
+        Page<UserNotification> notifications = unreadOnly
+                ? notificationRepository.findByUserIdAndReadAtIsNullAndDeletedAtIsNullOrderByCreatedAtDesc(userId, pageRequest)
+                : notificationRepository.findByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(userId, pageRequest);
         List<Map<String, Object>> items = notifications.stream()
-                .limit(cappedLimit)
                 .map(this::toItem)
                 .toList();
         long unreadCount = notificationRepository.countByUserIdAndReadAtIsNullAndDeletedAtIsNull(userId);
+        long totalCount = notifications.getTotalElements();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("items", items);
         response.put("unread_count", unreadCount);
         response.put("unreadCount", unreadCount);
+        response.put("page", notifications.getNumber());
+        response.put("limit", notifications.getSize());
+        response.put("size", notifications.getSize());
+        response.put("total", totalCount);
+        response.put("total_count", totalCount);
+        response.put("totalCount", totalCount);
+        response.put("totalPages", notifications.getTotalPages());
+        response.put("total_pages", notifications.getTotalPages());
         response.put("nextCursor", null);
-        response.put("hasNext", hasNext);
+        response.put("hasNext", notifications.hasNext());
         return response;
     }
 

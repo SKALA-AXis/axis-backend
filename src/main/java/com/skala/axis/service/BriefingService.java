@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,6 +45,9 @@ public class BriefingService {
 
     @Value("${briefing.recipients:}")
     private String briefingRecipientsCsv;
+
+    @Value("${axis.auth.app-base-url:http://localhost:3100}")
+    private String appBaseUrl;
 
     public void generateAndSend() {
         List<CardNewsResponse> todayCards = cardNewsService.getTodayCards(null, null);
@@ -92,14 +97,17 @@ public class BriefingService {
 
             sb.append("■ ").append(display.label()).append(" 경향")
                     .append(" · ").append(sectorCards.size()).append("건")
-                    .append(" · ").append(trendLabel(sectorCards))
                     .append("\n");
             sb.append("  ").append(display.description()).append("\n");
 
             for (CardNewsResponse card : sectorCards) {
                 sb.append("- ");
-                sb.append("[").append(cardBadgeText(card)).append("] ");
+                String badge = cardBadgeText(card);
+                if (!badge.isBlank()) {
+                    sb.append("[").append(badge).append("] ");
+                }
                 sb.append(card.getTitle()).append("\n");
+                sb.append("  ").append(cardNewsLink(card)).append("\n");
             }
             sb.append("\n");
         }
@@ -110,20 +118,16 @@ public class BriefingService {
     /**
      * 카드 line head 의 메타 badge 텍스트.
      *
-     * <p>예: {@code "samsung_sds · infra · 0.75"} — peer id · sector · exposure score.
-     * peer / sector / score 중 누락된 항목은 자동 skip.</p>
+     * <p>예: {@code "samsung_sds · infra"} — peer id · sector.
+     * peer / sector 중 누락된 항목은 자동 skip.</p>
      */
     private String cardBadgeText(CardNewsResponse card) {
-        java.util.List<String> parts = new java.util.ArrayList<>(3);
+        java.util.List<String> parts = new java.util.ArrayList<>(2);
         if (card.getPeerId() != null && !card.getPeerId().isBlank()) {
             parts.add(card.getPeerId());
         }
         if (card.getSector() != null && !card.getSector().isBlank()) {
             parts.add(card.getSector());
-        }
-        Float score = card.getExposureScore() != null ? card.getExposureScore() : card.getImportanceScore();
-        if (score != null) {
-            parts.add(String.format(Locale.ROOT, "%.2f", score));
         }
         return String.join(" · ", parts);
     }
@@ -151,16 +155,21 @@ public class BriefingService {
             sb.append("<section style=\"margin-bottom:24px;\">");
             sb.append("<h2 style=\"font-size:16px;margin:0 0 4px;color:#111827;\">")
                     .append(htmlEscape(display.label())).append(" 경향 · ")
-                    .append(sectorCards.size()).append("건 · ")
-                    .append(htmlEscape(trendLabel(sectorCards))).append("</h2>");
+                    .append(sectorCards.size()).append("건</h2>");
             sb.append("<p style=\"margin:0 0 12px;color:#6b7280;font-size:13px;\">")
                     .append(htmlEscape(display.description())).append("</p>");
             sb.append("<ul style=\"list-style:none;padding:0;margin:0;\">");
             for (CardNewsResponse card : sectorCards) {
                 sb.append("<li style=\"padding:8px 0;border-bottom:1px solid #e5e7eb;\">");
-                sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
-                        .append(htmlEscape(cardBadgeText(card))).append("]</span> ");
-                sb.append(htmlEscape(card.getTitle()));
+                String badge = cardBadgeText(card);
+                if (!badge.isBlank()) {
+                    sb.append("<span style=\"color:#6b7280;font-size:13px;\">[")
+                            .append(htmlEscape(badge)).append("]</span> ");
+                }
+                String link = htmlEscape(cardNewsLink(card));
+                sb.append("<a href=\"").append(link).append("\" style=\"color:#111827;text-decoration:none;font-weight:600;\">")
+                        .append(htmlEscape(card.getTitle()))
+                        .append("</a>");
                 sb.append("</li>");
             }
             sb.append("</ul></section>");
@@ -178,6 +187,18 @@ public class BriefingService {
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;");
+    }
+
+    private String cardNewsLink(CardNewsResponse card) {
+        String encodedId = URLEncoder.encode(card.getId(), StandardCharsets.UTF_8);
+        return trimTrailingSlash(appBaseUrl) + "/issues?card=" + encodedId;
+    }
+
+    private static String trimTrailingSlash(String value) {
+        if (value == null || value.isBlank()) {
+            return "http://localhost:3100";
+        }
+        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
     private Map<String, List<CardNewsResponse>> groupBySector(List<CardNewsResponse> cards) {
@@ -256,22 +277,6 @@ public class BriefingService {
             }
         }
         return false;
-    }
-
-    private String trendLabel(List<CardNewsResponse> cards) {
-        Float score = cards.stream()
-                .map(this::trendScore)
-                .max(Float::compareTo)
-                .orElse(0.0f);
-        String label;
-        if (score >= 0.65f) {
-            label = "강한 흐름";
-        } else if (score >= 0.40f) {
-            label = "형성 중";
-        } else {
-            label = "관찰 흐름";
-        }
-        return label + " (" + String.format(Locale.ROOT, "%.2f", score) + ")";
     }
 
     private Float trendScore(CardNewsResponse card) {

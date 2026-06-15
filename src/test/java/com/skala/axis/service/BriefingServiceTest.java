@@ -33,6 +33,7 @@ class BriefingServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(briefingService, "briefingRecipientsCsv", "test@example.com");
+        ReflectionTestUtils.setField(briefingService, "appBaseUrl", "https://axis.example");
     }
 
     @Test
@@ -57,9 +58,16 @@ class BriefingServiceTest {
         String text = textCaptor.getValue();
         assertThat(text)
                 .contains("AXIS 오늘의 섹터별 브리핑")
-                .contains("AX 경향 · 1건 · 강한 흐름 (0.72)")
-                .contains("보안 경향 · 1건 · 형성 중 (0.61)")
-                .contains("인프라 경향 · 1건 · 형성 중 (0.47)")
+                .contains("AX 경향 · 1건")
+                .contains("보안 경향 · 1건")
+                .contains("인프라 경향 · 1건")
+                .contains("https://axis.example/issues?card=AX-1")
+                .doesNotContain("강한 흐름")
+                .doesNotContain("형성 중")
+                .doesNotContain("관찰 흐름")
+                .doesNotContain("0.72")
+                .doesNotContain("0.61")
+                .doesNotContain("0.47")
                 .doesNotContain("urgent")
                 .doesNotContain("notable")
                 .doesNotContain("reference");
@@ -68,6 +76,9 @@ class BriefingServiceTest {
         assertThat(html)
                 .contains("<!DOCTYPE html")
                 .contains("AXIS 오늘의 섹터별 브리핑")
+                .contains("href=\"https://axis.example/issues?card=AX-1\"")
+                .doesNotContain("강한 흐름")
+                .doesNotContain("0.72")
                 .contains("AX")
                 .contains("보안");
     }

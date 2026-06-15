@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,16 +32,26 @@ public class NotificationController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> listNotifications(
             @RequestParam(defaultValue = "false") boolean unread_only,
             @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "0") int page,
             Authentication authentication
     ) {
         if (authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(userNotificationService.list(AuthSecurity.requireUserId(authentication), unread_only, limit)));
+            return ResponseEntity.ok(ApiResponse.success(userNotificationService.list(AuthSecurity.requireUserId(authentication), unread_only, limit, page)));
         }
-        return ResponseEntity.ok(ApiResponse.success(Map.of(
-                "items", List.of(),
-                "unread_count", 0,
-                "unreadCount", 0
-        )));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("items", List.of());
+        response.put("unread_count", 0);
+        response.put("unreadCount", 0);
+        response.put("page", Math.max(0, page));
+        response.put("limit", Math.max(1, limit));
+        response.put("size", Math.max(1, limit));
+        response.put("total", 0);
+        response.put("total_count", 0);
+        response.put("totalCount", 0);
+        response.put("totalPages", 0);
+        response.put("total_pages", 0);
+        response.put("hasNext", false);
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @GetMapping("/unread-count")

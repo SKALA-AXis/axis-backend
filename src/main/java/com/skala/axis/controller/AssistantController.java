@@ -45,6 +45,10 @@ public class AssistantController {
     private static final String GENERIC_ASSISTANT_ERROR = AiServerException.CALL_FAILED_MESSAGE;
     private static final String ERROR_CHAT_EMPTY_RESPONSE = "ASSISTANT_CHAT_EMPTY_RESPONSE";
     private static final String ERROR_PDF_EMPTY_RESPONSE = "ASSISTANT_PDF_EMPTY_RESPONSE";
+    private static final String ERROR_PDF_FILE_REQUIRED = "ASSISTANT_PDF_FILE_REQUIRED";
+    private static final String ERROR_PDF_FILE_TOO_LARGE = "ASSISTANT_PDF_FILE_TOO_LARGE";
+    private static final String ERROR_PDF_UNSUPPORTED_TYPE = "ASSISTANT_PDF_UNSUPPORTED_TYPE";
+    private static final String ERROR_PDF_REQUEST_JSON_INVALID = "ASSISTANT_PDF_REQUEST_JSON_INVALID";
 
     private final AiClientService aiClientService;
     private final AssistantConversationService assistantConversationService;
@@ -113,10 +117,24 @@ public class AssistantController {
     @PostMapping(value = "/chat/pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<Map<String, Object>>> sendAssistantChatPdfMessage(
             @RequestParam(name = "request_json", required = false) String requestJson,
-            @RequestParam(name = "file") MultipartFile file,
+            @RequestParam(name = "file", required = false) MultipartFile file,
             Authentication authentication) {
-        validatePdfFile(file);
-        Map<String, Object> body = parseRequestJson(requestJson);
+        Map<String, Object> body;
+        try {
+            body = parseRequestJson(requestJson);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.ok(ApiResponse.success(
+                    invalidPdfChatResponse(new LinkedHashMap<>(), ERROR_PDF_REQUEST_JSON_INVALID, e.getMessage())
+            ));
+        }
+
+        PdfValidationError validationError = validatePdfFile(file);
+        if (validationError != null) {
+            return ResponseEntity.ok(ApiResponse.success(
+                    invalidPdfChatResponse(body, validationError.code(), validationError.message())
+            ));
+        }
+
         String message = body.get("message") instanceof String s ? s : "";
         if (message.isBlank()) {
             body.put("message", "첨부 PDF를 분석해줘");
@@ -146,6 +164,35 @@ public class AssistantController {
         log.info("AssistantChatPdf | intent={} session={} confidence={}",
                 result.get("intent"), result.get("session_id"), result.get("confidence"));
         return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    private Map<String, Object> invalidPdfChatResponse(
+            Map<String, Object> request,
+            String errorCode,
+            String errorMessage
+    ) {
+        String conversationId = responseConversationId(request);
+        Map<String, Object> response = assistantSystemResponse(
+                conversationId,
+                GENERIC_ASSISTANT_ERROR + "\n에러코드: " + errorCode,
+                "assistant_error",
+                "assistant_invalid_request",
+                errorCode,
+                errorMessage
+        );
+        response.put("status", "failed");
+        response.put("result_kind", "assistant_invalid_request");
+        response.put("error_code", errorCode);
+        response.put("blocked", true);
+        response.put("blocked_reason", errorCode);
+        response.put("follow_up_suggestions", List.of("15MB 이하 PDF 파일을 다시 첨부해줘"));
+        Object provenance = response.get("provenance");
+        if (provenance instanceof Map<?, ?> provenanceMap) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> mutableProvenance = (Map<String, Object>) provenanceMap;
+            mutableProvenance.put("result_kind", "assistant_invalid_request");
+        }
+        return assistantConversationService.normalizeAssistantResponse(response);
     }
 
     @PostMapping("/conversations")
@@ -221,9 +268,7 @@ public class AssistantController {
     }
 
     private Map<String, Object> emptyChatResponse(Map<String, Object> request) {
-        String conversationId = String.valueOf(
-                request.getOrDefault("conversation_id", UUID.randomUUID().toString())
-        );
+        String conversationId = responseConversationId(request);
         Map<String, Object> response = assistantSystemResponse(
                 conversationId,
                 "질문을 입력해 주세요. 카드뉴스, 오늘 인사이트, 브리핑, 믹서 결과에 대해 답변할 수 있습니다.",
@@ -241,9 +286,7 @@ public class AssistantController {
             String errorCode,
             String errorMessage
     ) {
-        String conversationId = String.valueOf(
-                request.getOrDefault("conversation_id", UUID.randomUUID().toString())
-        );
+        String conversationId = responseConversationId(request);
         Map<String, Object> response = assistantSystemResponse(
                 conversationId,
                 GENERIC_ASSISTANT_ERROR + "\n에러코드: " + errorCode,
@@ -307,22 +350,34 @@ public class AssistantController {
         return response;
     }
 
-    private void validatePdfFile(MultipartFile file) {
+    private String responseConversationId(Map<String, Object> request) {
+        Object rawValue = request.get("conversation_id");
+        String value = rawValue == null ? "" : String.valueOf(rawValue).trim();
+        if (value.isBlank() || "null".equalsIgnoreCase(value)) {
+            return UUID.randomUUID().toString();
+        }
+        return value;
+    }
+
+    private PdfValidationError validatePdfFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("PDF 파일이 필요합니다.");
+            return new PdfValidationError(ERROR_PDF_FILE_REQUIRED, "PDF 파일이 필요합니다.");
         }
         if (file.getSize() > MAX_PDF_BYTES) {
-            throw new IllegalArgumentException("PDF 파일은 15MB 이하만 업로드할 수 있습니다.");
+            return new PdfValidationError(ERROR_PDF_FILE_TOO_LARGE, "PDF 파일은 15MB 이하만 업로드할 수 있습니다.");
         }
         String name = safeFileName(file).toLowerCase(java.util.Locale.ROOT);
         String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(java.util.Locale.ROOT);
         if (!name.endsWith(".pdf") && !contentType.equals("application/pdf")) {
-            throw new IllegalArgumentException("PDF 파일만 업로드할 수 있습니다.");
+            return new PdfValidationError(ERROR_PDF_UNSUPPORTED_TYPE, "PDF 파일만 업로드할 수 있습니다.");
         }
+        return null;
     }
 
     private String safeFileName(MultipartFile file) {
         String value = file.getOriginalFilename();
         return value == null || value.isBlank() ? "attachment.pdf" : value;
     }
+
+    private record PdfValidationError(String code, String message) {}
 }
