@@ -8,6 +8,8 @@ import com.skala.axis.exception.AuthException;
 import com.skala.axis.repository.UserAccessLogRepository;
 import com.skala.axis.repository.UserSettingRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,13 +86,25 @@ public class UserSettingsService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> accessLogs(UUID userId) {
+    public Map<String, Object> accessLogs(UUID userId, int page, int size) {
         authService.requireUser(userId);
-        List<Map<String, Object>> items = userAccessLogRepository.findTop20ByUserIdOrderByOccurredAtDesc(userId)
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(50, Math.max(1, size));
+        Page<UserAccessLog> result = userAccessLogRepository.findByUserIdOrderByOccurredAtDesc(
+                userId,
+                PageRequest.of(safePage, safeSize)
+        );
+        List<Map<String, Object>> items = result
                 .stream()
                 .map(this::toAccessLogItem)
                 .toList();
-        return Map.of("items", items);
+        return Map.of(
+                "items", items,
+                "page", result.getNumber(),
+                "size", result.getSize(),
+                "total", result.getTotalElements(),
+                "totalPages", result.getTotalPages()
+        );
     }
 
     private Map<String, Object> toAccessLogItem(UserAccessLog log) {
@@ -108,13 +122,24 @@ public class UserSettingsService {
     private String accessLogCountry(UserAccessLog log) {
         Object country = log.getMetadata() == null ? null : log.getMetadata().get("country");
         if (country instanceof String value && !value.isBlank()) {
-            return value;
+            return normalizeAccessLocation(value);
         }
         Object countryCode = log.getMetadata() == null ? null : log.getMetadata().get("countryCode");
-        return RequestMetadata.inferCountryName(
+        return normalizeAccessLocation(RequestMetadata.inferCountryName(
                 log.getIpAddress(),
                 countryCode instanceof String value ? value : null
-        );
+        ));
+    }
+
+    private String normalizeAccessLocation(String value) {
+        String label = value == null ? "" : value.trim();
+        if ("내부망".equals(label)) {
+            return "사내/내부망";
+        }
+        if ("로컬".equals(label)) {
+            return "로컬 개발환경";
+        }
+        return label.isBlank() ? "알 수 없음" : label;
     }
 
     private UserSetting setting(UUID userId) {

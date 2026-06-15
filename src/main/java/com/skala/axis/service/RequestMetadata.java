@@ -24,10 +24,10 @@ public record RequestMetadata(String ipAddress, String userAgent, String country
 
     public static String inferCountryName(String ipAddress, String countryCode) {
         if (isLoopbackAddress(ipAddress)) {
-            return "로컬";
+            return "로컬 개발환경";
         }
         if (isPrivateAddress(ipAddress)) {
-            return "내부망";
+            return "사내/내부망";
         }
         String normalizedCode = normalizeCountryCode(countryCode);
         if (normalizedCode == null) {

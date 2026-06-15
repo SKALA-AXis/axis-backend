@@ -5,11 +5,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -131,5 +133,40 @@ class FrontendCompatibilitySmokeTests {
                 .andExpect(jsonPath("$.data.message.content").value(org.hamcrest.Matchers.not(
                         "오늘 인사이트, 근거 카드뉴스, SK AX 대응 방향을 묶어 보고서 초안을 만들었습니다."
                 )));
+    }
+
+    @Test
+    void assistantPdfChatReturnsStructuredErrorCodesForInvalidAttachments() throws Exception {
+        MockMultipartFile textFile = new MockMultipartFile(
+                "file",
+                "note.txt",
+                "text/plain",
+                "not a pdf".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        mockMvc.perform(multipart("/api/assistant/chat/pdf")
+                        .file(textFile)
+                        .param("request_json", "{\"message\":\"분석해줘\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.intent").value("assistant_error"))
+                .andExpect(jsonPath("$.data.error_code").value("ASSISTANT_PDF_UNSUPPORTED_TYPE"))
+                .andExpect(jsonPath("$.data.blocked").value(true))
+                .andExpect(jsonPath("$.data.blocked_reason").value("ASSISTANT_PDF_UNSUPPORTED_TYPE"));
+
+        MockMultipartFile tooLargePdf = new MockMultipartFile(
+                "file",
+                "large.pdf",
+                "application/pdf",
+                new byte[(int) (15L * 1024L * 1024L + 1L)]
+        );
+        mockMvc.perform(multipart("/api/assistant/chat/pdf")
+                        .file(tooLargePdf)
+                        .param("request_json", "{\"message\":\"분석해줘\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.intent").value("assistant_error"))
+                .andExpect(jsonPath("$.data.error_code").value("ASSISTANT_PDF_FILE_TOO_LARGE"))
+                .andExpect(jsonPath("$.data.blocked").value(true))
+                .andExpect(jsonPath("$.data.blocked_reason").value("ASSISTANT_PDF_FILE_TOO_LARGE"));
     }
 }

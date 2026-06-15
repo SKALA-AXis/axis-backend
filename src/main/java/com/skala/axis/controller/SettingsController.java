@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -145,13 +146,20 @@ public class SettingsController {
     }
 
     @GetMapping("/access-logs")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getMyAccessLogs(Authentication authentication) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getMyAccessLogs(
+            Authentication authentication,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "5") int size
+    ) {
         if (authProperties.isEnforce()) {
-            return ResponseEntity.ok(ApiResponse.success(userSettingsService.accessLogs(AuthSecurity.requireUserId(authentication))));
+            return ResponseEntity.ok(ApiResponse.success(userSettingsService.accessLogs(AuthSecurity.requireUserId(authentication), page, size)));
         }
         return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "items", List.of(),
-                "total", 0
+                "page", Math.max(0, page),
+                "size", Math.max(1, size),
+                "total", 0,
+                "totalPages", 0
         )));
     }
 
