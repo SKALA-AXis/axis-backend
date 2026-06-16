@@ -64,11 +64,21 @@ class EventAlertServiceTest {
         assertThat(outcome).isEqualTo(EventAlertService.AlertOutcome.SENT);
 
         ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
-        verify(sesMailService).sendBriefing(anyList(), subjectCaptor.capture(), anyString(), anyString());
+        ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(sesMailService).sendBriefing(
+                anyList(), subjectCaptor.capture(), htmlCaptor.capture(), anyString());
         assertThat(subjectCaptor.getValue())
-                .contains("중요 신호")
+                .contains("[AXIS 알림]")
+                .doesNotContain("🚨")
+                .doesNotContain("중요 신호")
                 .contains("수주·계약")
                 .contains("삼성SDS 1조원 규모 차세대 시스템 수주");
+        assertThat(htmlCaptor.getValue())
+                .contains("[AXIS 알림]")
+                .contains("Samsung SDS")
+                .doesNotContain("🚨")
+                .doesNotContain("중요 신호")
+                .doesNotContain("중요도");
     }
 
     @Test
