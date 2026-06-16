@@ -243,6 +243,32 @@ public class AiClientService {
         return postRaw("/today-insight/generate", body, Duration.ofSeconds(90));
     }
 
+    public Mono<Map<String, Object>> summarizeUserStrategyOverlay(
+            String rawText,
+            String title,
+            java.util.UUID userId,
+            Map<String, Object> metadata
+    ) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("raw_text", rawText);
+        body.put("title", title);
+        body.put("user_id", userId == null ? null : userId.toString());
+        body.put("metadata", metadata == null ? Map.of() : metadata);
+        return postRaw("/profile/user-skax-overlay", body, Duration.ofSeconds(120));
+    }
+
+    public Mono<Map<String, Object>> ocrUserStrategyFile(
+            String fileName,
+            String contentType,
+            byte[] fileBytes
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("file_name", fileName);
+        body.put("content_type", contentType);
+        body.put("file_base64", Base64.getEncoder().encodeToString(fileBytes == null ? new byte[0] : fileBytes));
+        return postRaw("/profile/user-strategy-file-ocr", body, Duration.ofSeconds(180));
+    }
+
     /**
      * BriefingGenerationAgent — axis-ai {@code /briefing/generate} 위임.
      *

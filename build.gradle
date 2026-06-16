@@ -98,6 +98,10 @@ dependencies {
     // JSON
     implementation 'com.fasterxml.jackson.core:jackson-databind'
 
+    // Text extraction for user-uploaded strategy PDF files. Scanned PDFs/images
+    // fall back to axis-ai OCR.
+    implementation 'org.apache.pdfbox:pdfbox:3.0.3'
+
     // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
