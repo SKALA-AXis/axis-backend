@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -69,6 +71,10 @@ public class EventAlertService {
     /** 수신자 — 일일 브리핑과 공유(BRIEFING_RECIPIENTS). */
     @Value("${briefing.recipients:}")
     private String recipientsCsv;
+
+    /** 프론트 base URL — 알림 메일에서 카드뉴스로 연결. */
+    @Value("${axis.auth.app-base-url:}")
+    private String appBaseUrl;
 
     public enum AlertOutcome {
         SENT,
@@ -236,11 +242,14 @@ public class EventAlertService {
     // ── 이메일 본문 ─────────────────────────────────────────────────────────
 
     private String buildSubject(AlertCandidate cand) {
-        return "[AXIS 🚨 중요 신호] " + eventLabel(cand.eventType()) + " — " + cand.title();
+        return "[AXIS 알림] " + eventLabel(cand.eventType()) + " — " + cand.title();
     }
 
     private String buildText(AlertCandidate cand) {
-        StringBuilder sb = new StringBuilder("AXIS 중요 신호 감지\n\n");
+        StringBuilder sb = new StringBuilder("[AXIS 알림]\n\n");
+        if (cand.peerId() != null) {
+            sb.append("대상: ").append(peerLabel(cand.peerId())).append('\n');
+        }
         sb.append("유형: ").append(eventLabel(cand.eventType())).append('\n');
         if (cand.title() != null) {
             sb.append("제목: ").append(cand.title()).append('\n');
@@ -248,10 +257,11 @@ public class EventAlertService {
         if (cand.summary() != null && !cand.summary().isBlank()) {
             sb.append("요약: ").append(cand.summary()).append('\n');
         }
-        if (cand.importanceScore() != null) {
-            sb.append("중요도 점수: ").append(String.format(Locale.ROOT, "%.2f", cand.importanceScore())).append('\n');
+        String cardUrl = cardUrl(cand.cardId());
+        if (cardUrl != null) {
+            sb.append("카드뉴스: ").append(cardUrl).append('\n');
         }
-        sb.append("\n이 알림은 누가 봐도 중요한 대형 이벤트(수주·파트너십·M&A)에 한해 1회 발송됩니다.\n");
+        sb.append("\n대형 이벤트(수주·파트너십·M&A)에 한해 1회 발송됩니다.\n");
         sb.append("— SK AX 사업전략팀 AXIS\n");
         return sb.toString();
     }
@@ -261,9 +271,9 @@ public class EventAlertService {
         sb.append("<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"UTF-8\"></head>");
         sb.append("<body style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;");
         sb.append("max-width:680px;margin:0 auto;padding:24px;color:#111827;\">");
-        sb.append("<div style=\"display:inline-block;background:#b91c1c;color:#fff;font-size:12px;");
-        sb.append("font-weight:600;padding:4px 10px;border-radius:4px;\">🚨 중요 신호</div>");
-        sb.append("<h1 style=\"font-size:20px;margin:16px 0 4px;\">")
+        sb.append("<div style=\"color:#6b7280;font-size:12px;font-weight:600;letter-spacing:0.04em;\">");
+        sb.append("[AXIS 알림]</div>");
+        sb.append("<h1 style=\"font-size:20px;margin:12px 0 4px;\">")
                 .append(htmlEscape(eventLabel(cand.eventType()))).append("</h1>");
         sb.append("<p style=\"font-size:16px;margin:0 0 16px;color:#111827;\">")
                 .append(htmlEscape(cand.title())).append("</p>");
@@ -273,13 +283,17 @@ public class EventAlertService {
         }
         sb.append("<table style=\"font-size:13px;color:#6b7280;margin-top:8px;border-collapse:collapse;\">");
         if (cand.peerId() != null) {
-            sb.append(htmlRow("대상", cand.peerId()));
+            sb.append(htmlRow("대상", peerLabel(cand.peerId())));
         }
         sb.append(htmlRow("유형", eventLabel(cand.eventType())));
-        if (cand.importanceScore() != null) {
-            sb.append(htmlRow("중요도", String.format(Locale.ROOT, "%.2f", cand.importanceScore())));
-        }
         sb.append("</table>");
+        String cardUrl = cardUrl(cand.cardId());
+        if (cardUrl != null) {
+            sb.append("<a href=\"").append(htmlEscape(cardUrl))
+                    .append("\" style=\"display:inline-block;margin-top:20px;background:#111827;")
+                    .append("color:#fff;text-decoration:none;font-size:14px;font-weight:600;")
+                    .append("padding:10px 18px;border-radius:6px;\">카드뉴스 보기 &rarr;</a>");
+        }
         sb.append("<footer style=\"margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;");
         sb.append("color:#6b7280;font-size:12px;\">대형 이벤트(수주·파트너십·M&amp;A)에 한해 1회 발송 · ");
         sb.append("SK AX 사업전략팀 AXIS</footer>");
@@ -302,6 +316,31 @@ public class EventAlertService {
             case "partnership" -> "파트너십·제휴";
             default -> eventType;
         };
+    }
+
+    /** peer id → 메일 노출용 정식 영문 표기 (대상). 미상은 원본 그대로. */
+    private String peerLabel(String peerId) {
+        if (peerId == null || peerId.isBlank()) {
+            return "";
+        }
+        return switch (peerId.trim().toLowerCase(Locale.ROOT)) {
+            case "samsung_sds" -> "Samsung SDS";
+            case "lg_cns" -> "LG CNS";
+            case "hyundai_autoever" -> "Hyundai AutoEver";
+            case "posco_dx" -> "POSCO DX";
+            default -> peerId;
+        };
+    }
+
+    /** 알림 메일 → 카드뉴스 딥링크. cardId/appBaseUrl 없으면 null. */
+    private String cardUrl(String cardId) {
+        if (cardId == null || cardId.isBlank() || appBaseUrl == null || appBaseUrl.isBlank()) {
+            return null;
+        }
+        String base = appBaseUrl.endsWith("/")
+                ? appBaseUrl.substring(0, appBaseUrl.length() - 1)
+                : appBaseUrl;
+        return base + "/issues?card=" + URLEncoder.encode(cardId.trim(), StandardCharsets.UTF_8);
     }
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────
