@@ -23,8 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -38,6 +40,22 @@ public class DashboardController {
     private final CronInternalAuth cronInternalAuth;
     private final TodayInsightReportService todayInsightReportService;
     private final AtomicBoolean todayInsightWarmupInFlight = new AtomicBoolean(false);
+
+    /**
+     * today-insight 워밍업 cron 이 "장애 아님"으로 취급할 axis-ai 연성 결과 코드.
+     *
+     * <p><b>오직 "오늘 신호·신규 카드 없음"(no_current_signals)만</b> 연성으로 본다 — 조용한
+     * 아침엔 진짜로 할 일이 없으니 cron 을 실패(BackoffLimitExceeded)시키지 않는다. warm-up 은
+     * best-effort 예열이고 대시보드가 on-demand 로 재생성하므로 안전하다.</p>
+     *
+     * <p><b>generated_fallback(LLM 호출 실패 — OpenAI 한도 소진·rate limit·API 오류 등)은 일부러
+     * 제외</b>한다. 이는 손봐야 할 진짜 장애이고 cron 실패가 곧 알림 역할을 한다
+     * (2026-06-16 OpenAI 한도 소진을 이 cron 실패로 포착해 한도를 상향함). AI 다운·타임아웃·
+     * 빈응답과 함께 그대로 전파해 가시성을 유지한다.</p>
+     */
+    private static final Set<String> TODAY_INSIGHT_SOFT_OUTCOME_CODES = Set.of(
+            "TODAY_INSIGHT_NO_CURRENT_SIGNALS"
+    );
 
     @GetMapping("/summary")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardSummary(@RequestParam Map<String, String> params) {
@@ -111,6 +129,16 @@ public class DashboardController {
                     "update_policy", "daily_0810_kst"
             )));
         } catch (AiServerException e) {
+            if (isTodayInsightSoftOutcome(e.getCode())) {
+                log.warn("TodayInsight cron-generate 연성 결과 — cron 성공 처리(알림 비대상) | anchor={} code={}",
+                        request.get("anchor_date"), e.getCode());
+                return ResponseEntity.ok(ApiResponse.success(Map.of(
+                        "status", "soft_fallback",
+                        "anchor_date", String.valueOf(request.get("anchor_date")),
+                        "code", e.getCode(),
+                        "update_policy", "on_demand_dashboard"
+                )));
+            }
             log.error("TodayInsight cron-generate axis-ai 호출 실패 | anchor={} error={}",
                     request.get("anchor_date"), e.getMessage());
             return ResponseEntity.status(e.getStatus())
@@ -121,6 +149,22 @@ public class DashboardController {
             return ResponseEntity.internalServerError()
                     .body(ApiResponse.error("TODAY_INSIGHT_CRON_FAILED", AiServerException.CALL_FAILED_MESSAGE));
         }
+    }
+
+    /**
+     * axis-ai today-insight 결과 코드가 warm-up cron 을 실패시키지 않아야 하는 연성 결과인지.
+     *
+     * <p>{@link #TODAY_INSIGHT_SOFT_OUTCOME_CODES} 정확 매칭 + prefix 변형 대비 핵심 토큰
+     * (NO_CURRENT_SIGNALS) 부분 매칭. generated_fallback(LLM/한도 실패)·빈응답·다운·타임아웃은
+     * false → cron 실패로 노출(알림).</p>
+     */
+    private static boolean isTodayInsightSoftOutcome(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        String normalized = code.toUpperCase(Locale.ROOT);
+        return TODAY_INSIGHT_SOFT_OUTCOME_CODES.contains(normalized)
+                || normalized.contains("NO_CURRENT_SIGNALS");
     }
 
     @PostMapping("/today-insight/warmup")
