@@ -3,6 +3,10 @@ spring:
     name: ${SPRING_APPLICATION_NAME:axis-backend}
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
   datasource:
     # SSL·prepareThreshold 등 옵션은 env 쪽에서 URL 쿼리스트링으로 직접 지정한다.
     # cloud: ...?sslmode=require&prepareThreshold=0  /  local 컨테이너: 옵션 없이 사용
