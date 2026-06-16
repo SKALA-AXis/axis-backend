@@ -173,12 +173,12 @@ public class CardNewsService {
                 .clusterId(card.getClusterId())
                 .title(card.getTitle())
                 .subtitle(rawArticleSubtitle(primaryRawArticle))
-                .category(categoryLabel(sector, card.getPrimaryKeywordCategory()))
+                .category(displayCategoryLabel(card, sector))
                 .date(legacyDate(publishedDate, card.getCreatedAt()))
                 .eventType(card.getEventType())
                 .sector(sector)
                 .sectors(sectors)
-                .categoryLabel(categoryLabel(sector, card.getPrimaryKeywordCategory()))
+                .categoryLabel(displayCategoryLabel(card, sector))
                 .exposureBand(stringValue(
                         sectorMeta.get("exposure_band"),
                         stringValue(implication.get("exposure_band"), card.getImportance())
@@ -318,6 +318,9 @@ public class CardNewsService {
     }
 
     private String resolvedPeerId(CardNews card) {
+        if ("industry_trend".equals(card.getPeerId())) {
+            return "industry_trend";
+        }
         return firstNonBlank(card.getPeerCompanyId(), card.getPeerId());
     }
 
@@ -781,6 +784,13 @@ public class CardNewsService {
         }
     }
 
+    private String displayCategoryLabel(CardNews card, String sector) {
+        if ("industry_trend".equals(card.getPeerId())) {
+            return "industry";
+        }
+        return categoryLabel(sector, card.getPrimaryKeywordCategory());
+    }
+
     private String categoryLabel(String sector, String primaryKeywordCategory) {
         String candidate = firstNonBlank(primaryKeywordCategory, sector);
         if (candidate == null) {
@@ -790,6 +800,7 @@ public class CardNewsService {
             case "ax", "ai" -> "AX";
             case "security" -> "보안";
             case "infra", "cloud" -> "인프라";
+            case "industry", "industry_trend" -> "industry";
             case "deal", "contract", "new_biz" -> "수주";
             default -> "AX";
         };
