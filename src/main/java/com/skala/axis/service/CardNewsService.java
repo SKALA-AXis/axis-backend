@@ -80,10 +80,10 @@ public class CardNewsService {
     }
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance, UUID userId) {
-        LocalDate today = LocalDate.now(DISPLAY_ZONE);
-        List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, null, today, true, userId);
-    }
+      LocalDate today = LocalDate.now(DISPLAY_ZONE);
+      List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
+      return mapCards(cards, peerId, importance, null, today, false, userId);
+}
 
     public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
         return getAll(peerId, importance, eventType, null);
@@ -231,6 +231,7 @@ public class CardNewsService {
         List<String> summaryLines = summaryLines(card);
         LocalDateTime basisAt = cardBasisAt(card, rawArticleById);
         String publishedDate = publishedDate(primarySource, primaryRawArticle, basisAt, card.getCreatedAt());
+        String publishedAt = publishedAt(basisAt);
         String sourceUrl = stringValue(primarySource.get("url"), primaryRawArticle == null ? null : primaryRawArticle.getUrl());
         String sourceName = displaySourceName(primarySource, sourceUrl);
         List<Map<String, Object>> responseSources = new ArrayList<>(sources);
@@ -305,6 +306,7 @@ public class CardNewsService {
                 .importance(card.getImportance())
                 .importanceScore(card.getImportanceScore())
                 .publishedDate(publishedDate)
+                .publishedAt(publishedAt)
                 .createdAt(card.getCreatedAt())
                 .summaryLines(summaryLines)
                 .summary(summaryLines)
@@ -1034,6 +1036,13 @@ public class CardNewsService {
             return localDateInDisplayZone(primaryRawArticle.getPublishedAt());
         }
         return localDateInDisplayZone(createdAt);
+    }
+
+    private String publishedAt(LocalDateTime basisAt) {
+        if (basisAt == null) {
+            return null;
+        }
+        return basisAt.atZone(DISPLAY_ZONE).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 
     private String localDateInDisplayZone(String value) {

@@ -63,6 +63,29 @@ class CardNewsServiceTest {
     }
 
     @Test
+    void todayCardsSortByEarliestSourcePublishedAtBeforeImportance() {
+        LocalDate today = LocalDate.now(KST);
+        CardNews olderHighImportance = card("CN-OLDER-HIGH", 1L, today.atTime(7, 0));
+        CardNews newerLowImportance = card("CN-NEWER-LOW", 2L, today.atTime(8, 0));
+        ReflectionTestUtils.setField(olderHighImportance, "importanceScore", 1.0f);
+        ReflectionTestUtils.setField(newerLowImportance, "importanceScore", 0.1f);
+        RawArticle olderArticle = article(1L, today.atTime(9, 0));
+        RawArticle newerArticle = article(2L, today.atTime(11, 0));
+
+        when(cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE))
+                .thenReturn(List.of(olderHighImportance, newerLowImportance));
+        when(rawArticleRepository.findAllById(any()))
+                .thenReturn(List.of(olderArticle, newerArticle));
+
+        List<CardNewsResponse> result = service.getTodayCards(null, null);
+
+        assertThat(result).extracting(CardNewsResponse::getId)
+                .containsExactly("CN-NEWER-LOW", "CN-OLDER-HIGH");
+        assertThat(result.get(0).getPublishedAt())
+                .isEqualTo(today + "T11:00:00+09:00");
+    }
+
+    @Test
     void localDateTimePublishedDateDoesNotShiftIntoNextKstDay() {
         CardNews card = card("CN-20260616-50213", 50213L, LocalDateTime.of(2026, 6, 16, 15, 8));
         RawArticle article = article(50213L, LocalDateTime.of(2026, 6, 16, 22, 0));
@@ -76,6 +99,7 @@ class CardNewsServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getPublishedDate()).isEqualTo("2026-06-16");
+        assertThat(result.get(0).getPublishedAt()).isEqualTo("2026-06-16T22:00:00+09:00");
         assertThat(result.get(0).getDate()).isEqualTo("2026.06.16");
     }
 
