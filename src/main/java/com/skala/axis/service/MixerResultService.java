@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Array;
 import java.sql.PreparedStatement;
@@ -20,6 +21,7 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class MixerResultService {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private static final TypeReference<List<Object>> LIST_TYPE = new TypeReference<>() {};
@@ -27,6 +29,7 @@ public class MixerResultService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    @Transactional
     public void saveStreamEvent(
             String rawEvent,
             List<String> cardIds,
@@ -45,6 +48,7 @@ public class MixerResultService {
         }
     }
 
+    @Transactional
     public void saveResult(
             Map<String, Object> result,
             List<String> cardIds,

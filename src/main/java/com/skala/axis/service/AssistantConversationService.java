@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -37,6 +38,7 @@ import static com.skala.axis.query.AssistantConversationQueries.UPSERT_CONVERSAT
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class AssistantConversationService {
     private static final int DEFAULT_HISTORY_LIMIT = 12;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
@@ -45,6 +47,7 @@ public class AssistantConversationService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    @Transactional
     public Map<String, Object> prepareChatRequest(Map<String, Object> request, Authentication authentication) {
         Map<String, Object> body = mutableCopy(request);
         UUID conversationId = resolveConversationId(body);
@@ -76,6 +79,7 @@ public class AssistantConversationService {
         return body;
     }
 
+    @Transactional
     public Map<String, Object> completeChatTurn(Map<String, Object> request, Map<String, Object> response) {
         Map<String, Object> normalized = normalizeAssistantResponse(response);
         UUID conversationId = parseUuid(
@@ -117,6 +121,7 @@ public class AssistantConversationService {
         return out;
     }
 
+    @Transactional
     public Map<String, Object> createConversation(Map<String, Object> request, Authentication authentication) {
         Map<String, Object> body = mutableCopy(request);
         UUID conversationId = resolveConversationId(body);
@@ -180,6 +185,7 @@ public class AssistantConversationService {
         }
     }
 
+    @Transactional
     public Map<String, Object> endConversation(
             String conversationId,
             Authentication authentication,
@@ -198,6 +204,7 @@ public class AssistantConversationService {
         return Map.of("conversation_id", id.toString(), "status", "ended");
     }
 
+    @Transactional
     public Map<String, Object> deleteConversation(
             String conversationId,
             Authentication authentication,
