@@ -295,7 +295,7 @@ public class AiClientService {
         if (userId != null) {
             body.put("user_id", userId.toString());
         }
-        return postRaw("/card-news/strategy-context/regenerate", body, Duration.ofSeconds(180));
+        return postRaw("/card-news/strategy-context/regenerate", body, Duration.ofSeconds(600));
     }
 
     /**
