@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.TemporalAccessor;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -157,6 +158,7 @@ public class UserStrategyContextService {
         if (deleted == 0) {
             throw new AuthException(HttpStatus.NOT_FOUND, "STRATEGY_CONTEXT_NOT_FOUND", "전략 자료를 찾을 수 없습니다.");
         }
+        deactivateStrategyProjectionsWhenNoContextRemains(userId);
         authService.recordAccessLog(
                 user,
                 "SETTINGS_UPDATED",
@@ -169,6 +171,28 @@ public class UserStrategyContextService {
         response.put("id", contextId.toString());
         response.put("deleted", true);
         return response;
+    }
+
+    private void deactivateStrategyProjectionsWhenNoContextRemains(UUID userId) {
+        Integer remaining = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_strategy_contexts WHERE user_id = ?",
+                Integer.class,
+                userId
+        );
+        if (remaining != null && remaining > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                """
+                UPDATE card_news_strategy_context_projections
+                   SET is_applied = FALSE,
+                       reverted_at = CAST(? AS timestamptz)
+                 WHERE user_id = ?
+                   AND is_applied = TRUE
+                """,
+                OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                userId
+        );
     }
 
     public Map<String, Object> extractFile(MultipartFile file) {
