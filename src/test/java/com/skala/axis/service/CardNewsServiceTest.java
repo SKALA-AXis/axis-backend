@@ -62,6 +62,23 @@ class CardNewsServiceTest {
         assertThat(result.get(0).getPublishedDate()).isEqualTo(today.toString());
     }
 
+    @Test
+    void localDateTimePublishedDateDoesNotShiftIntoNextKstDay() {
+        CardNews card = card("CN-20260616-50213", 50213L, LocalDateTime.of(2026, 6, 16, 15, 8));
+        RawArticle article = article(50213L, LocalDateTime.of(2026, 6, 16, 22, 0));
+
+        when(cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE))
+                .thenReturn(List.of(card));
+        when(rawArticleRepository.findAllById(any()))
+                .thenReturn(List.of(article));
+
+        List<CardNewsResponse> result = service.getAll(null, null, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getPublishedDate()).isEqualTo("2026-06-16");
+        assertThat(result.get(0).getDate()).isEqualTo("2026.06.16");
+    }
+
     private CardNews card(String id, Long rawArticleId, LocalDateTime createdAt) {
         CardNews card = instantiate(CardNews.class);
         ReflectionTestUtils.setField(card, "id", id);
