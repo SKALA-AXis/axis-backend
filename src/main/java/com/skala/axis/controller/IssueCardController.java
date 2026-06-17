@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.CardNewsResponse;
+import com.skala.axis.formatter.IssueImportanceClassifier;
 import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.PeerCompanyProvider;
 import jakarta.persistence.EntityNotFoundException;
@@ -68,14 +69,7 @@ public class IssueCardController {
     }
 
     private static String issueImportance(CardNewsResponse card) {
-        String importance = card.getImportance();
-        if ("urgent".equals(importance) || "notable".equals(importance) || "reference".equals(importance)) {
-            return importance;
-        }
-        Float score = card.getImportanceScore();
-        if (score != null && score >= 0.85f) return "urgent";
-        if (score != null && score >= 0.6f) return "notable";
-        return "reference";
+        return IssueImportanceClassifier.classify(card.getImportance(), card.getImportanceScore());
     }
 
 }

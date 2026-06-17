@@ -1,6 +1,7 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.formatter.IssueImportanceClassifier;
 import com.skala.axis.service.BriefingReportService;
 import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
@@ -77,7 +78,7 @@ public class FrontendCompatibilityController {
                                 "peerName", peerCompanyProvider.displayName(card.getPeerId()),
                                 "title", card.getTitle() == null ? "" : card.getTitle(),
                                 "summaryLines", card.getSummaryLines() == null ? List.of() : card.getSummaryLines(),
-                                "importance", issueImportance(card.getImportance(), card.getImportanceScore()),
+                                "importance", IssueImportanceClassifier.classify(card.getImportance(), card.getImportanceScore()),
                                 "createdAt", card.getCreatedAt() == null ? "" : card.getCreatedAt().toString(),
                                 "sourceUrl", card.getSourceUrl() == null ? "" : card.getSourceUrl()
                         ))
@@ -120,15 +121,6 @@ public class FrontendCompatibilityController {
                 ),
                 "analyses", Map.of()
         );
-    }
-
-    private static String issueImportance(String importance, Float score) {
-        if ("urgent".equals(importance) || "notable".equals(importance) || "reference".equals(importance)) {
-            return importance;
-        }
-        if (score != null && score >= 0.85f) return "urgent";
-        if (score != null && score >= 0.6f) return "notable";
-        return "reference";
     }
 
 }
