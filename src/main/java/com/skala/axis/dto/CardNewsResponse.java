@@ -60,6 +60,9 @@ public class CardNewsResponse {
     @JsonProperty("published_date")
     private String publishedDate;
 
+    @JsonProperty("published_at")
+    private String publishedAt;
+
     @JsonProperty("created_at")
     private LocalDateTime createdAt;
 
