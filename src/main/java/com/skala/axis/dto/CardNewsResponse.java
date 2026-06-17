@@ -123,4 +123,10 @@ public class CardNewsResponse {
 
     @JsonProperty("is_human_reviewed")
     private Boolean isHumanReviewed;
+
+    @JsonProperty("strategy_context_applied")
+    private Boolean strategyContextApplied;
+
+    @JsonProperty("strategy_context_applied_at")
+    private String strategyContextAppliedAt;
 }

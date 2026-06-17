@@ -109,4 +109,5 @@ public class CardNews {
     public void updateStatus(CardNewsStatus status) {
         this.status = status == null ? CardNewsStatus.ACTIVE : status;
     }
+
 }

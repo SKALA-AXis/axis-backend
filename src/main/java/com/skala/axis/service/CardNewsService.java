@@ -1,6 +1,7 @@
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
@@ -8,15 +9,18 @@ import com.skala.axis.domain.RawArticle;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.repository.CardNewsRepository;
 import com.skala.axis.repository.RawArticleRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -30,11 +34,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
@@ -44,24 +48,115 @@ public class CardNewsService {
 
     private final CardNewsRepository cardNewsRepository;
     private final RawArticleRepository rawArticleRepository;
+    private final AiClientService aiClientService;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    public CardNewsService(
+            CardNewsRepository cardNewsRepository,
+            RawArticleRepository rawArticleRepository,
+            AiClientService aiClientService,
+            ObjectMapper objectMapper,
+            JdbcTemplate jdbcTemplate
+    ) {
+        this.cardNewsRepository = cardNewsRepository;
+        this.rawArticleRepository = rawArticleRepository;
+        this.aiClientService = aiClientService;
+        this.objectMapper = objectMapper;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public CardNewsService(
+            CardNewsRepository cardNewsRepository,
+            RawArticleRepository rawArticleRepository,
+            ObjectMapper objectMapper
+    ) {
+        this(cardNewsRepository, rawArticleRepository, null, objectMapper, null);
+    }
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance) {
+        return getTodayCards(peerId, importance, null);
+    }
+
+    public List<CardNewsResponse> getTodayCards(String peerId, String importance, UUID userId) {
         LocalDate today = LocalDate.now(DISPLAY_ZONE);
         List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, null, today, true);
+        return mapCards(cards, peerId, importance, null, today, true, userId);
     }
 
     public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
+        return getAll(peerId, importance, eventType, null);
+    }
+
+    public List<CardNewsResponse> getAll(String peerId, String importance, String eventType, UUID userId) {
         List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
-        return mapCards(cards, peerId, importance, eventType, null, false);
+        return mapCards(cards, peerId, importance, eventType, null, false, userId);
     }
 
     public CardNewsResponse getById(String id) {
+        return getById(id, null);
+    }
+
+    public CardNewsResponse getById(String id, UUID userId) {
         CardNews card = cardNewsRepository.findByIdAndStatus(id, CardNewsStatus.ACTIVE)
                 .filter(cardItem -> !isSelfCompanyCard(cardItem))
                 .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
-        return toResponse(card, rawArticleById(List.of(card)));
+        return toResponse(card, rawArticleById(List.of(card)), activeProjectionByCardId(List.of(card), userId).get(card.getId()));
+    }
+
+    @Transactional
+    public CardNewsResponse applyStrategyContext(String id, UUID userId) {
+        if (userId == null) {
+            throw new IllegalStateException("로그인 사용자만 맞춤 전략을 적용할 수 있습니다.");
+        }
+        if (aiClientService == null) {
+            throw new IllegalStateException("AI 클라이언트를 사용할 수 없습니다.");
+        }
+        CardNews card = cardNewsRepository.findByIdAndStatus(id, CardNewsStatus.ACTIVE)
+                .filter(cardItem -> !isSelfCompanyCard(cardItem))
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
+
+        Map<String, Object> evidencePayload = deepCopyMap(card.getEvidencePayload());
+        Map<String, Object> analysisPackage = objectMap(evidencePayload.get("analysis_package"));
+        if (analysisPackage.isEmpty()) {
+            throw new IllegalStateException("analysis_package가 없어 전략 재생성을 할 수 없습니다.");
+        }
+
+        Map<String, Object> result = aiClientService.regenerateCardNewsStrategyContext(
+                card.getId(),
+                analysisPackage,
+                userId
+        ).block();
+        Map<String, Object> cardProjection = objectMap(result == null ? null : result.get("card_news"));
+        Map<String, Object> nextAnalysisPackage = objectMap(result == null ? null : result.get("analysis_package"));
+        Map<String, Object> nextImplication = objectMap(cardProjection.get("implication"));
+        if (nextImplication.isEmpty()) {
+            nextImplication = objectMap(objectMap(result == null ? null : result.get("strategic_result")).get("implication"));
+        }
+        if (nextAnalysisPackage.isEmpty() || nextImplication.isEmpty()) {
+            throw new IllegalStateException("전략 재생성 결과가 비어 있습니다.");
+        }
+
+        Map<String, Object> projection = upsertStrategyProjection(
+                card.getId(),
+                userId,
+                appliedActionFromImplication(nextImplication)
+        );
+        return toResponse(card, rawArticleById(List.of(card)), projection);
+    }
+
+    @Transactional
+    public CardNewsResponse revertStrategyContext(String id, UUID userId) {
+        if (userId == null) {
+            throw new IllegalStateException("로그인 사용자만 맞춤 전략 적용을 해제할 수 있습니다.");
+        }
+        CardNews card = cardNewsRepository.findByIdAndStatus(id, CardNewsStatus.ACTIVE)
+                .filter(cardItem -> !isSelfCompanyCard(cardItem))
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("카드 뉴스 없음: " + id));
+
+        deactivateStrategyProjection(card.getId(), userId);
+        return toResponse(card, rawArticleById(List.of(card)), Map.of());
     }
 
     private List<CardNewsResponse> mapCards(
@@ -70,7 +165,8 @@ public class CardNewsService {
             String importance,
             String eventType,
             LocalDate basisDate,
-            boolean importanceFirst
+            boolean importanceFirst,
+            UUID userId
     ) {
         List<CardNews> filtered = cards.stream()
                 .filter(card -> !isSelfCompanyCard(card))
@@ -89,19 +185,32 @@ public class CardNewsService {
         Comparator<CardNews> comparator = importanceFirst
                 ? importanceComparator.thenComparing(basisComparator)
                 : basisComparator.thenComparing(importanceComparator);
+        Map<String, Map<String, Object>> projectionByCardId = activeProjectionByCardId(filtered, userId);
         return filtered.stream()
                 .filter(card -> basisDate == null || basisDate.equals(cardBasisDate(card, rawArticleById)))
                 .sorted(comparator)
-                .map(card -> toResponse(card, rawArticleById))
+                .map(card -> toResponse(card, rawArticleById, projectionByCardId.get(card.getId())))
                 .collect(Collectors.toList());
     }
 
     public CardNewsResponse toResponse(CardNews card) {
-        return toResponse(card, rawArticleById(List.of(card)));
+        return toResponse(card, rawArticleById(List.of(card)), null);
     }
 
     private CardNewsResponse toResponse(CardNews card, Map<Long, RawArticle> rawArticleById) {
-        Map<String, Object> implication = mapOrEmpty(card.getImplication());
+        return toResponse(card, rawArticleById, null);
+    }
+
+    private CardNewsResponse toResponse(
+            CardNews card,
+            Map<Long, RawArticle> rawArticleById,
+            Map<String, Object> activeProjection
+    ) {
+        Map<String, Object> projection = objectMap(activeProjection);
+        Map<String, Object> implication = implicationWithAppliedAction(
+                mapOrEmpty(card.getImplication()),
+                objectMap(projection.get("applied_action"))
+        );
         Map<String, Object> responseImplication = responseImplication(implication);
         Map<String, Object> sectorMeta = nestedMap(implication, "sector_meta");
         List<Map<String, Object>> sources = effectiveSources(card);
@@ -152,6 +261,8 @@ public class CardNewsService {
         String potentialImpact = stringValue(responseImplication.get("potential_impact"), null);
         List<String> suggestedActions = stringList(responseImplication.get("suggested_actions"));
         List<String> insights = stringList(responseImplication.get("key_implications"));
+        boolean strategyContextApplied = Boolean.TRUE.equals(projection.get("is_applied"));
+        String strategyContextAppliedAt = stringValue(projection.get("applied_at"), null);
         if (insights.isEmpty() && potentialImpact != null && !potentialImpact.isBlank()) {
             insights = List.of(potentialImpact);
         }
@@ -214,7 +325,209 @@ public class CardNewsService {
                 .sourceCount(sourceCount)
                 .validationPass(card.getValidationPass())
                 .isHumanReviewed(Boolean.TRUE.equals(card.getIsHumanReviewed()))
+                .strategyContextApplied(strategyContextApplied)
+                .strategyContextAppliedAt(strategyContextAppliedAt)
                 .build();
+    }
+
+    private Map<String, Map<String, Object>> activeProjectionByCardId(List<CardNews> cards, UUID userId) {
+        if (jdbcTemplate == null || userId == null || cards == null || cards.isEmpty()) {
+            return Map.of();
+        }
+        List<String> cardIds = cards.stream()
+                .map(CardNews::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (cardIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = cardIds.stream()
+                .map(ignored -> "?")
+                .collect(Collectors.joining(","));
+        List<Object> args = new ArrayList<>();
+        args.add(userId);
+        args.addAll(cardIds);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                """
+                SELECT card_news_id,
+                       applied_action,
+                       is_applied,
+                       applied_at
+                  FROM card_news_strategy_context_projections
+                 WHERE user_id = ?
+                   AND is_applied = TRUE
+                   AND card_news_id IN (%s)
+                """.formatted(placeholders),
+                args.toArray()
+        );
+        Map<String, Map<String, Object>> result = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            String cardId = stringValue(row.get("card_news_id"), null);
+            if (cardId != null) {
+                result.put(cardId, new LinkedHashMap<>(row));
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Object> upsertStrategyProjection(
+            String cardNewsId,
+            UUID userId,
+            Map<String, Object> appliedAction
+    ) {
+        if (jdbcTemplate == null) {
+            throw new IllegalStateException("맞춤 전략 projection 저장소를 사용할 수 없습니다.");
+        }
+        String appliedAt = OffsetDateTime.now(ZoneOffset.UTC).toString();
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                """
+                INSERT INTO card_news_strategy_context_projections (
+                    card_news_id,
+                    user_id,
+                    applied_action,
+                    is_applied,
+                    applied_at,
+                    reverted_at
+                )
+                VALUES (?, ?, CAST(? AS jsonb), TRUE, CAST(? AS timestamptz), NULL)
+                ON CONFLICT (card_news_id, user_id)
+                DO UPDATE SET
+                    applied_action = EXCLUDED.applied_action,
+                    is_applied = TRUE,
+                    applied_at = EXCLUDED.applied_at,
+                    reverted_at = NULL
+                RETURNING card_news_id,
+                          applied_action,
+                          is_applied,
+                          applied_at
+                """,
+                cardNewsId,
+                userId,
+                toJson(appliedAction),
+                appliedAt
+        );
+        return new LinkedHashMap<>(row);
+    }
+
+    private void deactivateStrategyProjection(String cardNewsId, UUID userId) {
+        if (jdbcTemplate == null) {
+            throw new IllegalStateException("맞춤 전략 projection 저장소를 사용할 수 없습니다.");
+        }
+        jdbcTemplate.update(
+                """
+                UPDATE card_news_strategy_context_projections
+                   SET is_applied = FALSE,
+                       reverted_at = CAST(? AS timestamptz)
+                 WHERE card_news_id = ?
+                   AND user_id = ?
+                """,
+                OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                cardNewsId,
+                userId
+        );
+    }
+
+    private Map<String, Object> appliedActionFromImplication(Map<String, Object> implication) {
+        Map<String, Object> frontend = responseImplication(implication);
+        Map<String, Object> action = new LinkedHashMap<>();
+        copyIfPresent(frontend, action, "suggested_actions");
+        copyIfPresent(frontend, action, "response_directions");
+        copyIfPresent(frontend, action, "skax_checkpoints");
+        copyIfPresent(frontend, action, "response_direction_blocks");
+        copyIfPresent(frontend, action, "suggested_action_items");
+        copyIfPresent(frontend, action, "skax_checkpoint_blocks");
+
+        Map<String, Object> frontendReady = objectMap(implication.get("frontend_ready"));
+        Map<String, Object> suggestedAction = objectMap(frontendReady.get("suggested_action"));
+        if (!suggestedAction.isEmpty()) {
+            action.put("frontend_ready_suggested_action", suggestedAction);
+        }
+
+        Map<String, Object> industryReady = objectMap(implication.get("industry_frontend_ready"));
+        List<Map<String, Object>> industryActions = industryReadyActions(industryReady);
+        if (!industryActions.isEmpty()) {
+            action.put("industry_frontend_ready_actions", industryActions);
+        }
+        if (action.isEmpty()) {
+            throw new IllegalStateException("맞춤 전략 대응방안 결과가 비어 있습니다.");
+        }
+        return action;
+    }
+
+    private List<Map<String, Object>> industryReadyActions(Map<String, Object> industryReady) {
+        List<Map<String, Object>> actions = new ArrayList<>();
+        List<Map<String, Object>> items = mapList(industryReady.get("items"));
+        for (Map<String, Object> item : items) {
+            Map<String, Object> suggestedAction = objectMap(item.get("suggested_action"));
+            if (!suggestedAction.isEmpty()) {
+                actions.add(suggestedAction);
+            }
+        }
+        return actions;
+    }
+
+    private Map<String, Object> implicationWithAppliedAction(
+            Map<String, Object> baseImplication,
+            Map<String, Object> appliedAction
+    ) {
+        Map<String, Object> merged = deepCopyMap(baseImplication);
+        if (appliedAction.isEmpty()) {
+            return merged;
+        }
+        Map<String, Object> frontend = new LinkedHashMap<>(nestedMap(merged, "frontend"));
+        if (frontend.isEmpty()) {
+            frontend.putAll(merged);
+        }
+        copyIfPresent(appliedAction, frontend, "suggested_actions");
+        copyIfPresent(appliedAction, frontend, "response_directions");
+        copyIfPresent(appliedAction, frontend, "skax_checkpoints");
+        copyIfPresent(appliedAction, frontend, "response_direction_blocks");
+        copyIfPresent(appliedAction, frontend, "suggested_action_items");
+        copyIfPresent(appliedAction, frontend, "skax_checkpoint_blocks");
+        merged.put("frontend", frontend);
+
+        Map<String, Object> frontendReadyAction = objectMap(
+                appliedAction.get("frontend_ready_suggested_action")
+        );
+        if (!frontendReadyAction.isEmpty()) {
+            Map<String, Object> frontendReady = new LinkedHashMap<>(nestedMap(merged, "frontend_ready"));
+            frontendReady.put("suggested_action", frontendReadyAction);
+            merged.put("frontend_ready", frontendReady);
+        }
+
+        List<Map<String, Object>> industryActions = mapList(
+                appliedAction.get("industry_frontend_ready_actions")
+        );
+        if (!industryActions.isEmpty()) {
+            Map<String, Object> industryReady = new LinkedHashMap<>(
+                    nestedMap(merged, "industry_frontend_ready")
+            );
+            List<Map<String, Object>> items = new ArrayList<>(mapList(industryReady.get("items")));
+            for (int index = 0; index < items.size() && index < industryActions.size(); index++) {
+                Map<String, Object> item = new LinkedHashMap<>(items.get(index));
+                item.put("suggested_action", industryActions.get(index));
+                items.set(index, item);
+            }
+            industryReady.put("items", items);
+            merged.put("industry_frontend_ready", industryReady);
+        }
+        return merged;
+    }
+
+    private void copyIfPresent(Map<String, Object> source, Map<String, Object> target, String key) {
+        Object value = source.get(key);
+        if (value != null) {
+            target.put(key, value);
+        }
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? Map.of() : value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("JSON 변환 실패", e);
+        }
     }
 
     private Map<Long, RawArticle> rawArticleById(List<CardNews> cards) {
@@ -508,6 +821,9 @@ public class CardNewsService {
     }
 
     private Map<String, Object> nestedMap(Map<String, Object> source, String key) {
+        if (source == null) {
+            return Map.of();
+        }
         Object value = source.get(key);
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
@@ -519,6 +835,14 @@ public class CardNewsService {
 
     private Map<String, Object> mapOrEmpty(Map<String, Object> value) {
         return value == null ? Map.of() : value;
+    }
+
+    private Map<String, Object> deepCopyMap(Object value) {
+        Map<String, Object> source = objectMap(value);
+        if (source.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return objectMapper.convertValue(source, MAP_TYPE);
     }
 
     private Map<String, Object> firstImageAsset(Object imageAssets) {

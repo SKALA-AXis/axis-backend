@@ -1,5 +1,7 @@
 package com.skala.axis.controller;
 
+import com.skala.axis.config.AuthProperties;
+import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.exception.AiServerException;
@@ -9,6 +11,7 @@ import com.skala.axis.service.CardNewsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 카드 뉴스 endpoint.
@@ -33,18 +37,27 @@ import java.util.Map;
 @RequestMapping("/api/cards")
 @RequiredArgsConstructor
 public class CardController {
+    private final AuthProperties authProperties;
     private final AiClientService aiClientService;
     private final CardNewsService cardNewsService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<Map<String, Object>>> listCards(@RequestParam Map<String, String> params) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> listCards(
+            @RequestParam Map<String, String> params,
+            Authentication authentication
+    ) {
         String peerId = params.get("peer_id");
         String importance = params.get("importance");
         String eventType = params.get("event_type");
         int limit = parseInt(params.get("limit"), -1);
         int offset = parseInt(params.get("offset"), 0);
 
-        List<CardNewsResponse> all = cardNewsService.getAll(peerId, importance, eventType);
+        List<CardNewsResponse> all = cardNewsService.getAll(
+                peerId,
+                importance,
+                eventType,
+                resolveOptionalUserId(authentication)
+        );
         int total = all.size();
         var stream = all.stream().skip(Math.max(offset, 0));
         List<CardNewsResponse> page = limit > 0
@@ -62,11 +75,18 @@ public class CardController {
     }
 
     @GetMapping("/today")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayCards(@RequestParam Map<String, String> params) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayCards(
+            @RequestParam Map<String, String> params,
+            Authentication authentication
+    ) {
         String peerId = params.get("peer_id");
         String importance = params.get("importance");
         int limit = parseInt(params.get("limit"), -1);
-        List<CardNewsResponse> all = cardNewsService.getTodayCards(peerId, importance);
+        List<CardNewsResponse> all = cardNewsService.getTodayCards(
+                peerId,
+                importance,
+                resolveOptionalUserId(authentication)
+        );
         int total = all.size();
         List<CardNewsResponse> items = all;
         if (limit > 0) {
@@ -81,9 +101,12 @@ public class CardController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Object>> getCardById(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<Object>> getCardById(
+            @PathVariable String id,
+            Authentication authentication
+    ) {
         try {
-            CardNewsResponse card = cardNewsService.getById(id);
+            CardNewsResponse card = cardNewsService.getById(id, resolveOptionalUserId(authentication));
             return ResponseEntity.ok(ApiResponse.success(card));
         } catch (jakarta.persistence.EntityNotFoundException e) {
             log.info("getCardById | DB miss | id={}", id);
@@ -95,6 +118,26 @@ public class CardController {
         }
     }
 
+    @PostMapping("/{id}/strategy-context/apply")
+    public ResponseEntity<ApiResponse<CardNewsResponse>> applyStrategyContext(
+            @PathVariable String id,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cardNewsService.applyStrategyContext(id, resolveUserId(authentication))
+        ));
+    }
+
+    @PostMapping("/{id}/strategy-context/revert")
+    public ResponseEntity<ApiResponse<CardNewsResponse>> revertStrategyContext(
+            @PathVariable String id,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                cardNewsService.revertStrategyContext(id, resolveUserId(authentication))
+        ));
+    }
+
     private static int parseInt(String value, int defaultValue) {
         if (value == null || value.isBlank()) return defaultValue;
         try {
@@ -102,6 +145,23 @@ public class CardController {
         } catch (NumberFormatException e) {
             return defaultValue;
         }
+    }
+
+    private UUID resolveUserId(Authentication authentication) {
+        if (authProperties.isEnforce()) {
+            return AuthSecurity.requireUserId(authentication);
+        }
+        if (authentication != null && authentication.getPrincipal() instanceof com.skala.axis.config.AuthPrincipal principal) {
+            return principal.userId();
+        }
+        return null;
+    }
+
+    private UUID resolveOptionalUserId(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof com.skala.axis.config.AuthPrincipal principal) {
+            return principal.userId();
+        }
+        return null;
     }
 
     /**
