@@ -20,7 +20,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -1057,10 +1056,7 @@ public class CardNewsService {
         if (value == null) {
             return null;
         }
-        return value.atZone(ZoneOffset.UTC)
-                .withZoneSameInstant(DISPLAY_ZONE)
-                .toLocalDate()
-                .toString();
+        return value.toLocalDate().toString();
     }
 
     private String legacyDate(String publishedDate, LocalDateTime createdAt) {
