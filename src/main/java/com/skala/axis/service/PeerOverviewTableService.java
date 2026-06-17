@@ -24,6 +24,15 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.skala.axis.formatter.PeerOverviewFormat.blankToNull;
+import static com.skala.axis.formatter.PeerOverviewFormat.firstNonBlank;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatKrwBnText;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentPointText;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentText;
+import static com.skala.axis.formatter.PeerOverviewFormat.nullToDash;
+import static com.skala.axis.formatter.PeerOverviewFormat.nullToEmpty;
+import static com.skala.axis.formatter.PeerOverviewFormat.topicParticle;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -674,10 +683,6 @@ public class PeerOverviewTableService {
         return cleaned;
     }
 
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
     private Map<String, List<Map<String, String>>> buildComparisonInsights(List<Map<String, Object>> rows) {
         Map<String, Map<String, Object>> rowById = new HashMap<>();
         for (Map<String, Object> row : rows) {
@@ -1000,17 +1005,6 @@ public class PeerOverviewTableService {
             }
         }
         return String.join("·", tokens);
-    }
-
-    private String topicParticle(String value) {
-        if (value == null || value.isBlank()) {
-            return "은";
-        }
-        char lastChar = value.charAt(value.length() - 1);
-        if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
-            return ((lastChar - 0xAC00) % 28) == 0 ? "는" : "은";
-        }
-        return "는";
     }
 
     private String firstNonAxisText(String... values) {
@@ -1349,38 +1343,6 @@ public class PeerOverviewTableService {
         String marginText = margin == null ? "영업이익률 데이터가 제한적" : "영업이익률 " + formatPercentText(margin);
         String deltaText = marginDelta == null ? "전분기 대비 수익성 변화는 확인이 제한적입니다" : "전분기 대비 영업이익률 변화는 " + formatPercentPointText(marginDelta) + "입니다";
         return peerLabel + "는 " + revenueText + ", " + marginText + " 기준으로 함께 봐야 합니다. " + deltaText + ". 따라서 최근 사업·기술 신호가 강하더라도 실적 범위와 수익성 변동은 별도 리스크로 남습니다.";
-    }
-
-    private String nullToDash(Object value) {
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            return stringValue;
-        }
-        return "-";
-    }
-
-    private String formatKrwBnText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        if (Math.abs(value) >= 10_000) {
-            return String.format("%.2f조원", value / 10_000.0);
-        }
-        return String.format("%.0f억원", value);
-    }
-
-    private String formatPercentText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        return String.format("%.2f%%", value);
-    }
-
-    private String formatPercentPointText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        String sign = value > 0 ? "+" : "";
-        return sign + String.format("%.2f%%p", value);
     }
 
     private List<Map<String, Object>> loadFinancialRows(String period) {
@@ -2625,15 +2587,6 @@ public class PeerOverviewTableService {
         return cleaned.replaceAll("^[,;\\s]+|[,;\\s]+$", "");
     }
 
-    private String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return "";
-    }
-
     private Map<String, Object> mapFinancialRow(ResultSet rs) throws SQLException {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", rs.getString("id"));
@@ -2743,10 +2696,6 @@ public class PeerOverviewTableService {
             }
         }
         return result;
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
     }
 
     private record DisplayPeer(int displayOrder, String id, String label) {
