@@ -34,14 +34,15 @@ class BriefingServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(briefingService, "briefingRecipientsCsv", "test@example.com");
         ReflectionTestUtils.setField(briefingService, "appBaseUrl", "https://axis.example");
+        ReflectionTestUtils.setField(briefingService, "contactEmail", "axis.admin@sk.com");
     }
 
     @Test
-    void generateAndSendGroupsBriefingBySectorTrend() {
+    void generateAndSendUsesIntuitiveLabelsAndBusinessFooter() {
         when(cardNewsService.getTodayCards(null, null)).thenReturn(List.of(
-                card("AX-1", "ax", 0.72f, "삼성SDS 제조 AX 플랫폼 확산"),
-                card("SEC-1", "security", 0.61f, "LG CNS 클라우드 보안 관제 고도화"),
-                card("INFRA-1", null, 0.47f, "현대오토에버 GPU 인프라 투자 확대")
+                card("AX-1", "ax", "tech_release", 0.72f, "삼성SDS 제조 AX 플랫폼 확산"),
+                card("SEC-1", "security", "contract", 0.61f, "LG CNS 클라우드 보안 관제 고도화"),
+                card("INFRA-1", null, "partnership", 0.47f, "현대오토에버 GPU 인프라 투자 확대")
         ));
 
         briefingService.generateAndSend();
@@ -49,38 +50,27 @@ class BriefingServiceTest {
         ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> htmlCaptor = ArgumentCaptor.forClass(String.class);
         verify(sesMailService).sendBriefing(
-                anyList(),
-                anyString(),
-                htmlCaptor.capture(),
-                textCaptor.capture()
-        );
+                anyList(), anyString(), htmlCaptor.capture(), textCaptor.capture());
 
         String text = textCaptor.getValue();
         assertThat(text)
-                .contains("AXIS 오늘의 섹터별 브리핑")
-                .contains("AX 경향 · 1건")
-                .contains("보안 경향 · 1건")
-                .contains("인프라 경향 · 1건")
-                .contains("https://axis.example/issues?card=AX-1")
+                .contains("삼성SDS")                                // 회사명 라벨 (peer id 아님)
+                .doesNotContain("samsung_sds")
+                .contains("중요도 높음")                            // 정성 등급
+                .contains("https://axis.example/issues?card=AX-1")   // 카드 딥링크
+                .contains("문의: axis.admin@sk.com")                 // 비즈니스 푸터
+                .contains("발신 전용")
                 .doesNotContain("강한 흐름")
-                .doesNotContain("형성 중")
-                .doesNotContain("관찰 흐름")
-                .doesNotContain("0.72")
-                .doesNotContain("0.61")
-                .doesNotContain("0.47")
-                .doesNotContain("urgent")
-                .doesNotContain("notable")
-                .doesNotContain("reference");
+                .doesNotContain("0.72");
 
         String html = htmlCaptor.getValue();
         assertThat(html)
                 .contains("<!DOCTYPE html")
-                .contains("AXIS 오늘의 섹터별 브리핑")
+                .contains("삼성SDS")
+                .doesNotContain("samsung_sds")
                 .contains("href=\"https://axis.example/issues?card=AX-1\"")
-                .doesNotContain("강한 흐름")
-                .doesNotContain("0.72")
-                .contains("AX")
-                .contains("보안");
+                .contains("mailto:axis.admin@sk.com")
+                .doesNotContain("0.72");
     }
 
     @Test
@@ -92,11 +82,12 @@ class BriefingServiceTest {
         verifyNoInteractions(sesMailService);
     }
 
-    private CardNewsResponse card(String id, String sector, Float score, String title) {
+    private CardNewsResponse card(String id, String sector, String eventType, Float score, String title) {
         return CardNewsResponse.builder()
                 .id(id)
                 .peerId("samsung_sds")
                 .sector(sector)
+                .eventType(eventType)
                 .exposureScore(score)
                 .title(title)
                 .build();

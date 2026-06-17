@@ -1,6 +1,8 @@
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.config.AuthProperties;
+import com.skala.axis.config.AuthSecurity;
 import com.skala.axis.exception.AiServerException;
 import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
@@ -12,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +27,7 @@ import reactor.core.publisher.Flux;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * MixerAnalysis endpoint.
@@ -38,6 +42,7 @@ import java.util.Map;
 @RequestMapping("/api/mixer")
 @RequiredArgsConstructor
 public class MixerController {
+    private final AuthProperties authProperties;
     private final AiClientService aiClientService;
     private final MixerResultService mixerResultService;
     @Value("${axis.share.base-url:https://axis.local}")
@@ -77,7 +82,8 @@ public class MixerController {
      */
     @PostMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> runMixer(
-            @RequestBody(required = false) Map<String, Object> request) {
+            @RequestBody(required = false) Map<String, Object> request,
+            Authentication authentication) {
         Map<String, Object> body = request != null ? request : Map.of();
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
@@ -92,9 +98,10 @@ public class MixerController {
                 : Map.of();
         String userContext = body.get("user_context") instanceof String s ? s : null;
         String analysisMode = parseAnalysisMode(body);
+        UUID userId = resolveOptionalUserId(authentication);
 
         try {
-            Map<String, Object> result = aiClientService.runMixer(cardIds, ratios, userContext, analysisMode).block();
+            Map<String, Object> result = aiClientService.runMixer(cardIds, ratios, userContext, analysisMode, userId).block();
             AgentResponseGuard.requireSuccess("MIXER", result);
             log.info("Mixer | mode={} cards={} confidence={}", analysisMode, cardIds.size(), result.get("confidence"));
             mixerResultService.saveResult(result, cardIds, ratios, userContext, analysisMode);
@@ -116,7 +123,8 @@ public class MixerController {
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> runMixerStream(
-            @RequestBody(required = false) Map<String, Object> request) {
+            @RequestBody(required = false) Map<String, Object> request,
+            Authentication authentication) {
         Map<String, Object> body = request != null ? request : Map.of();
         List<String> cardIds = parseCardIds(body);
         if (cardIds.isEmpty()) {
@@ -131,9 +139,10 @@ public class MixerController {
                 : Map.of();
         String userContext = body.get("user_context") instanceof String s ? s : null;
         String analysisMode = parseAnalysisMode(body);
+        UUID userId = resolveOptionalUserId(authentication);
 
         log.info("Mixer stream | mode={} cards={}", analysisMode, cardIds.size());
-        return aiClientService.runMixerStream(cardIds, ratios, userContext, analysisMode)
+        return aiClientService.runMixerStream(cardIds, ratios, userContext, analysisMode, userId)
                 .doOnNext(data -> mixerResultService.saveStreamEvent(data, cardIds, ratios, userContext, analysisMode))
                 .map(data -> ServerSentEvent.<String>builder().data(data).build());
     }
@@ -171,6 +180,16 @@ public class MixerController {
             return "deep";
         }
         return "quick";
+    }
+
+    private UUID resolveOptionalUserId(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof com.skala.axis.config.AuthPrincipal principal) {
+            return principal.userId();
+        }
+        if (authProperties.isEnforce()) {
+            AuthSecurity.requireUserId(authentication);
+        }
+        return null;
     }
 
 }

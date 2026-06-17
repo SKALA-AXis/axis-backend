@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -150,11 +151,18 @@ public class AiClientService {
      * @param analysisMode 빠른 실행(quick) 또는 정확 분석(deep)
      */
     public Mono<Map<String, Object>> runMixer(
-            List<String> cardIds, Map<String, Object> ratios, String userContext, String analysisMode) {
+            List<String> cardIds,
+            Map<String, Object> ratios,
+            String userContext,
+            String analysisMode,
+            UUID userId) {
         String normalizedMode = normalizeMixerAnalysisMode(analysisMode);
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("card_ids", cardIds);
         body.put("analysis_mode", normalizedMode);
+        if (userId != null) {
+            body.put("user_id", userId.toString());
+        }
         if (ratios != null && !ratios.isEmpty()) {
             body.put("ratios", ratios);
         }
@@ -178,11 +186,18 @@ public class AiClientService {
      * 길 수 있어 모드별 timeout 을 둔다.</p>
      */
     public Flux<String> runMixerStream(
-            List<String> cardIds, Map<String, Object> ratios, String userContext, String analysisMode) {
+            List<String> cardIds,
+            Map<String, Object> ratios,
+            String userContext,
+            String analysisMode,
+            UUID userId) {
         String normalizedMode = normalizeMixerAnalysisMode(analysisMode);
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("card_ids", cardIds);
         body.put("analysis_mode", normalizedMode);
+        if (userId != null) {
+            body.put("user_id", userId.toString());
+        }
         if (ratios != null && !ratios.isEmpty()) {
             body.put("ratios", ratios);
         }
@@ -241,6 +256,46 @@ public class AiClientService {
     public Mono<Map<String, Object>> generateTodayInsight(Map<String, Object> request) {
         Map<String, Object> body = request == null ? Map.of() : request;
         return postRaw("/today-insight/generate", body, Duration.ofSeconds(90));
+    }
+
+    public Mono<Map<String, Object>> summarizeUserStrategyOverlay(
+            String rawText,
+            String title,
+            java.util.UUID userId,
+            Map<String, Object> metadata
+    ) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("raw_text", rawText);
+        body.put("title", title);
+        body.put("user_id", userId == null ? null : userId.toString());
+        body.put("metadata", metadata == null ? Map.of() : metadata);
+        return postRaw("/profile/user-skax-overlay", body, Duration.ofSeconds(120));
+    }
+
+    public Mono<Map<String, Object>> ocrUserStrategyFile(
+            String fileName,
+            String contentType,
+            byte[] fileBytes
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("file_name", fileName);
+        body.put("content_type", contentType);
+        body.put("file_base64", Base64.getEncoder().encodeToString(fileBytes == null ? new byte[0] : fileBytes));
+        return postRaw("/profile/user-strategy-file-ocr", body, Duration.ofSeconds(180));
+    }
+
+    public Mono<Map<String, Object>> regenerateCardNewsStrategyContext(
+            String cardNewsId,
+            Map<String, Object> analysisPackage,
+            java.util.UUID userId
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("card_news_id", cardNewsId);
+        body.put("analysis_package", analysisPackage == null ? Map.of() : analysisPackage);
+        if (userId != null) {
+            body.put("user_id", userId.toString());
+        }
+        return postRaw("/card-news/strategy-context/regenerate", body, Duration.ofSeconds(180));
     }
 
     /**

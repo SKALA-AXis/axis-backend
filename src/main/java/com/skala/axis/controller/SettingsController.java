@@ -7,19 +7,26 @@ import com.skala.axis.dto.auth.PasswordChangeRequest;
 import com.skala.axis.service.AuthService;
 import com.skala.axis.service.RequestMetadata;
 import com.skala.axis.service.UserSettingsService;
+import com.skala.axis.service.UserStrategyContextService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/settings")
@@ -28,6 +35,7 @@ public class SettingsController {
     private final AuthProperties authProperties;
     private final AuthService authService;
     private final UserSettingsService userSettingsService;
+    private final UserStrategyContextService userStrategyContextService;
 
     @GetMapping("/alert-rules")
     public ResponseEntity<ApiResponse<Object>> getMyAlertRules(Authentication authentication) {
@@ -125,6 +133,78 @@ public class SettingsController {
                     request,
                     RequestMetadata.from(servletRequest)
             )));
+        }
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
+    }
+
+    @GetMapping("/strategy-contexts")
+    public ResponseEntity<ApiResponse<Object>> getStrategyContexts(Authentication authentication) {
+        if (authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(userStrategyContextService.list(
+                    AuthSecurity.requireUserId(authentication)
+            )));
+        }
+        return ResponseEntity.ok(ApiResponse.success(Map.of("items", List.of())));
+    }
+
+    @PostMapping("/strategy-contexts")
+    public ResponseEntity<ApiResponse<Object>> createStrategyContext(
+            @RequestBody(required = false) Map<String, Object> request,
+            Authentication authentication,
+            HttpServletRequest servletRequest
+    ) {
+        if (authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(userStrategyContextService.create(
+                    AuthSecurity.requireUserId(authentication),
+                    request,
+                    RequestMetadata.from(servletRequest)
+            )));
+        }
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
+    }
+
+    @PutMapping("/strategy-contexts/{contextId}")
+    public ResponseEntity<ApiResponse<Object>> updateStrategyContext(
+            @PathVariable UUID contextId,
+            @RequestBody(required = false) Map<String, Object> request,
+            Authentication authentication,
+            HttpServletRequest servletRequest
+    ) {
+        if (authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(userStrategyContextService.update(
+                    AuthSecurity.requireUserId(authentication),
+                    contextId,
+                    request,
+                    RequestMetadata.from(servletRequest)
+            )));
+        }
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
+    }
+
+    @DeleteMapping("/strategy-contexts/{contextId}")
+    public ResponseEntity<ApiResponse<Object>> deleteStrategyContext(
+            @PathVariable UUID contextId,
+            Authentication authentication,
+            HttpServletRequest servletRequest
+    ) {
+        if (authProperties.isEnforce()) {
+            return ResponseEntity.ok(ApiResponse.success(userStrategyContextService.delete(
+                    AuthSecurity.requireUserId(authentication),
+                    contextId,
+                    RequestMetadata.from(servletRequest)
+            )));
+        }
+        return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
+    }
+
+    @PostMapping(value = "/strategy-context-files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<Object>> extractStrategyContextFile(
+            @RequestParam("file") MultipartFile file,
+            Authentication authentication
+    ) {
+        if (authProperties.isEnforce()) {
+            AuthSecurity.requireUserId(authentication);
+            return ResponseEntity.ok(ApiResponse.success(userStrategyContextService.extractFile(file)));
         }
         return ResponseEntity.ok(ApiResponse.success(operationUnavailable("settings_store_unavailable")));
     }
