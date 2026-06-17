@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,6 +40,7 @@ import static com.skala.axis.query.DashboardKeywordTrendQueries.KEYWORD_TREND_SQ
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@Transactional(readOnly = true)
 public class DashboardKeywordTrendChartService {
     private static final int CHART_DAYS = 7;
     private static final int SPIKE_LOOKBACK_DAYS = 14;
