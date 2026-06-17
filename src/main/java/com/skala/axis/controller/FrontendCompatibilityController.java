@@ -5,6 +5,7 @@ import com.skala.axis.service.BriefingReportService;
 import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
+import com.skala.axis.service.PeerCompanyProvider;
 import com.skala.axis.service.RawArticleQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,7 @@ public class FrontendCompatibilityController {
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final RawArticleQueryService rawArticleQueryService;
+    private final PeerCompanyProvider peerCompanyProvider;
 
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboard() {
@@ -72,7 +74,7 @@ public class FrontendCompatibilityController {
                         .map(card -> Map.<String, Object>of(
                                 "id", card.getId(),
                                 "peerId", card.getPeerId() == null ? "" : card.getPeerId(),
-                                "peerName", peerName(card.getPeerId()),
+                                "peerName", peerCompanyProvider.displayName(card.getPeerId()),
                                 "title", card.getTitle() == null ? "" : card.getTitle(),
                                 "summaryLines", card.getSummaryLines() == null ? List.of() : card.getSummaryLines(),
                                 "importance", issueImportance(card.getImportance(), card.getImportanceScore()),
@@ -129,11 +131,4 @@ public class FrontendCompatibilityController {
         return "reference";
     }
 
-    private static String peerName(String peerId) {
-        if ("samsung_sds".equals(peerId)) return "삼성SDS";
-        if ("lg_cns".equals(peerId)) return "LG CNS";
-        if ("hyundai_autoever".equals(peerId)) return "현대오토에버";
-        if ("posco_dx".equals(peerId)) return "포스코DX";
-        return peerId == null || peerId.isBlank() ? "Peer사" : peerId;
-    }
 }
