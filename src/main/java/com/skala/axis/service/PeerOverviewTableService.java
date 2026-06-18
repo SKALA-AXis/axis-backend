@@ -43,6 +43,7 @@ import static com.skala.axis.util.JsonValues.listValue;
 import static com.skala.axis.util.JsonValues.objectList;
 import static com.skala.axis.util.JsonValues.objectMap;
 import static com.skala.axis.util.JsonValues.stringValue;
+import static com.skala.axis.util.MapBuilder.mapOf;
 
 @Slf4j
 @Service
@@ -2596,11 +2597,4 @@ public class PeerOverviewTableService {
     ) {
     }
 
-    private Map<String, Object> mapOf(Object... entries) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        for (int i = 0; i < entries.length; i += 2) {
-            map.put((String) entries[i], entries[i + 1]);
-        }
-        return map;
-    }
 }
