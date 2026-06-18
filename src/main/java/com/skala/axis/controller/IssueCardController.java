@@ -2,7 +2,9 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.CardNewsResponse;
+import com.skala.axis.formatter.IssueImportanceClassifier;
 import com.skala.axis.service.CardNewsService;
+import com.skala.axis.service.PeerCompanyProvider;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class IssueCardController {
     private final CardNewsService cardNewsService;
+    private final PeerCompanyProvider peerCompanyProvider;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getIssues(
@@ -56,7 +59,7 @@ public class IssueCardController {
         return Map.of(
                 "id", card.getId(),
                 "peerId", card.getPeerId() == null ? "" : card.getPeerId(),
-                "peerName", peerName(card.getPeerId()),
+                "peerName", peerCompanyProvider.displayName(card.getPeerId()),
                 "title", card.getTitle() == null ? "" : card.getTitle(),
                 "summaryLines", card.getSummaryLines() == null ? List.of() : card.getSummaryLines(),
                 "importance", issueImportance(card),
@@ -66,21 +69,7 @@ public class IssueCardController {
     }
 
     private static String issueImportance(CardNewsResponse card) {
-        String importance = card.getImportance();
-        if ("urgent".equals(importance) || "notable".equals(importance) || "reference".equals(importance)) {
-            return importance;
-        }
-        Float score = card.getImportanceScore();
-        if (score != null && score >= 0.85f) return "urgent";
-        if (score != null && score >= 0.6f) return "notable";
-        return "reference";
+        return IssueImportanceClassifier.classify(card.getImportance(), card.getImportanceScore());
     }
 
-    private static String peerName(String peerId) {
-        if ("samsung_sds".equals(peerId)) return "삼성SDS";
-        if ("lg_cns".equals(peerId)) return "LG CNS";
-        if ("hyundai_autoever".equals(peerId)) return "현대오토에버";
-        if ("posco_dx".equals(peerId)) return "포스코DX";
-        return peerId == null || peerId.isBlank() ? "Peer사" : peerId;
-    }
 }

@@ -25,6 +25,29 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.skala.axis.formatter.PeerOverviewFormat.blankToNull;
+import static com.skala.axis.formatter.PeerOverviewFormat.firstNonBlank;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatKrwBnText;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentPointText;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentText;
+import static com.skala.axis.formatter.PeerOverviewFormat.nullToDash;
+import static com.skala.axis.formatter.PeerOverviewFormat.nullToEmpty;
+import static com.skala.axis.formatter.PeerOverviewFormat.topicParticle;
+import static com.skala.axis.formatter.PeerInsightBuilder.buildRiskInsight;
+import static com.skala.axis.formatter.PeerInsightBuilder.insight;
+import static com.skala.axis.formatter.PeerInsightBuilder.traceItem;
+import static com.skala.axis.formatter.SwotText.canonicalSwotLabel;
+import static com.skala.axis.formatter.SwotText.defaultSwotFactorType;
+import static com.skala.axis.formatter.SwotText.isInsufficientSwotText;
+import static com.skala.axis.formatter.SwotText.normalizeDisplayText;
+import static com.skala.axis.formatter.SwotText.normalizeSwotDisplayText;
+import static com.skala.axis.formatter.SwotText.sanitizeObjectivePeerFlowText;
+import static com.skala.axis.util.JsonValues.firstNonBlankObject;
+import static com.skala.axis.util.JsonValues.listValue;
+import static com.skala.axis.util.JsonValues.objectList;
+import static com.skala.axis.util.JsonValues.objectMap;
+import static com.skala.axis.util.JsonValues.stringValue;
+import static com.skala.axis.util.MapBuilder.mapOf;
 import static com.skala.axis.query.PeerOverviewFinancialQueries.PEER_FINANCIAL_ROWS_SQL;
 import static com.skala.axis.query.PeerOverviewFinancialQueries.RAW_FINANCIAL_ROWS_SQL;
 import static com.skala.axis.query.PeerOverviewFinancialQueries.RESOLVE_PEER_FINANCIALS_COMMON_PERIOD_SQL;
@@ -431,39 +454,6 @@ public class PeerOverviewTableService {
         return fallback;
     }
 
-    private String canonicalSwotLabel(String value) {
-        String normalized = value == null ? "" : value.trim().toLowerCase();
-        return switch (normalized) {
-            case "strength", "strengths", "강점" -> "Strength";
-            case "weakness", "weaknesses", "약점" -> "Weakness";
-            case "opportunity", "opportunities", "기회" -> "Opportunity";
-            case "threat", "threats", "위협" -> "Threat";
-            default -> null;
-        };
-    }
-
-    private String normalizeDisplayText(String value) {
-        if (value == null) {
-            return "";
-        }
-        String cleaned = value
-                .replaceAll("(?is)<[^>]+>", " ")
-                .replaceAll("[\\[\\]\\{\\}\"]", " ")
-                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.length() > 260) {
-            int sentenceEnd = Math.max(cleaned.lastIndexOf(". ", 220), cleaned.lastIndexOf("다. ", 220));
-            int cutIndex = sentenceEnd > 80 ? sentenceEnd + 1 : 260;
-            cleaned = cleaned.substring(0, Math.min(cutIndex, cleaned.length())).trim();
-        }
-        return cleaned;
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
     private Map<String, List<Map<String, String>>> buildComparisonInsights(List<Map<String, Object>> rows) {
         Map<String, Map<String, Object>> rowById = new HashMap<>();
         for (Map<String, Object> row : rows) {
@@ -762,17 +752,6 @@ public class PeerOverviewTableService {
         return String.join("·", tokens);
     }
 
-    private String topicParticle(String value) {
-        if (value == null || value.isBlank()) {
-            return "은";
-        }
-        char lastChar = value.charAt(value.length() - 1);
-        if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
-            return ((lastChar - 0xAC00) % 28) == 0 ? "는" : "은";
-        }
-        return "는";
-    }
-
     private String firstNonAxisText(String... values) {
         for (String value : values) {
             String cleaned = sanitizeObjectivePeerFlowText(value);
@@ -861,57 +840,6 @@ public class PeerOverviewTableService {
         return String.join(" ", parts);
     }
 
-    private boolean isInsufficientSwotText(String value) {
-        return value != null && (
-                value.contains("현재 입력 근거만으로 해당 축을 정의하기 어렵다")
-                        || value.contains("판단 근거 부족")
-        );
-    }
-
-    private String normalizeSwotDisplayText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        String cleaned = sanitizeObjectivePeerFlowText(value)
-                .replaceAll("[\\[\\]\\{\\}\"]", " ")
-                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.isBlank()) {
-            return "";
-        }
-
-        List<String> uniqueSentences = new ArrayList<>();
-        for (String sentence : cleaned.split("(?<=[.!?。])\\s+")) {
-            String normalized = sentence.replaceAll("\\s+", " ").trim();
-            if (!normalized.isBlank() && !uniqueSentences.contains(normalized)) {
-                uniqueSentences.add(normalized);
-            }
-        }
-        return String.join(" ", uniqueSentences);
-    }
-
-    private Object firstNonBlankObject(Object... values) {
-        for (Object value : values) {
-            String text = stringValue(value);
-            if (!text.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private String defaultSwotFactorType(String label) {
-        if (label == null) {
-            return "";
-        }
-        return switch (label) {
-            case "Strength", "Weakness" -> "internal_controllable";
-            case "Opportunity", "Threat" -> "external_uncontrollable";
-            default -> "";
-        };
-    }
-
     private List<Map<String, Object>> extractAnalysisTrace(PeerLlmAnalysisSnapshot snapshot) {
         List<Map<String, Object>> items = new ArrayList<>();
         List<Map<String, Object>> sourceItems = snapshot.analysisTrace().isEmpty()
@@ -964,81 +892,6 @@ public class PeerOverviewTableService {
         }
     }
 
-    private List<Object> listValue(Object value) {
-        if (value instanceof List<?> list) {
-            return new ArrayList<>(list);
-        }
-        return List.of();
-    }
-
-    private List<Map<String, Object>> objectList(Object value) {
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Object rawItem : listValue(value)) {
-            Map<String, Object> item = objectMap(rawItem);
-            if (!item.isEmpty()) {
-                items.add(item);
-            }
-        }
-        return items;
-    }
-
-    private Map<String, Object> objectMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                result.put(String.valueOf(entry.getKey()), entry.getValue());
-            }
-            return result;
-        }
-        return Map.of();
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value).trim();
-    }
-
-    private String sanitizeObjectivePeerFlowText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        return value
-                .replace("최근 공개 원문에서는", "")
-                .replace("최근 공개 원문에서", "최근 신호에서")
-                .replace("최근 공개 원문 신호", "최근 신호")
-                .replace("이 Peer사는", "해당 기업은")
-                .replace("이 Peer사가", "해당 기업이")
-                .replace("이 Peer사를", "해당 기업을")
-                .replace("이 Peer사의", "해당 기업의")
-                .replace("이 peer사는", "해당 기업은")
-                .replace("이 peer사가", "해당 기업이")
-                .replace("이 peer사를", "해당 기업을")
-                .replace("이 peer사의", "해당 기업의")
-                .replace("Peer사는", "해당 기업은")
-                .replace("Peer사가", "해당 기업이")
-                .replace("Peer사를", "해당 기업을")
-                .replace("Peer사의", "해당 기업의")
-                .replace("Peer사에", "해당 기업에")
-                .replace("Peer사", "대상 기업")
-                .replace("peer사는", "해당 기업은")
-                .replace("peer사가", "해당 기업이")
-                .replace("peer사를", "해당 기업을")
-                .replace("peer사의", "해당 기업의")
-                .replace("peer사에", "해당 기업에")
-                .replace("peer사", "대상 기업")
-                .replace("현재 입력 근거만으로 해당 축을 정의하기 어렵다", "판단 근거가 부족합니다.")
-                .replace("SK AX와 비교했을 때", "")
-                .replace("SK AX와 비교해", "")
-                .replace("SK AX와 비교하면", "")
-                .replace("SK AX 대비", "")
-                .replace("SK AX 기준", "")
-                .replace("SK AX 관점에서", "")
-                .replace("SK AX는", "해당 기업은")
-                .replace("SK AX의", "해당 기업의")
-                .replace("자사", "해당 기업")
-                .replaceAll("\\s+", " ")
-                .trim();
-    }
-
     private List<Map<String, String>> buildAllComparisonInsights(List<Map<String, Object>> rows) {
         List<Map<String, Object>> peerRows = rows.stream()
                 .filter(row -> !"sk_ax".equals(row.get("id")))
@@ -1082,65 +935,6 @@ public class PeerOverviewTableService {
                 insight("기술 신호", peerLabel + "는 " + peerTech + "를 제품·플랫폼 또는 구현 역량의 중심으로 보여줍니다. 기술명과 플랫폼 신호가 기술 방향의 객관 지표로 쓰입니다."),
                 insight("리스크", buildRiskInsight(peerLabel, revenue, margin, marginDelta))
         );
-    }
-
-    private Map<String, String> insight(String label, String body) {
-        Map<String, String> item = new LinkedHashMap<>();
-        item.put("label", label);
-        item.put("body", body);
-        return item;
-    }
-
-    private Map<String, Object> traceItem(String label, String body, String reasoning, String evidence) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("label", label);
-        item.put("body", body);
-        if (reasoning != null && !reasoning.isBlank()) {
-            item.put("reasoning", reasoning);
-        }
-        if (evidence != null && !evidence.isBlank()) {
-            item.put("evidence", evidence);
-        }
-        return item;
-    }
-
-    private String buildRiskInsight(String peerLabel, Double revenue, Double margin, Double marginDelta) {
-        String revenueText = revenue == null ? "매출 데이터가 제한적" : "매출 " + formatKrwBnText(revenue);
-        String marginText = margin == null ? "영업이익률 데이터가 제한적" : "영업이익률 " + formatPercentText(margin);
-        String deltaText = marginDelta == null ? "전분기 대비 수익성 변화는 확인이 제한적입니다" : "전분기 대비 영업이익률 변화는 " + formatPercentPointText(marginDelta) + "입니다";
-        return peerLabel + "는 " + revenueText + ", " + marginText + " 기준으로 함께 봐야 합니다. " + deltaText + ". 따라서 최근 사업·기술 신호가 강하더라도 실적 범위와 수익성 변동은 별도 리스크로 남습니다.";
-    }
-
-    private String nullToDash(Object value) {
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            return stringValue;
-        }
-        return "-";
-    }
-
-    private String formatKrwBnText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        if (Math.abs(value) >= 10_000) {
-            return String.format("%.2f조원", value / 10_000.0);
-        }
-        return String.format("%.0f억원", value);
-    }
-
-    private String formatPercentText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        return String.format("%.2f%%", value);
-    }
-
-    private String formatPercentPointText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        String sign = value > 0 ? "+" : "";
-        return sign + String.format("%.2f%%p", value);
     }
 
     private List<Map<String, Object>> loadFinancialRows(String period) {
@@ -1379,15 +1173,6 @@ public class PeerOverviewTableService {
         return cleaned.replaceAll("^[,;\\s]+|[,;\\s]+$", "");
     }
 
-    private String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return "";
-    }
-
     private Map<String, Object> mapFinancialRow(ResultSet rs) throws SQLException {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", rs.getString("id"));
@@ -1499,10 +1284,6 @@ public class PeerOverviewTableService {
         return result;
     }
 
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
-    }
-
     private record DisplayPeer(int displayOrder, String id, String label) {
     }
 
@@ -1545,11 +1326,4 @@ public class PeerOverviewTableService {
     ) {
     }
 
-    private Map<String, Object> mapOf(Object... entries) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        for (int i = 0; i < entries.length; i += 2) {
-            map.put((String) entries[i], entries[i + 1]);
-        }
-        return map;
-    }
 }
