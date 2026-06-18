@@ -57,6 +57,8 @@ class EventAlertServiceTest {
         ReflectionTestUtils.setField(eventAlertService, "scanLookbackMinutes", 90L);
         ReflectionTestUtils.setField(eventAlertService, "peerEventSuppressDays", 0);
         ReflectionTestUtils.setField(eventAlertService, "recipientsCsv", "team@example.com");
+        ReflectionTestUtils.setField(eventAlertService, "alertPeers",
+                List.of("samsung_sds", "lg_cns", "hyundai_autoever", "posco_dx"));
     }
 
     @Test
@@ -91,6 +93,17 @@ class EventAlertServiceTest {
     void disallowedEventTypeIsBlockedByGate() {
         EventAlertService.AlertOutcome outcome = eventAlertService.evaluateDemo(
                 "samsung_sds", "personnel", "임원 인사 단행", "조직 개편", false, null);
+
+        assertThat(outcome).isEqualTo(EventAlertService.AlertOutcome.SKIPPED_GATE);
+        verifyNoInteractions(sesMailService);
+        verify(sentAlertRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void nonPeerCompanyIsBlockedByGate() {
+        // 산업동향(industry_trend) 등 지정 4사 외 카드는 허용 event_type·금액근거·고점수여도 발송 안 함.
+        EventAlertService.AlertOutcome outcome = eventAlertService.evaluateDemo(
+                "industry_trend", "contract", "글로벌 SI, 대형 클라우드 수주", "산업 동향", true, 0.95f);
 
         assertThat(outcome).isEqualTo(EventAlertService.AlertOutcome.SKIPPED_GATE);
         verifyNoInteractions(sesMailService);

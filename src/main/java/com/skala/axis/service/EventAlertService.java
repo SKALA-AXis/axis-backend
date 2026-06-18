@@ -62,6 +62,10 @@ public class EventAlertService {
     @Value("${axis.alert.event-types:ma,contract,partnership}")
     private List<String> alertEventTypes;
 
+    /** 알림 대상 피어사(company 값, 소문자). 지정 4사 외(산업동향·글로벌 등)는 발송 안 함. */
+    @Value("${axis.alert.peers:samsung_sds,lg_cns,hyundai_autoever,posco_dx}")
+    private List<String> alertPeers;
+
     /** importance_score 보강 임계. financial_refs 가 있으면 이 임계 미달도 통과. */
     @Value("${axis.alert.min-score:0.65}")
     private float minScore;
@@ -201,6 +205,10 @@ public class EventAlertService {
         if (cand.title() == null || cand.title().isBlank()) {
             return false;
         }
+        // 0차: 지정 피어사 카드만 — 산업동향(industry_trend)·글로벌 등 비피어는 알림 대상 아님.
+        if (!normalizedPeers().contains(normalize(cand.peerId()))) {
+            return false;
+        }
         if (cand.eventType() == null || !normalizedEventTypes().contains(cand.eventType())) {
             return false; // 1차: 객관적 대형 이벤트 카테고리만
         }
@@ -227,6 +235,19 @@ public class EventAlertService {
         if (alertEventTypes != null) {
             for (String type : alertEventTypes) {
                 String normalized = normalize(type);
+                if (!normalized.isEmpty()) {
+                    set.add(normalized);
+                }
+            }
+        }
+        return set;
+    }
+
+    private Set<String> normalizedPeers() {
+        Set<String> set = new LinkedHashSet<>();
+        if (alertPeers != null) {
+            for (String peer : alertPeers) {
+                String normalized = normalize(peer);
                 if (!normalized.isEmpty()) {
                     set.add(normalized);
                 }
