@@ -110,6 +110,27 @@ class CardNewsServiceTest {
         assertThat(result.get(0).getDate()).isEqualTo("2026.06.16");
     }
 
+    @Test
+    void industryTrendCardsUsePrimaryKeywordCategoryForDisplayCategory() {
+        CardNews card = card("CN-INDUSTRY-INFRA", 52588L, LocalDateTime.of(2026, 6, 18, 11, 11));
+        ReflectionTestUtils.setField(card, "peerId", "industry_trend");
+        ReflectionTestUtils.setField(card, "peerCompanyId", null);
+        ReflectionTestUtils.setField(card, "primaryKeywordCategory", "infra");
+        RawArticle article = article(52588L, LocalDateTime.of(2026, 6, 18, 11, 11));
+
+        when(cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE))
+                .thenReturn(List.of(card));
+        when(rawArticleRepository.findAllById(any()))
+                .thenReturn(List.of(article));
+
+        List<CardNewsResponse> result = service.getAll(null, null, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getCategory()).isEqualTo("인프라");
+        assertThat(result.get(0).getCategoryLabel()).isEqualTo("인프라");
+        assertThat(result.get(0).getPrimaryKeywordCategory()).isEqualTo("infra");
+    }
+
     private CardNews card(String id, Long rawArticleId, LocalDateTime createdAt) {
         CardNews card = instantiate(CardNews.class);
         ReflectionTestUtils.setField(card, "id", id);
