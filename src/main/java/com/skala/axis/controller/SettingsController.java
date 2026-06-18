@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — Backend 초안부터 로그인/회원가입·챗봇 백엔드 지원까지 설정 컨트롤러 작업
+ *   2026-06-16 심유정 — 사용자 전략 컨텍스트 설정 API 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.config.AuthProperties;

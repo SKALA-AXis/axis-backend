@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-06-05
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-05 박진 — 에이전트 진단 Swagger 엔드포인트 추가
+ *   2026-06-17 최종민 — 순수 read JDBC 서비스에 @Transactional(readOnly=true) 명시
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

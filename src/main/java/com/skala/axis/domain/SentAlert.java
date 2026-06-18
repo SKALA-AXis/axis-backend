@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-15
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-15 최종민 — 대형 이벤트(수주·파트너십·M&A) 1회성 이메일 알림 엔티티 추가, AccessLevel lombok import 수정
+ */
 package com.skala.axis.domain;
 
 import jakarta.persistence.Column;

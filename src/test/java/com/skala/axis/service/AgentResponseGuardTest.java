@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-12
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-12 박진 — 목업 삭제 및 챗봇 고도화 과정에서 추가
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.exception.AiServerException;

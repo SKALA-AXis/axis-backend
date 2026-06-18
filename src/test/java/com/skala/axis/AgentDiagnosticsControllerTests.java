@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-05
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-05 박진 — 에이전트 진단 Swagger 엔드포인트 추가에 대한 테스트 신설
+ */
 package com.skala.axis;
 
 import com.skala.axis.service.AiClientService;

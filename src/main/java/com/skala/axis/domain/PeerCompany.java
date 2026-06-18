@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인으로 엔티티 추가
+ *   2026-05-07 박지원 — company tier 필드 추가
+ *   2026-05-19 박진 — DB 수정 및 미사용 기능 페이지 관련 정리
+ */
 package com.skala.axis.domain;
 
 import jakarta.persistence.*;

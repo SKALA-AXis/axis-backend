@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-22 안가은 — 홈화면 주가 차트 데이터 연동 및 백엔드 SQL 쿼리 분리
+ *   2026-06-10 박진 — 챗봇 로직 수정
+ *   2026-06-17 최종민 — 순수 read JDBC 서비스에 @Transactional(readOnly=true) 명시
+ */
 package com.skala.axis.service;
 
 import lombok.RequiredArgsConstructor;

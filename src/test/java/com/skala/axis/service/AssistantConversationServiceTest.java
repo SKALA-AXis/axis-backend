@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-11 박진 — 챗봇 AI 연동 강화 시 추가, 이후 목업 삭제 및 챗봇 고도화 반영
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;

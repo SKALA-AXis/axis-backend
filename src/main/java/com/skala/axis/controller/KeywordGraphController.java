@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-11 박진 — 프론트 연동 위한 백엔드 대량 수정
+ *   2026-06-01 안가은 — 원문 기사 기반 키워드 그래프 API 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

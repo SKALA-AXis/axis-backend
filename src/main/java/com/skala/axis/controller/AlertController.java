@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 작성, 이후 대형 이벤트(수주·파트너십·M&A) 1회성 이메일 알림·데모 인젝트 추가
+ *   2026-05-06 박진 — 백엔드 초안 완성 및 프론트 기반 대량 수정·챗봇 로직 반영
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

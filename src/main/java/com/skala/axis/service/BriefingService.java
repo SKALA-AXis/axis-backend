@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — 백엔드 베이스라인 작성, 이후 SES V2 메일 발송 통합·card_news 개편·브리핑 메일 양식 정비
+ *   2026-05-12 박진 — 섹터별 오류 수정 및 챗봇 백엔드 지원 추가
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.dto.CardNewsResponse;

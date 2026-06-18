@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-22 박진 — 올라가기 버튼 작업과 함께 추가
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제와 관리자 감사로그 API 추가 반영
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;

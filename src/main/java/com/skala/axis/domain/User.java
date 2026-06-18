@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 기능으로 User 엔티티 추가, 이후 카드뉴스·알림 설정 및 중요 알림 키워드 사용자 설정 반영
+ */
 package com.skala.axis.domain;
 
 import jakarta.persistence.Column;

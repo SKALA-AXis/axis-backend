@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-11 박진 — 프론트 기반 대량 수정 및 투데이 인사이트 API·챗봇 로직 연결
+ *   2026-05-22 안가은 — 홈화면 그래프·대시보드 키워드 트렌드 데이터 연동
+ *   2026-06-09 최종민 — today-insight K8s CronJob 생성 엔드포인트 추가 및 hot-path 성능 개선
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

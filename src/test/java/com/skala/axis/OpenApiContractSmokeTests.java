@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — Backend 초안에서 시작해 프론트 기반 대량 수정·로그인/회원가입·비밀번호 찾기·투데이 인사이트·챗봇 고도화까지 반영
+ *   2026-06-09 최종민 — K8s CronJob용 today-insight cron-generate 추가 반영
+ */
 package com.skala.axis;
 
 import org.junit.jupiter.api.DynamicTest;

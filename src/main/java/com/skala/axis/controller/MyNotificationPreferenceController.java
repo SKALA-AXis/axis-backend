@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-22 박진 — 카드뉴스 대폭 수정 및 알림 설정 기능 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.config.AuthProperties;

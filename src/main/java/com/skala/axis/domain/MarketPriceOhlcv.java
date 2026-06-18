@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-22 안가은 — 홈화면 그래프용 시세 OHLCV 엔티티 추가
+ */
 package com.skala.axis.domain;
 
 import jakarta.persistence.Column;
