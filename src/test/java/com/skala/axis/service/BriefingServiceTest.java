@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-12
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-12 박진 — 섹터별 오류 수정과 함께 추가, 이후 사용자 챗봇 백엔드 지원 반영
+ *   2026-05-12 최종민 — SesMailService mock 전환·섹터 텍스트 형식 변경, issue_cards→card_news 리네임, 브리핑 메일 양식 비즈니스화 반영
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.dto.CardNewsResponse;

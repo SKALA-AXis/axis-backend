@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-15
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-15 최종민 — 대형 이벤트(수주·파트너십·M&A) 1회성 이메일 알림 추가, 이후 메일 양식 정리·카드뉴스 링크 보완
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;

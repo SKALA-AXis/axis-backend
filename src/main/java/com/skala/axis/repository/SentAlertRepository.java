@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-15
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-15 최종민 — 대형 이벤트(수주·파트너십·M&A) 1회성 이메일 알림용 발송 이력 리포지토리 추가
+ */
 package com.skala.axis.repository;
 
 import com.skala.axis.domain.SentAlert;

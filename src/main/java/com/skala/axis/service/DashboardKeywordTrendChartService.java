@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-22 안가은 — 홈화면 키워드 트렌드 그래프 데이터 연동, 이후 캐시 분리·고정 섹터 그룹·스파이크 근거 제공
+ *   2026-06-10 박진 — 챗봇 로직 수정
+ *   2026-06-17 최종민 — 순수 read JDBC 서비스에 @Transactional(readOnly=true) 명시
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

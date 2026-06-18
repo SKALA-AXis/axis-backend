@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — Backend 초안 작성 후 챗봇 로직 수정 및 AI 연동 강화
+ *   2026-05-15 최종민 — /api/monitoring/{peerId}/strategy fixture를 axis-ai /peer/compare 로 연동
+ *   2026-05-26 안가은 — Peer+ 페이지 및 재무표 연동
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

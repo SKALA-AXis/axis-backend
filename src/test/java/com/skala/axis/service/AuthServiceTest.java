@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 로직개선·로그인 기능 구현과 함께 추가, 이후 비밀번호 찾기 업데이트·수정 반영
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.config.AuthProperties;

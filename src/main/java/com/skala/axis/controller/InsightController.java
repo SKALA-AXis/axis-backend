@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-11 박진 — 프론트 기반 대량 수정으로 인사이트 컨트롤러 작성, 이후 챗봇 로직·AI 연동 보강
+ *   2026-05-15 최종민 — InsightController 를 axis-ai /insight/generate 와 연동하고 202 ACCEPTED 응답 복원
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

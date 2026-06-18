@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-09
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-09 최종민 — K8s CronJob용 today-insight cron-generate 추가
+ */
 package com.skala.axis.service;
 
 import java.time.LocalDate;

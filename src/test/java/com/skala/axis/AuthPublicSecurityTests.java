@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-22 박진 — 로그인 보안 및 비밀번호 찾기 수정에 대한 테스트 신설
+ */
 package com.skala.axis;
 
 import com.skala.axis.dto.auth.PasswordResetConfirmRequest;

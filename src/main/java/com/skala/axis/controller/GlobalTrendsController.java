@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-15
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-15 최종민 — /api/global/trends/run 을 axis-ai 와 연동하고 GET /api/global/trends 조회 API 추가
+ *   2026-06-11 박진 — 챗봇 AI 연동 보강
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

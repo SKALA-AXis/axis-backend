@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-22 안가은 — 홈화면 그래프 데이터 연동을 위한 시세 OHLCV 리포지토리 추가
+ */
 package com.skala.axis.repository;
 
 import com.skala.axis.domain.MarketPriceOhlcv;

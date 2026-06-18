@@ -1,3 +1,12 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 생성, SES 메일 통합 및 insight/mixer/peer/global/link/chat axis-ai 연동 배선, briefing 생성 위임·SSE 프록시·readOnly 트랜잭션 정리
+ *   2026-05-12 박지원 — modified 추적 추가
+ *   2026-06-05 박진 — 에이전트 진단 엔드포인트 추가, assistant 대화·PDF 챗 API 및 투데이 인사이트 저장/제공 연결
+ *   2026-06-16 심유정 — 사용자 전략 컨텍스트 설정 API·카드 전략 액션 추가, 전략 컨텍스트 재생성 타임아웃 연장
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.dto.BriefingContent;

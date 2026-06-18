@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — 관리자 컨트롤러 초안 작성, 이후 로그인/회원가입·챗봇 로직 반영
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제·관리자 감사로그 API 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.config.AuthPrincipal;

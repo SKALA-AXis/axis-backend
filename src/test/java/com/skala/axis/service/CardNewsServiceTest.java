@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-06-12
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-12 박진 — 생성된 브리핑 워크플로 노출 기능 관련 테스트 추가
+ *   2026-06-15 박지원 — 재무 수정 develop 머지 반영, 카드뉴스 날짜 표시 어긋남 수정 및 소스 발행 시각 기준 정렬 테스트 보강
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;

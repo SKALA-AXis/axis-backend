@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-11 박진 — 프론트 기반 백엔드 대량 수정 시 원문 기사 컨트롤러 추가
+ *   2026-05-19 최종민 — DB 정규화에 맞춰 수정
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

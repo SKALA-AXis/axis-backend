@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 추가 및 올라가기 버튼 추가
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제와 관리자 감사로그 API 추가
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.User;

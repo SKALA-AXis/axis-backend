@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — 브리핑 컨트롤러 초안 작성, 이후 생성형 브리핑 워크플로 노출·목업 제거·챗봇 AI 연동 보강
+ *   2026-06-09 최종민 — 브리핑 생성을 axis-ai로 위임하고 V30 이미지 읽기 수정
+ *   2026-06-14 안가은 — 브리핑·대시보드 read model 갱신
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
