@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-19
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-19 최종민 — DB 정규화·수정 도입 및 read-only @Transactional 명시
+ *   2026-06-10 박진 — 챗봇 로직 수정
+ *   2026-06-11 안가은 — 백엔드 SQL 쿼리 분리
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

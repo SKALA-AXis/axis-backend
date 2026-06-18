@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 추가 작업에서 관리자 부트스트랩 서비스 추가
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.config.AuthProperties;

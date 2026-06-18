@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-15
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-15 최종민 — 대형 이벤트 1회성 이메일 알림과 AI 분류 기반 데모 인젝트 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.domain.SentAlert;

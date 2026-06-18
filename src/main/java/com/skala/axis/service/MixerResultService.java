@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-06-10
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-10 박진 — mixer 결과 영속화 및 최신 인사이트 제공, 목업 삭제·챗봇 고도화
+ *   2026-06-17 최종민 — 쓰기 보유 JDBC 서비스 메서드 레벨 @Transactional 적용
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;

@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-16
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-16 최종민 — today-insight cron에서 "뉴스 없음"만 연성 처리하고 한도 소진은 노출하도록 검증 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

@@ -1,3 +1,13 @@
+/*
+ * 작성일: 2026-05-12
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-12 최종민 — issue_cards를 card_news로 개편하고 DTO 이미지 필드를 cover*로 정렬
+ *   2026-05-19 박진 — 불필요 기능 페이지 정리 및 카드뉴스 데이터 연동·UI 버튼 추가
+ *   2026-05-27 안가은 — 카드뉴스 데이터 연동, 소프트삭제·관리자 감사로그·키워드 그래프 API 추가
+ *   2026-06-10 심유정 — 카드뉴스 프런트 노출 필드 및 표시일 타임존 처리 보완, 전략 액션 프로젝션 추가
+ *   2026-06-11 박지원 — 카드뉴스 소스 카운트·이미지 폴백·날짜 표시 수정, 자사 필터링·산업 트렌드 지원
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -1113,9 +1123,6 @@ public class CardNewsService {
     }
 
     private String displayCategoryLabel(CardNews card, String sector) {
-        if ("industry_trend".equals(card.getPeerId())) {
-            return "industry";
-        }
         return categoryLabel(sector, card.getPrimaryKeywordCategory());
     }
 

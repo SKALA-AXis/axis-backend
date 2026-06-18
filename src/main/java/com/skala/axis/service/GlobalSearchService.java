@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-22
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-22 박진 — 카드뉴스 대폭 수정 및 알림 설정 작업
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제·관리자 감사로그 API 추가 및 검색 API 보강
+ *   2026-06-12 최종민 — 검색 화면 CARD_NEWS를 AI 의미 검색(Qdrant)으로 위임
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.config.AxisTime;

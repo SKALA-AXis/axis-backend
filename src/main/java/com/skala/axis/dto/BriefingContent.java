@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-12
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-12 최종민 — AWS SES V2 SDK 통합(IRSA) 작업 중 이메일 본문 DTO 추가
+ */
 package com.skala.axis.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;

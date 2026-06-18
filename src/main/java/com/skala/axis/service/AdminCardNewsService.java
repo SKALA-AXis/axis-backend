@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-29
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제 관리자 서비스 추가 및 복구 이유 처리 보강
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.config.AuthPrincipal;

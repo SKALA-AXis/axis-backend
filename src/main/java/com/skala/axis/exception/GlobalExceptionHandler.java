@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 작성, 카드 뉴스 이미지 서빙 관련 처리 추가
+ *   2026-05-06 박진 — Backend 초안 완성 및 로그인/회원가입 예외 처리 추가, 챗봇 AI 연동 예외 처리 보강
+ */
 package com.skala.axis.exception;
 
 import com.skala.axis.dto.ApiResponse;

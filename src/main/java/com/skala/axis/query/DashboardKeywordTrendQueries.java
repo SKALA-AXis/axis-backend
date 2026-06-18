@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-11
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-06-11 안가은 — backend SQL 쿼리 분리 작업으로 키워드 트렌드 쿼리 작성, 이후 read model 갱신 및 collected_at 포함 수정
+ */
 package com.skala.axis.query;
 
 public final class DashboardKeywordTrendQueries {

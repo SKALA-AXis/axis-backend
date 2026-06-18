@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-26
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-26 안가은 — Peer+ 페이지 재무표 연동 및 개요·SWOT·키워드 read model 다수 개선
+ *   2026-06-15 박지원 — 카드뉴스 날짜 및 JSON 자산 수정
+ *   2026-06-17 최종민 — 순수 read JDBC 서비스에 @Transactional(readOnly=true) 명시
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

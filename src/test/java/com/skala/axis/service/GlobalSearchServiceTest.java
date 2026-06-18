@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-06-12
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-12 최종민 — 검색 화면 CARD_NEWS를 AI 의미 검색(Qdrant)으로 위임하는 테스트 작성
+ *   2026-06-14 안가은 — 대시보드 및 글로벌 검색 API 보강에 따른 테스트 추가
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.dto.SearchRequest;

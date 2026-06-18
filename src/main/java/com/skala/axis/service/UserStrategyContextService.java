@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-16
+ * 작성자: 심유정
+ * 변경이력:
+ *   2026-06-16 심유정 — 사용자 전략 컨텍스트 설정 API 신설, 이후 카드 전략 액션 projection 추가
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;

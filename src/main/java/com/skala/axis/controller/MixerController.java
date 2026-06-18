@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — Backend 초안 작성 후 믹서/챗봇 로직 고도화 (목업 삭제, AI 연동 강화)
+ *   2026-05-15 최종민 — /api/mixer fixture를 axis-ai /mixer/analyze 로 연동 및 실시간 단계 진행 SSE 프록시 추가
+ *   2026-06-17 심유정 — 카드 전략 액션 projection 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

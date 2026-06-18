@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 구성 후 수동 브리핑 트리거/KST 보정, /briefing→/delivery 정렬, prod Cron 토큰 fail-closed, 대시보드 today-insight cron 추가
+ *   2026-05-06 박진 — Backend 초안 작성 및 챗봇 로직 수정
+ *   2026-05-12 박지원 — 변경분 추적(track modified)
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

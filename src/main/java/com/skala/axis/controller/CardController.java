@@ -1,3 +1,12 @@
+/*
+ * 작성일: 2026-05-06
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-06 박진 — 백엔드 초안에 카드 컨트롤러 작성 및 챗봇 연동 로직 보강
+ *   2026-05-15 최종민 — /api/cards/{id}/verify-link 를 axis-ai /link/verify 와 연동하고 실 DB 조회로 전환
+ *   2026-05-27 안가은 — 카드뉴스 데이터 연동
+ *   2026-06-17 심유정 — 카드 전략 액션 projection 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.config.AuthProperties;

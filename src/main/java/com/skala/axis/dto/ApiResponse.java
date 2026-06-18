@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 구축 시 공통 API 응답 래퍼 추가
+ */
 package com.skala.axis.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;

@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-06-12
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-12 박진 — 생성된 브리핑 워크플로 노출 기능 관련 테스트 추가
+ *   2026-06-15 박지원 — 재무 수정 develop 머지 반영, 카드뉴스 날짜 표시 어긋남 수정 및 소스 발행 시각 기준 정렬 테스트 보강
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -101,6 +108,27 @@ class CardNewsServiceTest {
         assertThat(result.get(0).getPublishedDate()).isEqualTo("2026-06-16");
         assertThat(result.get(0).getPublishedAt()).isEqualTo("2026-06-16T22:00:00+09:00");
         assertThat(result.get(0).getDate()).isEqualTo("2026.06.16");
+    }
+
+    @Test
+    void industryTrendCardsUsePrimaryKeywordCategoryForDisplayCategory() {
+        CardNews card = card("CN-INDUSTRY-INFRA", 52588L, LocalDateTime.of(2026, 6, 18, 11, 11));
+        ReflectionTestUtils.setField(card, "peerId", "industry_trend");
+        ReflectionTestUtils.setField(card, "peerCompanyId", null);
+        ReflectionTestUtils.setField(card, "primaryKeywordCategory", "infra");
+        RawArticle article = article(52588L, LocalDateTime.of(2026, 6, 18, 11, 11));
+
+        when(cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE))
+                .thenReturn(List.of(card));
+        when(rawArticleRepository.findAllById(any()))
+                .thenReturn(List.of(article));
+
+        List<CardNewsResponse> result = service.getAll(null, null, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getCategory()).isEqualTo("인프라");
+        assertThat(result.get(0).getCategoryLabel()).isEqualTo("인프라");
+        assertThat(result.get(0).getPrimaryKeywordCategory()).isEqualTo("infra");
     }
 
     private CardNews card(String id, Long rawArticleId, LocalDateTime createdAt) {

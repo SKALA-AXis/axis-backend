@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 구축 시 검색 요청 DTO 추가, 이후 검색 화면 CARD_NEWS를 AI 의미 검색(Qdrant)으로 위임
+ */
 package com.skala.axis.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;

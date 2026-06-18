@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-06-01
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-06-01 안가은 — 원문 기사 기반 키워드 그래프 API 추가 및 peer SWOT 생성 입력 보완
+ *   2026-06-17 최종민 — 순수 read JDBC 서비스에 @Transactional(readOnly=true) 명시
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;
