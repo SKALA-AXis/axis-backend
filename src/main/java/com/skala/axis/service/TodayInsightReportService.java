@@ -20,6 +20,7 @@ import java.util.Optional;
 @Transactional(readOnly = true)
 public class TodayInsightReportService {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final int LOOKBACK_REPORT_LIMIT = 14;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -34,16 +35,42 @@ public class TodayInsightReportService {
                      WHERE report_date <= CAST(? AS date)
                        AND status = 'active'
                      ORDER BY report_date DESC, created_at DESC
-                     LIMIT 1
-                    """, anchorDate.toString());
+                     LIMIT ?
+                    """, anchorDate.toString(), LOOKBACK_REPORT_LIMIT);
             if (rows.isEmpty()) {
                 return Optional.empty();
             }
-            return parsePayload(rows.get(0), anchorDate);
+            Optional<Map<String, Object>> firstPlaceholder = Optional.empty();
+            for (Map<String, Object> row : rows) {
+                Optional<Map<String, Object>> parsed = parsePayload(row, anchorDate);
+                if (parsed.isEmpty()) {
+                    continue;
+                }
+                if (isStatusPlaceholder(parsed.get())) {
+                    if (firstPlaceholder.isEmpty()) {
+                        firstPlaceholder = parsed;
+                    }
+                    continue;
+                }
+                return parsed;
+            }
+            return firstPlaceholder;
         } catch (Exception e) {
             log.debug("TodayInsight latest DB fallback skipped | anchor={} error={}", anchorDate, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    private boolean isStatusPlaceholder(Map<String, Object> payload) {
+        Object rawProvenance = payload.get("provenance");
+        if (!(rawProvenance instanceof Map<?, ?> provenance)) {
+            return false;
+        }
+        Object placeholder = provenance.get("is_status_placeholder");
+        String resultKind = String.valueOf(provenance.get("result_kind"));
+        return Boolean.parseBoolean(String.valueOf(placeholder))
+                || "no_current_signals".equals(resultKind)
+                || "scheduled_pending".equals(resultKind);
     }
 
     private Optional<Map<String, Object>> parsePayload(Map<String, Object> row, LocalDate anchorDate) {
