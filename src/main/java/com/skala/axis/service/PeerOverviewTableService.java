@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -31,6 +32,41 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static com.skala.axis.formatter.PeerOverviewFormat.blankToNull;
+import static com.skala.axis.formatter.PeerOverviewFormat.firstNonBlank;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatKrwBnText;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentPointText;
+import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentText;
+import static com.skala.axis.formatter.PeerOverviewFormat.nullToDash;
+import static com.skala.axis.formatter.PeerOverviewFormat.nullToEmpty;
+import static com.skala.axis.formatter.PeerOverviewFormat.topicParticle;
+import static com.skala.axis.formatter.PeerInsightBuilder.buildRiskInsight;
+import static com.skala.axis.formatter.PeerInsightBuilder.insight;
+import static com.skala.axis.formatter.PeerInsightBuilder.traceItem;
+import static com.skala.axis.formatter.SwotText.canonicalSwotLabel;
+import static com.skala.axis.formatter.SwotText.defaultSwotFactorType;
+import static com.skala.axis.formatter.SwotText.isInsufficientSwotText;
+import static com.skala.axis.formatter.SwotText.normalizeDisplayText;
+import static com.skala.axis.formatter.SwotText.normalizeSwotDisplayText;
+import static com.skala.axis.formatter.SwotText.sanitizeObjectivePeerFlowText;
+import static com.skala.axis.util.JsonValues.firstNonBlankObject;
+import static com.skala.axis.util.JsonValues.listValue;
+import static com.skala.axis.util.JsonValues.objectList;
+import static com.skala.axis.util.JsonValues.objectMap;
+import static com.skala.axis.util.JsonValues.stringValue;
+import static com.skala.axis.util.MapBuilder.mapOf;
+import static com.skala.axis.query.PeerOverviewFinancialQueries.PEER_FINANCIAL_ROWS_SQL;
+import static com.skala.axis.query.PeerOverviewFinancialQueries.RAW_FINANCIAL_ROWS_SQL;
+import static com.skala.axis.query.PeerOverviewFinancialQueries.RESOLVE_PEER_FINANCIALS_COMMON_PERIOD_SQL;
+import static com.skala.axis.query.PeerOverviewFinancialQueries.RESOLVE_RAW_FINANCIAL_COMMON_PERIOD_SQL;
+import static com.skala.axis.query.PeerOverviewPositioningQueries.LATEST_POSITIONING_POINTS_SQL;
+import static com.skala.axis.query.PeerOverviewPositioningQueries.POSITIONING_POINTS_SQL;
+import static com.skala.axis.query.PeerOverviewPositioningQueries.RESOLVE_COMMON_PERIOD_SQL;
+import static com.skala.axis.query.PeerOverviewTableQueries.LATEST_DATA_VERSION_SQL;
+import static com.skala.axis.query.PeerOverviewTableQueries.LLM_KEYWORD_ROWS_SQL;
+import static com.skala.axis.query.PeerOverviewTableQueries.PEER_LLM_ANALYSIS_SNAPSHOTS_SQL;
+import static com.skala.axis.query.PeerOverviewTableQueries.SWOT_INSIGHTS_SQL;
 
 @Slf4j
 @Service
@@ -131,19 +167,8 @@ public class PeerOverviewTableService {
     }
 
     private Instant loadLatestPeerOverviewDataVersion() {
-        String sql = """
-                SELECT COALESCE(
-                    MAX(GREATEST(generated_at, created_at, updated_at)),
-                    TIMESTAMPTZ 'epoch'
-                ) AS latest_at
-                FROM peer_llm_analysis_snapshots
-                WHERE analysis_type IN ('peer_swot_comparison', 'peer_overview_keywords')
-                  AND status = 'active'
-                  AND peer_id IN ('all', 'sk_ax', 'samsung_sds', 'lg_cns', 'hyundai_autoever', 'posco_dx')
-                  AND (expires_at IS NULL OR expires_at > NOW())
-                """;
         try {
-            return jdbcTemplate.query(sql, rs -> {
+            return jdbcTemplate.query(LATEST_DATA_VERSION_SQL, rs -> {
                 if (!rs.next()) {
                     return Instant.EPOCH;
                 }
@@ -181,74 +206,9 @@ public class PeerOverviewTableService {
     }
 
     private String resolveCommonPeriod() {
-        String sql = """
-                WITH metric_rows AS (
-                    SELECT
-                        id AS metric_row_id,
-                        peer_id,
-                        period,
-                        CASE
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
-                            ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
-                        END AS metric_name_canonical,
-                        COALESCE(value_krwbn, value_numeric::double precision) AS metric_value,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY peer_id, period,
-                                CASE
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
-                                    ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
-                                END
-                            ORDER BY
-                                confidence DESC NULLS LAST,
-                                updated_at DESC NULLS LAST,
-                                id DESC
-                        ) AS row_rank
-                    FROM raw_article_financial_metrics
-                    WHERE metric_scope = 'company_total'
-                      AND source_type = 'ir'
-                      AND peer_id IN (?, ?, ?, ?, ?)
-                      AND period IS NOT NULL
-                      AND (
-                          COALESCE(NULLIF(metric_label, ''), metric_name) NOT IN ('순이익', '당기순이익', 'net_income', 'net_profit')
-                          OR business_area = 'company_total'
-                      )
-                ),
-                latest_metric_rows AS (
-                    SELECT *
-                    FROM metric_rows
-                    WHERE row_rank = 1
-                ),
-                period_coverage AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        MAX(CASE WHEN metric_name_canonical = 'revenue_total' THEN metric_value END) AS revenue_total,
-                        MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN metric_value END) AS operating_profit
-                    FROM latest_metric_rows
-                    GROUP BY peer_id, period
-                )
-                SELECT period
-                FROM period_coverage
-                WHERE revenue_total IS NOT NULL
-                  AND operating_profit IS NOT NULL
-                GROUP BY period
-                HAVING COUNT(DISTINCT peer_id) = ?
-                ORDER BY
-                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
-                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
-                    period DESC
-                LIMIT 1
-                """;
-
         try {
             return jdbcTemplate.query(
-                    sql,
+                    RESOLVE_RAW_FINANCIAL_COMMON_PERIOD_SQL,
                     ps -> {
                         bindFinancialPeerIds(ps, 1);
                         ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
@@ -262,119 +222,19 @@ public class PeerOverviewTableService {
     }
 
     private String resolvePositioningCommonPeriod() {
-        String sql = """
-                WITH source_rows AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        metric_name,
-                        value_krwbn,
-                        CASE
-                            WHEN metric_name <> 'revenue_total_yoy' THEN value_numeric
-                            WHEN value_numeric IS NULL THEN NULL
-                            WHEN ABS(value_numeric) <= 200 THEN value_numeric
-                            WHEN regexp_match(COALESCE(evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%') IS NOT NULL THEN
-                                (
-                                    CASE
-                                        WHEN (regexp_match(COALESCE(evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[1] IN ('△', '-') THEN -1
-                                        ELSE 1
-                                    END
-                                ) * ((regexp_match(COALESCE(evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[2])::numeric
-                            ELSE NULL
-                        END AS normalized_value_numeric,
-                        source_type,
-                        confidence,
-                        updated_at,
-                        id,
-                        evidence_text
-                    FROM raw_article_financial_metrics
-                    WHERE metric_scope = 'company_total'
-                      AND business_area = 'company_total'
-                      AND source_type = 'ir'
-                      AND peer_id IN (?, ?, ?, ?, ?)
-                      AND period ~ '^[0-9]{4}Q[1-4]$'
-                      AND metric_name IN ('revenue_total', 'revenue_total_yoy')
-                ),
-                metric_rows AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        metric_name,
-                        value_krwbn,
-                        normalized_value_numeric,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY peer_id, period, metric_name
-                            ORDER BY
-                                CASE
-                                    WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
-                                    ELSE 0
-                                END,
-                                confidence DESC NULLS LAST,
-                                updated_at DESC NULLS LAST,
-                                id DESC
-                        ) AS row_rank
-                    FROM source_rows
-                ),
-                latest_metric_rows AS (
-                    SELECT *
-                    FROM metric_rows
-                    WHERE row_rank = 1
-                ),
-                revenue_periods AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) AS revenue_total_krwbn,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS revenue_total_yoy
-                    FROM latest_metric_rows
-                    GROUP BY peer_id, period
-                ),
-                period_coverage AS (
-                    SELECT
-                        current_rows.peer_id,
-                        current_rows.period,
-                        current_rows.revenue_total_krwbn,
-                        COALESCE(
-                            current_rows.revenue_total_yoy,
-                            CASE
-                                WHEN previous_rows.revenue_total_krwbn IS NOT NULL
-                                 AND previous_rows.revenue_total_krwbn <> 0
-                                 AND current_rows.revenue_total_krwbn IS NOT NULL
-                                THEN ((current_rows.revenue_total_krwbn - previous_rows.revenue_total_krwbn)
-                                    / previous_rows.revenue_total_krwbn * 100)
-                                ELSE NULL
-                            END
-                        ) AS revenue_total_yoy
-                    FROM revenue_periods current_rows
-                    LEFT JOIN revenue_periods previous_rows
-                      ON previous_rows.peer_id = current_rows.peer_id
-                     AND previous_rows.period = (
-                         (COALESCE(NULLIF(SUBSTRING(current_rows.period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text
-                         || 'Q'
-                         || COALESCE(NULLIF(SUBSTRING(current_rows.period FROM 'Q([1-4])$'), ''), '')
-                     )
-                )
-                SELECT period
-                FROM period_coverage
-                WHERE revenue_total_krwbn IS NOT NULL
-                  AND revenue_total_yoy IS NOT NULL
-                GROUP BY period
-                HAVING COUNT(DISTINCT peer_id) = ?
-                ORDER BY
-                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
-                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
-                    period DESC
-                LIMIT 1
-                """;
-
-        return jdbcTemplate.query(
-                sql,
-                ps -> {
-                    bindFinancialPeerIds(ps, 1);
-                    ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
-                },
-                rs -> rs.next() ? rs.getString("period") : null
-        );
+        try {
+            return jdbcTemplate.query(
+                    RESOLVE_COMMON_PERIOD_SQL,
+                    ps -> {
+                        bindFinancialPeerIds(ps, 1);
+                        ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
+                    },
+                    rs -> rs.next() ? rs.getString("period") : null
+            );
+        } catch (DataAccessException ex) {
+            log.warn("PeerOverviewTable | positioning common period unavailable, using latest peer periods", ex);
+            return null;
+        }
     }
 
     private List<Map<String, Object>> loadRows(String period, Map<String, SupplementalRow> supplementalRows) {
@@ -435,58 +295,7 @@ public class PeerOverviewTableService {
 
     private Map<String, List<Map<String, String>>> loadSwotInsights() {
         try {
-            String sql = """
-                    WITH target_peers(id, name, aliases) AS (
-                        VALUES
-                            ('sk_ax', 'SK AX', ARRAY['sk ax', 'skax', '에스케이 에이엑스']),
-                            ('samsung_sds', '삼성 SDS', ARRAY['samsung sds', 'samsungsds', '삼성 sds', '삼성sds']),
-                            ('lg_cns', 'LG CNS', ARRAY['lg cns', 'lgcns', '엘지 cns', '엘지씨엔에스']),
-                            ('hyundai_autoever', '현대 오토에버', ARRAY['hyundai autoever', 'hyundai_autoever', '현대 오토에버', '현대오토에버']),
-                            ('posco_dx', '포스코 DX', ARRAY['posco dx', 'posco_dx', '포스코 dx', '포스코dx'])
-                    ),
-                    matched_articles AS (
-                        SELECT
-                            tp.id AS peer_id,
-                            tp.name AS peer_name,
-                            ra.title,
-                            ra.content,
-	                            ra.metadata::text AS metadata_text,
-	                            COALESCE(ra.published_at, ra.collected_at, ra.created_at) AS article_at,
-	                            ROW_NUMBER() OVER (
-	                                PARTITION BY tp.id
-	                                ORDER BY
-	                                    CASE
-	                                        WHEN COALESCE(ra.content, '') ILIKE '%SWOT 분석%' THEN 0
-	                                        ELSE 1
-	                                    END,
-	                                    CASE
-	                                        WHEN COALESCE(ra.content, '') LIKE '%입사제안 받기%' THEN 1
-	                                        ELSE 0
-	                                    END,
-	                                    COALESCE(ra.published_at, ra.collected_at, ra.created_at) DESC NULLS LAST,
-	                                    ra.id DESC
-	                            ) AS row_rank
-	                        FROM raw_articles ra
-	                        JOIN target_peers tp
-	                          ON EXISTS (
-	                              SELECT 1
-	                              FROM unnest(tp.aliases) alias
-	                              WHERE lower(
-	                                  COALESCE(ra.title, '')
-	                                  || ' '
-	                                  || split_part(trim(BOTH ' "' FROM COALESCE(ra.content, '')), E'\n', 1)
-	                              ) LIKE '%' || alias || '%'
-	                          )
-	                        WHERE ra.source_name = 'catch_company_analysis'
-	                          AND COALESCE(ra.content, '') ILIKE '%SWOT 분석%'
-	                          AND COALESCE(ra.content, '') NOT LIKE '%입사제안 받기%'
-	                    )
-                    SELECT peer_id, peer_name, title, content, metadata_text
-                    FROM matched_articles
-                    WHERE row_rank = 1
-                    """;
-
-            Map<String, List<Map<String, String>>> insights = jdbcTemplate.query(sql, rs -> {
+            Map<String, List<Map<String, String>>> insights = jdbcTemplate.query(SWOT_INSIGHTS_SQL, rs -> {
                 Map<String, List<Map<String, String>>> result = new LinkedHashMap<>();
                 while (rs.next()) {
                     String peerId = rs.getString("peer_id");
@@ -653,39 +462,6 @@ public class PeerOverviewTableService {
         return fallback;
     }
 
-    private String canonicalSwotLabel(String value) {
-        String normalized = value == null ? "" : value.trim().toLowerCase();
-        return switch (normalized) {
-            case "strength", "strengths", "강점" -> "Strength";
-            case "weakness", "weaknesses", "약점" -> "Weakness";
-            case "opportunity", "opportunities", "기회" -> "Opportunity";
-            case "threat", "threats", "위협" -> "Threat";
-            default -> null;
-        };
-    }
-
-    private String normalizeDisplayText(String value) {
-        if (value == null) {
-            return "";
-        }
-        String cleaned = value
-                .replaceAll("(?is)<[^>]+>", " ")
-                .replaceAll("[\\[\\]\\{\\}\"]", " ")
-                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.length() > 260) {
-            int sentenceEnd = Math.max(cleaned.lastIndexOf(". ", 220), cleaned.lastIndexOf("다. ", 220));
-            int cutIndex = sentenceEnd > 80 ? sentenceEnd + 1 : 260;
-            cleaned = cleaned.substring(0, Math.min(cutIndex, cleaned.length())).trim();
-        }
-        return cleaned;
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
     private Map<String, List<Map<String, String>>> buildComparisonInsights(List<Map<String, Object>> rows) {
         Map<String, Map<String, Object>> rowById = new HashMap<>();
         for (Map<String, Object> row : rows) {
@@ -708,34 +484,8 @@ public class PeerOverviewTableService {
     }
 
     private Map<String, PeerLlmAnalysisSnapshot> loadPeerLlmAnalysisSnapshots() {
-        String sql = """
-                WITH latest_snapshots AS (
-                    SELECT DISTINCT ON (peer_id)
-                        peer_id,
-                        output_payload::text AS output_payload,
-                        analysis_trace::text AS analysis_trace
-                    FROM peer_llm_analysis_snapshots
-                    WHERE analysis_type = 'peer_swot_comparison'
-                      AND status = 'active'
-                      AND peer_id IN ('all', 'samsung_sds', 'lg_cns', 'hyundai_autoever', 'posco_dx')
-                      AND (
-                          (peer_id = 'all' AND scope = 'all' AND comparison_mode = 'overall_competitors_vs_sk_ax')
-                          OR
-                          (peer_id <> 'all' AND scope = 'company' AND comparison_mode = 'peer_vs_sk_ax')
-                      )
-                      AND (expires_at IS NULL OR expires_at > NOW())
-                    ORDER BY
-                        peer_id,
-                        updated_at DESC NULLS LAST,
-                        generated_at DESC,
-                        created_at DESC
-                )
-                SELECT peer_id, output_payload, analysis_trace
-                FROM latest_snapshots
-                """;
-
         try {
-            return jdbcTemplate.query(sql, rs -> {
+            return jdbcTemplate.query(PEER_LLM_ANALYSIS_SNAPSHOTS_SQL, rs -> {
                 Map<String, PeerLlmAnalysisSnapshot> snapshots = new LinkedHashMap<>();
                 while (rs.next()) {
                     String peerId = rs.getString("peer_id");
@@ -1010,17 +760,6 @@ public class PeerOverviewTableService {
         return String.join("·", tokens);
     }
 
-    private String topicParticle(String value) {
-        if (value == null || value.isBlank()) {
-            return "은";
-        }
-        char lastChar = value.charAt(value.length() - 1);
-        if (lastChar >= 0xAC00 && lastChar <= 0xD7A3) {
-            return ((lastChar - 0xAC00) % 28) == 0 ? "는" : "은";
-        }
-        return "는";
-    }
-
     private String firstNonAxisText(String... values) {
         for (String value : values) {
             String cleaned = sanitizeObjectivePeerFlowText(value);
@@ -1109,57 +848,6 @@ public class PeerOverviewTableService {
         return String.join(" ", parts);
     }
 
-    private boolean isInsufficientSwotText(String value) {
-        return value != null && (
-                value.contains("현재 입력 근거만으로 해당 축을 정의하기 어렵다")
-                        || value.contains("판단 근거 부족")
-        );
-    }
-
-    private String normalizeSwotDisplayText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        String cleaned = sanitizeObjectivePeerFlowText(value)
-                .replaceAll("[\\[\\]\\{\\}\"]", " ")
-                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.isBlank()) {
-            return "";
-        }
-
-        List<String> uniqueSentences = new ArrayList<>();
-        for (String sentence : cleaned.split("(?<=[.!?。])\\s+")) {
-            String normalized = sentence.replaceAll("\\s+", " ").trim();
-            if (!normalized.isBlank() && !uniqueSentences.contains(normalized)) {
-                uniqueSentences.add(normalized);
-            }
-        }
-        return String.join(" ", uniqueSentences);
-    }
-
-    private Object firstNonBlankObject(Object... values) {
-        for (Object value : values) {
-            String text = stringValue(value);
-            if (!text.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private String defaultSwotFactorType(String label) {
-        if (label == null) {
-            return "";
-        }
-        return switch (label) {
-            case "Strength", "Weakness" -> "internal_controllable";
-            case "Opportunity", "Threat" -> "external_uncontrollable";
-            default -> "";
-        };
-    }
-
     private List<Map<String, Object>> extractAnalysisTrace(PeerLlmAnalysisSnapshot snapshot) {
         List<Map<String, Object>> items = new ArrayList<>();
         List<Map<String, Object>> sourceItems = snapshot.analysisTrace().isEmpty()
@@ -1212,81 +900,6 @@ public class PeerOverviewTableService {
         }
     }
 
-    private List<Object> listValue(Object value) {
-        if (value instanceof List<?> list) {
-            return new ArrayList<>(list);
-        }
-        return List.of();
-    }
-
-    private List<Map<String, Object>> objectList(Object value) {
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Object rawItem : listValue(value)) {
-            Map<String, Object> item = objectMap(rawItem);
-            if (!item.isEmpty()) {
-                items.add(item);
-            }
-        }
-        return items;
-    }
-
-    private Map<String, Object> objectMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                result.put(String.valueOf(entry.getKey()), entry.getValue());
-            }
-            return result;
-        }
-        return Map.of();
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value).trim();
-    }
-
-    private String sanitizeObjectivePeerFlowText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        return value
-                .replace("최근 공개 원문에서는", "")
-                .replace("최근 공개 원문에서", "최근 신호에서")
-                .replace("최근 공개 원문 신호", "최근 신호")
-                .replace("이 Peer사는", "해당 기업은")
-                .replace("이 Peer사가", "해당 기업이")
-                .replace("이 Peer사를", "해당 기업을")
-                .replace("이 Peer사의", "해당 기업의")
-                .replace("이 peer사는", "해당 기업은")
-                .replace("이 peer사가", "해당 기업이")
-                .replace("이 peer사를", "해당 기업을")
-                .replace("이 peer사의", "해당 기업의")
-                .replace("Peer사는", "해당 기업은")
-                .replace("Peer사가", "해당 기업이")
-                .replace("Peer사를", "해당 기업을")
-                .replace("Peer사의", "해당 기업의")
-                .replace("Peer사에", "해당 기업에")
-                .replace("Peer사", "대상 기업")
-                .replace("peer사는", "해당 기업은")
-                .replace("peer사가", "해당 기업이")
-                .replace("peer사를", "해당 기업을")
-                .replace("peer사의", "해당 기업의")
-                .replace("peer사에", "해당 기업에")
-                .replace("peer사", "대상 기업")
-                .replace("현재 입력 근거만으로 해당 축을 정의하기 어렵다", "판단 근거가 부족합니다.")
-                .replace("SK AX와 비교했을 때", "")
-                .replace("SK AX와 비교해", "")
-                .replace("SK AX와 비교하면", "")
-                .replace("SK AX 대비", "")
-                .replace("SK AX 기준", "")
-                .replace("SK AX 관점에서", "")
-                .replace("SK AX는", "해당 기업은")
-                .replace("SK AX의", "해당 기업의")
-                .replace("자사", "해당 기업")
-                .replaceAll("\\s+", " ")
-                .trim();
-    }
-
     private List<Map<String, String>> buildAllComparisonInsights(List<Map<String, Object>> rows) {
         List<Map<String, Object>> peerRows = rows.stream()
                 .filter(row -> !"sk_ax".equals(row.get("id")))
@@ -1332,222 +945,14 @@ public class PeerOverviewTableService {
         );
     }
 
-    private Map<String, String> insight(String label, String body) {
-        Map<String, String> item = new LinkedHashMap<>();
-        item.put("label", label);
-        item.put("body", body);
-        return item;
-    }
-
-    private Map<String, Object> traceItem(String label, String body, String reasoning, String evidence) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("label", label);
-        item.put("body", body);
-        if (reasoning != null && !reasoning.isBlank()) {
-            item.put("reasoning", reasoning);
-        }
-        if (evidence != null && !evidence.isBlank()) {
-            item.put("evidence", evidence);
-        }
-        return item;
-    }
-
-    private String buildRiskInsight(String peerLabel, Double revenue, Double margin, Double marginDelta) {
-        String revenueText = revenue == null ? "매출 데이터가 제한적" : "매출 " + formatKrwBnText(revenue);
-        String marginText = margin == null ? "영업이익률 데이터가 제한적" : "영업이익률 " + formatPercentText(margin);
-        String deltaText = marginDelta == null ? "전분기 대비 수익성 변화는 확인이 제한적입니다" : "전분기 대비 영업이익률 변화는 " + formatPercentPointText(marginDelta) + "입니다";
-        return peerLabel + "는 " + revenueText + ", " + marginText + " 기준으로 함께 봐야 합니다. " + deltaText + ". 따라서 최근 사업·기술 신호가 강하더라도 실적 범위와 수익성 변동은 별도 리스크로 남습니다.";
-    }
-
-    private String nullToDash(Object value) {
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            return stringValue;
-        }
-        return "-";
-    }
-
-    private String formatKrwBnText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        if (Math.abs(value) >= 10_000) {
-            return String.format("%.2f조원", value / 10_000.0);
-        }
-        return String.format("%.0f억원", value);
-    }
-
-    private String formatPercentText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        return String.format("%.2f%%", value);
-    }
-
-    private String formatPercentPointText(Double value) {
-        if (value == null) {
-            return "-";
-        }
-        String sign = value > 0 ? "+" : "";
-        return sign + String.format("%.2f%%p", value);
-    }
-
     private List<Map<String, Object>> loadFinancialRows(String period) {
         if (period == null || period.isBlank()) {
             return List.of();
         }
 
-        String sql = """
-                WITH metric_rows AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        CASE
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
-                            WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
-                            ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
-                        END AS metric_name_canonical,
-                        value_krwbn,
-                        value_numeric,
-                        raw_article_id,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY peer_id, period,
-                                CASE
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('매출', '매출액', '총매출', 'revenue_total', 'revenue') THEN 'revenue_total'
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익', 'operating_profit', 'operating_income') THEN 'operating_profit'
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('영업이익률', 'operating_margin') THEN 'operating_margin'
-                                    WHEN COALESCE(NULLIF(metric_label, ''), metric_name) IN ('순이익', '당기순이익', 'net_income', 'net_profit') THEN 'net_income'
-                                    ELSE COALESCE(NULLIF(metric_label, ''), metric_name)
-                                END
-                            ORDER BY
-                                confidence DESC NULLS LAST,
-                                updated_at DESC NULLS LAST,
-                                id DESC
-                        ) AS row_rank
-                    FROM raw_article_financial_metrics
-                    WHERE metric_scope = 'company_total'
-                      AND source_type = 'ir'
-                      AND period IS NOT NULL
-                      AND peer_id IN (?, ?, ?, ?, ?)
-                      AND (
-                          COALESCE(NULLIF(metric_label, ''), metric_name) NOT IN ('순이익', '당기순이익', 'net_income', 'net_profit')
-                          OR business_area = 'company_total'
-                      )
-                ),
-                latest_metric_rows AS (
-                    SELECT *
-                    FROM metric_rows
-                    WHERE row_rank = 1
-                ),
-                pivoted AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        MAX(CASE WHEN metric_name_canonical = 'revenue_total' THEN value_krwbn END) AS revenue_total_krwbn,
-                        MAX(CASE WHEN metric_name_canonical = 'operating_profit' THEN value_krwbn END) AS operating_profit_krwbn,
-                        MAX(CASE WHEN metric_name_canonical = 'net_income' THEN value_krwbn END) AS net_income_krwbn,
-                        MAX(CASE WHEN metric_name_canonical = 'operating_margin'
-                            THEN COALESCE(value_numeric::double precision, value_krwbn::double precision)
-                        END) AS operating_margin_pct,
-                        MAX(raw_article_id) FILTER (WHERE metric_name_canonical IN ('revenue_total', 'operating_profit', 'operating_margin', 'net_income')) AS raw_article_id
-                    FROM latest_metric_rows
-                    GROUP BY peer_id, period
-                ),
-                normalized_periods AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        CASE
-                            WHEN COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) = 1 THEN
-                                (COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text || 'Q4'
-                            ELSE
-                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), ''), '')
-                                    || 'Q'
-                                    || (COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) - 1)::text
-                        END AS previous_period,
-                        revenue_total_krwbn,
-                        operating_profit_krwbn,
-                        net_income_krwbn,
-                        CASE
-                            WHEN operating_margin_pct IS NOT NULL THEN ROUND(operating_margin_pct::numeric, 2)::double precision
-                            WHEN revenue_total_krwbn IS NOT NULL
-                             AND revenue_total_krwbn <> 0
-                             AND operating_profit_krwbn IS NOT NULL
-                            THEN ROUND((operating_profit_krwbn / revenue_total_krwbn * 100)::numeric, 2)::double precision
-                            ELSE NULL
-                        END AS operating_margin_pct,
-                        raw_article_id
-                    FROM pivoted
-                    WHERE period ~ '^[0-9]{4}Q[1-4]$'
-                ),
-                period_series AS (
-                    SELECT
-                        current_period.peer_id,
-                        current_period.period,
-                        current_period.revenue_total_krwbn,
-                        current_period.operating_profit_krwbn,
-                        current_period.net_income_krwbn,
-                        current_period.operating_margin_pct,
-                        current_period.raw_article_id,
-                        previous_period.revenue_total_krwbn AS prev_revenue_total_krwbn,
-                        previous_period.operating_profit_krwbn AS prev_operating_profit_krwbn,
-                        previous_period.net_income_krwbn AS prev_net_income_krwbn,
-                        previous_period.operating_margin_pct AS prev_operating_margin_pct
-                    FROM normalized_periods current_period
-                    LEFT JOIN normalized_periods previous_period
-                      ON previous_period.peer_id = current_period.peer_id
-                     AND previous_period.period = current_period.previous_period
-                )
-                SELECT
-                    peer_id AS id,
-                    revenue_total_krwbn,
-                    CASE
-                        WHEN prev_revenue_total_krwbn IS NOT NULL
-                         AND prev_revenue_total_krwbn <> 0
-                         AND revenue_total_krwbn IS NOT NULL
-                        THEN ROUND(((revenue_total_krwbn - prev_revenue_total_krwbn) / ABS(prev_revenue_total_krwbn) * 100)::numeric, 2)
-                        ELSE NULL
-                    END AS revenue_qoq_pct,
-                    operating_profit_krwbn,
-                    CASE
-                        WHEN prev_operating_profit_krwbn IS NOT NULL
-                         AND prev_operating_profit_krwbn <> 0
-                         AND operating_profit_krwbn IS NOT NULL
-                        THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / ABS(prev_operating_profit_krwbn) * 100)::numeric, 2)
-                        ELSE NULL
-                    END AS operating_profit_qoq_pct,
-                    net_income_krwbn,
-                    CASE
-                        WHEN prev_net_income_krwbn IS NOT NULL
-                         AND prev_net_income_krwbn <> 0
-                         AND net_income_krwbn IS NOT NULL
-                        THEN ROUND(((net_income_krwbn - prev_net_income_krwbn) / ABS(prev_net_income_krwbn) * 100)::numeric, 2)
-                        ELSE NULL
-                    END AS net_income_qoq_pct,
-                    operating_margin_pct,
-                    CASE
-                        WHEN prev_operating_margin_pct IS NOT NULL
-                         AND operating_margin_pct IS NOT NULL
-                        THEN ROUND((operating_margin_pct - prev_operating_margin_pct)::numeric, 2)
-                        ELSE NULL
-                    END AS operating_margin_qoq_delta_pctp,
-                    NULL::text AS dart_rcept_no
-                FROM period_series
-                WHERE period = ?
-                ORDER BY CASE peer_id
-                    WHEN 'sk_ax' THEN 0
-                    WHEN 'samsung_sds' THEN 1
-                    WHEN 'lg_cns' THEN 2
-                    WHEN 'hyundai_autoever' THEN 3
-                    WHEN 'posco_dx' THEN 4
-                    ELSE 99
-                END
-                """;
-
         try {
             return jdbcTemplate.query(
-                    sql,
+                    RAW_FINANCIAL_ROWS_SQL,
                     ps -> {
                         bindFinancialPeerIds(ps, 1);
                         ps.setString(FINANCIAL_PEER_IDS.size() + 1, period);
@@ -1561,24 +966,8 @@ public class PeerOverviewTableService {
     }
 
     private String resolveCommonPeriodFromPeerFinancials() {
-        String sql = """
-                SELECT period
-                FROM peer_financials
-                WHERE peer_id IN (?, ?, ?, ?, ?)
-                  AND period ~ '^[0-9]{4}Q[1-4]$'
-                  AND revenue_total_krwbn IS NOT NULL
-                  AND operating_profit_krwbn IS NOT NULL
-                GROUP BY period
-                HAVING COUNT(DISTINCT peer_id) = ?
-                ORDER BY
-                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
-                    MAX(COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
-                    period DESC
-                LIMIT 1
-                """;
-
         return jdbcTemplate.query(
-                sql,
+                RESOLVE_PEER_FINANCIALS_COMMON_PERIOD_SQL,
                 ps -> {
                     bindFinancialPeerIds(ps, 1);
                     ps.setInt(FINANCIAL_PEER_IDS.size() + 1, FINANCIAL_PEER_IDS.size());
@@ -1592,92 +981,8 @@ public class PeerOverviewTableService {
             return List.of();
         }
 
-        String sql = """
-                WITH normalized_periods AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        CASE
-                            WHEN COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) = 1 THEN
-                                (COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text || 'Q4'
-                            ELSE
-                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), ''), '')
-                                    || 'Q'
-                                    || (COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) - 1)::text
-                        END AS previous_period,
-                        revenue_total_krwbn,
-                        operating_profit_krwbn,
-                        CASE
-                            WHEN raw_payload ? 'operating_margin_pct'
-                            THEN ROUND((raw_payload ->> 'operating_margin_pct')::numeric, 2)::double precision
-                            WHEN revenue_total_krwbn IS NOT NULL
-                             AND revenue_total_krwbn <> 0
-                             AND operating_profit_krwbn IS NOT NULL
-                            THEN ROUND((operating_profit_krwbn / revenue_total_krwbn * 100)::numeric, 2)::double precision
-                            ELSE NULL
-                        END AS operating_margin_pct,
-                        dart_rcept_no
-                    FROM peer_financials
-                    WHERE peer_id IN (?, ?, ?, ?, ?)
-                      AND period ~ '^[0-9]{4}Q[1-4]$'
-                ),
-                period_series AS (
-                    SELECT
-                        current_period.peer_id,
-                        current_period.revenue_total_krwbn,
-                        current_period.operating_profit_krwbn,
-                        current_period.operating_margin_pct,
-                        current_period.dart_rcept_no,
-                        previous_period.revenue_total_krwbn AS prev_revenue_total_krwbn,
-                        previous_period.operating_profit_krwbn AS prev_operating_profit_krwbn,
-                        previous_period.operating_margin_pct AS prev_operating_margin_pct
-                    FROM normalized_periods current_period
-                    LEFT JOIN normalized_periods previous_period
-                      ON previous_period.peer_id = current_period.peer_id
-                     AND previous_period.period = current_period.previous_period
-                    WHERE current_period.period = ?
-                )
-                SELECT
-                    peer_id AS id,
-                    revenue_total_krwbn,
-                    CASE
-                        WHEN prev_revenue_total_krwbn IS NOT NULL
-                         AND prev_revenue_total_krwbn <> 0
-                         AND revenue_total_krwbn IS NOT NULL
-                        THEN ROUND(((revenue_total_krwbn - prev_revenue_total_krwbn) / ABS(prev_revenue_total_krwbn) * 100)::numeric, 2)
-                        ELSE NULL
-                    END AS revenue_qoq_pct,
-                    operating_profit_krwbn,
-                    CASE
-                        WHEN prev_operating_profit_krwbn IS NOT NULL
-                         AND prev_operating_profit_krwbn <> 0
-                         AND operating_profit_krwbn IS NOT NULL
-                        THEN ROUND(((operating_profit_krwbn - prev_operating_profit_krwbn) / ABS(prev_operating_profit_krwbn) * 100)::numeric, 2)
-                        ELSE NULL
-                    END AS operating_profit_qoq_pct,
-                    NULL::double precision AS net_income_krwbn,
-                    NULL::numeric AS net_income_qoq_pct,
-                    operating_margin_pct,
-                    CASE
-                        WHEN prev_operating_margin_pct IS NOT NULL
-                         AND operating_margin_pct IS NOT NULL
-                        THEN ROUND((operating_margin_pct - prev_operating_margin_pct)::numeric, 2)
-                        ELSE NULL
-                    END AS operating_margin_qoq_delta_pctp,
-                    dart_rcept_no
-                FROM period_series
-                ORDER BY CASE peer_id
-                    WHEN 'sk_ax' THEN 0
-                    WHEN 'samsung_sds' THEN 1
-                    WHEN 'lg_cns' THEN 2
-                    WHEN 'hyundai_autoever' THEN 3
-                    WHEN 'posco_dx' THEN 4
-                    ELSE 99
-                END
-                """;
-
         return jdbcTemplate.query(
-                sql,
+                PEER_FINANCIAL_ROWS_SQL,
                 ps -> {
                     bindFinancialPeerIds(ps, 1);
                     ps.setString(FINANCIAL_PEER_IDS.size() + 1, period);
@@ -1691,816 +996,59 @@ public class PeerOverviewTableService {
             return List.of();
         }
 
-        String sql = """
-                WITH source_rows AS (
-                    SELECT
-                        rfm.peer_id,
-                        rfm.period,
-                        rfm.metric_name,
-                        rfm.value_krwbn,
-                        CASE
-                            WHEN rfm.metric_name <> 'revenue_total_yoy' THEN rfm.value_numeric
-                            WHEN rfm.value_numeric IS NULL THEN NULL
-                            WHEN ABS(rfm.value_numeric) <= 200 THEN rfm.value_numeric
-                            WHEN regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%') IS NOT NULL THEN
-                                (
-                                    CASE
-                                        WHEN (regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[1] IN ('△', '-') THEN -1
-                                        ELSE 1
-                                    END
-                                ) * ((regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[2])::numeric
-                            ELSE NULL
-                        END AS normalized_value_numeric,
-                        rfm.source_type,
-                        rfm.confidence,
-                        rfm.raw_article_id,
-                        rfm.updated_at,
-                        rfm.id
-                    FROM raw_article_financial_metrics rfm
-                    WHERE rfm.metric_scope = 'company_total'
-                      AND rfm.business_area = 'company_total'
-                      AND rfm.source_type = 'ir'
-                      AND rfm.peer_id IN (?, ?, ?, ?, ?)
-                      AND rfm.period ~ '^[0-9]{4}Q[1-4]$'
-                      AND rfm.metric_name IN ('revenue_total', 'revenue_total_yoy')
-                ),
-                metric_rows AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        metric_name,
-                        value_krwbn,
-                        normalized_value_numeric,
-                        source_type,
-                        confidence,
-                        raw_article_id,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY peer_id, period, metric_name
-                            ORDER BY
-                                CASE
-                                    WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
-                                    ELSE 0
-                                END,
-                                confidence DESC NULLS LAST,
-                                updated_at DESC NULLS LAST,
-                                id DESC
-                        ) AS row_rank
-                    FROM source_rows
-                ),
-                latest_metric_rows AS (
-                    SELECT *
-                    FROM metric_rows
-                    WHERE row_rank = 1
-                ),
-                revenue_periods AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) AS revenue_krwbn,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END) AS revenue_confidence,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS explicit_yoy_pct,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS explicit_yoy_source_type,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END) AS explicit_yoy_confidence,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS explicit_yoy_article_id
-                    FROM latest_metric_rows
-                    GROUP BY peer_id, period
-                ),
-                positioning_rows AS (
-                    SELECT
-                        current_rows.peer_id,
-                        current_rows.period,
-                        current_rows.revenue_krwbn,
-                        COALESCE(
-                            current_rows.explicit_yoy_pct,
-                            CASE
-                                WHEN previous_rows.revenue_krwbn IS NOT NULL
-                                 AND previous_rows.revenue_krwbn <> 0
-                                 AND current_rows.revenue_krwbn IS NOT NULL
-                                THEN ((current_rows.revenue_krwbn - previous_rows.revenue_krwbn)
-                                    / previous_rows.revenue_krwbn * 100)
-                                ELSE NULL
-                            END
-                        ) AS revenue_yoy_pct,
-                        current_rows.revenue_source_type,
-                        CASE
-                            WHEN current_rows.explicit_yoy_pct IS NOT NULL THEN current_rows.explicit_yoy_source_type
-                            ELSE 'calculated'
-                        END AS revenue_yoy_source_type,
-                        current_rows.revenue_confidence,
-                        COALESCE(
-                            current_rows.explicit_yoy_confidence,
-                            LEAST(current_rows.revenue_confidence, previous_rows.revenue_confidence)
-                        ) AS revenue_yoy_confidence,
-                        current_rows.revenue_article_id,
-                        COALESCE(current_rows.explicit_yoy_article_id, previous_rows.revenue_article_id) AS revenue_yoy_article_id
-                    FROM revenue_periods current_rows
-                    LEFT JOIN revenue_periods previous_rows
-                      ON previous_rows.peer_id = current_rows.peer_id
-                     AND previous_rows.period = (
-                         (COALESCE(NULLIF(SUBSTRING(current_rows.period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text
-                         || 'Q'
-                         || COALESCE(NULLIF(SUBSTRING(current_rows.period FROM 'Q([1-4])$'), ''), '')
-                     )
-                )
-                SELECT
-                    peer_id AS id,
-                    period,
-                    ROUND(revenue_krwbn::numeric, 2) AS revenue_krwbn,
-                    ROUND(revenue_yoy_pct::numeric, 2) AS revenue_yoy_pct,
-                    revenue_source_type,
-                    revenue_yoy_source_type,
-                    ROUND(revenue_confidence::numeric, 3) AS revenue_confidence,
-                    ROUND(revenue_yoy_confidence::numeric, 3) AS revenue_yoy_confidence,
-                    revenue_article_id,
-                    revenue_yoy_article_id
-                FROM positioning_rows
-                WHERE period = ?
-                  AND revenue_krwbn IS NOT NULL
-                  AND revenue_yoy_pct IS NOT NULL
-                ORDER BY CASE peer_id
-                    WHEN 'sk_ax' THEN 0
-                    WHEN 'samsung_sds' THEN 1
-                    WHEN 'lg_cns' THEN 2
-                    WHEN 'hyundai_autoever' THEN 3
-                    WHEN 'posco_dx' THEN 4
-                    ELSE 99
-                END
-                """;
-
-        Map<String, DisplayPeer> displayPeerById = new HashMap<>();
-        for (DisplayPeer displayPeer : DISPLAY_PEERS) {
-            displayPeerById.put(displayPeer.id(), displayPeer);
-        }
-
-        return jdbcTemplate.query(
-                sql,
+        return queryPositioningPoints(
+                POSITIONING_POINTS_SQL,
                 ps -> {
                     bindFinancialPeerIds(ps, 1);
                     ps.setString(FINANCIAL_PEER_IDS.size() + 1, period);
                 },
-                (rs, rowNum) -> mapPositioningPoint(rs, displayPeerById)
+                "PeerOverviewTable | positioning points unavailable for period=" + period
         );
     }
 
     private List<Map<String, Object>> loadLatestPositioningPoints() {
-        String sql = """
-                WITH source_rows AS (
-                    SELECT
-                        rfm.peer_id,
-                        rfm.period,
-                        rfm.metric_name,
-                        rfm.value_krwbn,
-                        CASE
-                            WHEN rfm.metric_name <> 'revenue_total_yoy' THEN rfm.value_numeric
-                            WHEN rfm.value_numeric IS NULL THEN NULL
-                            WHEN ABS(rfm.value_numeric) <= 200 THEN rfm.value_numeric
-                            WHEN regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%') IS NOT NULL THEN
-                                (
-                                    CASE
-                                        WHEN (regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[1] IN ('△', '-') THEN -1
-                                        ELSE 1
-                                    END
-                                ) * ((regexp_match(COALESCE(rfm.evidence_text, ''), '(?i)YoY\\s*([△▲+\\-]?)\\s*([0-9]+(?:\\.[0-9]+)?)%'))[2])::numeric
-                            ELSE NULL
-                        END AS normalized_value_numeric,
-                        rfm.source_type,
-                        rfm.confidence,
-                        rfm.raw_article_id,
-                        rfm.updated_at,
-                        rfm.id
-                    FROM raw_article_financial_metrics rfm
-                    WHERE rfm.metric_scope = 'company_total'
-                      AND rfm.business_area = 'company_total'
-                      AND rfm.source_type = 'ir'
-                      AND rfm.peer_id IN (?, ?, ?, ?, ?)
-                      AND rfm.period ~ '^[0-9]{4}Q[1-4]$'
-                      AND rfm.metric_name IN ('revenue_total', 'revenue_total_yoy')
-                ),
-                metric_rows AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        metric_name,
-                        value_krwbn,
-                        normalized_value_numeric,
-                        source_type,
-                        confidence,
-                        raw_article_id,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY peer_id, period, metric_name
-                            ORDER BY
-                                CASE
-                                    WHEN metric_name = 'revenue_total_yoy' AND normalized_value_numeric IS NULL THEN 1
-                                    ELSE 0
-                                END,
-                                confidence DESC NULLS LAST,
-                                updated_at DESC NULLS LAST,
-                                id DESC
-                        ) AS row_rank
-                    FROM source_rows
-                ),
-                latest_metric_rows AS (
-                    SELECT *
-                    FROM metric_rows
-                    WHERE row_rank = 1
-                ),
-                revenue_periods AS (
-                    SELECT
-                        peer_id,
-                        period,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN value_krwbn END) AS revenue_krwbn,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN source_type END) AS revenue_source_type,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN confidence END) AS revenue_confidence,
-                        MAX(CASE WHEN metric_name = 'revenue_total' THEN raw_article_id END) AS revenue_article_id,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN normalized_value_numeric END) AS explicit_yoy_pct,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN source_type END) AS explicit_yoy_source_type,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN confidence END) AS explicit_yoy_confidence,
-                        MAX(CASE WHEN metric_name = 'revenue_total_yoy' THEN raw_article_id END) AS explicit_yoy_article_id
-                    FROM latest_metric_rows
-                    GROUP BY peer_id, period
-                ),
-                positioning_rows AS (
-                    SELECT
-                        current_rows.peer_id,
-                        current_rows.period,
-                        ROUND(current_rows.revenue_krwbn::numeric, 2) AS revenue_krwbn,
-                        ROUND(COALESCE(
-                            current_rows.explicit_yoy_pct,
-                            CASE
-                                WHEN previous_rows.revenue_krwbn IS NOT NULL
-                                 AND previous_rows.revenue_krwbn <> 0
-                                 AND current_rows.revenue_krwbn IS NOT NULL
-                                THEN ((current_rows.revenue_krwbn - previous_rows.revenue_krwbn)
-                                    / previous_rows.revenue_krwbn * 100)
-                                ELSE NULL
-                            END
-                        )::numeric, 2) AS revenue_yoy_pct,
-                        current_rows.revenue_source_type,
-                        CASE
-                            WHEN current_rows.explicit_yoy_pct IS NOT NULL THEN current_rows.explicit_yoy_source_type
-                            ELSE 'calculated'
-                        END AS revenue_yoy_source_type,
-                        ROUND(current_rows.revenue_confidence::numeric, 3) AS revenue_confidence,
-                        ROUND(COALESCE(
-                            current_rows.explicit_yoy_confidence,
-                            LEAST(current_rows.revenue_confidence, previous_rows.revenue_confidence)
-                        )::numeric, 3) AS revenue_yoy_confidence,
-                        current_rows.revenue_article_id,
-                        COALESCE(current_rows.explicit_yoy_article_id, previous_rows.revenue_article_id) AS revenue_yoy_article_id
-                    FROM revenue_periods current_rows
-                    LEFT JOIN revenue_periods previous_rows
-                      ON previous_rows.peer_id = current_rows.peer_id
-                     AND previous_rows.period = (
-                         (COALESCE(NULLIF(SUBSTRING(current_rows.period FROM '^([0-9]{4})'), '')::int, 0) - 1)::text
-                         || 'Q'
-                         || COALESCE(NULLIF(SUBSTRING(current_rows.period FROM 'Q([1-4])$'), ''), '')
-                     )
-                    WHERE current_rows.revenue_krwbn IS NOT NULL
-                ),
-                ranked_periods AS (
-                    SELECT
-                        *,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY peer_id
-                            ORDER BY
-                                COALESCE(NULLIF(SUBSTRING(period FROM '^([0-9]{4})'), '')::int, 0) DESC,
-                                COALESCE(NULLIF(SUBSTRING(period FROM 'Q([1-4])$'), '')::int, 0) DESC,
-                                period DESC
-                        ) AS period_rank
-                    FROM positioning_rows
-                    WHERE revenue_yoy_pct IS NOT NULL
-                )
-                SELECT
-                    peer_id AS id,
-                    period,
-                    revenue_krwbn,
-                    revenue_yoy_pct,
-                    revenue_source_type,
-                    revenue_yoy_source_type,
-                    revenue_confidence,
-                    revenue_yoy_confidence,
-                    revenue_article_id,
-                    revenue_yoy_article_id
-                FROM ranked_periods
-                WHERE period_rank = 1
-                ORDER BY CASE peer_id
-                    WHEN 'sk_ax' THEN 0
-                    WHEN 'samsung_sds' THEN 1
-                    WHEN 'lg_cns' THEN 2
-                    WHEN 'hyundai_autoever' THEN 3
-                    WHEN 'posco_dx' THEN 4
-                    ELSE 99
-                END
-                """;
+        return queryPositioningPoints(
+                LATEST_POSITIONING_POINTS_SQL,
+                ps -> bindFinancialPeerIds(ps, 1),
+                "PeerOverviewTable | latest positioning points unavailable"
+        );
+    }
 
+    private List<Map<String, Object>> queryPositioningPoints(
+            String sql,
+            PositioningQueryBinder binder,
+            String failureMessage
+    ) {
+        Map<String, DisplayPeer> displayPeerById = displayPeerById();
+        try {
+            return jdbcTemplate.query(
+                    sql,
+                    ps -> binder.bind(ps),
+                    (rs, rowNum) -> mapPositioningPoint(rs, displayPeerById)
+            );
+        } catch (DataAccessException ex) {
+            log.warn(failureMessage, ex);
+            return List.of();
+        }
+    }
+
+    private Map<String, DisplayPeer> displayPeerById() {
         Map<String, DisplayPeer> displayPeerById = new HashMap<>();
         for (DisplayPeer displayPeer : DISPLAY_PEERS) {
             displayPeerById.put(displayPeer.id(), displayPeer);
         }
-
-        return jdbcTemplate.query(
-                sql,
-                ps -> bindFinancialPeerIds(ps, 1),
-                (rs, rowNum) -> mapPositioningPoint(rs, displayPeerById)
-        );
+        return displayPeerById;
     }
 
-    private Map<String, SupplementalRow> loadSupplementalRows(String period) {
-        try {
-            String sql = """
-                    WITH target_peers AS (
-                        SELECT
-                            pc.id,
-                            pc.name,
-                            pc.ax_revenue_share_pct
-                        FROM peer_companies pc
-                        WHERE pc.id IN ('sk_ax', 'samsung_sds', 'lg_cns', 'hyundai_autoever', 'posco_dx')
-                    ),
-                    selected_signal_period AS (
-                        SELECT COALESCE(
-                            NULLIF(?, ''),
-                            (
-                                SELECT rabs.period
-                                FROM raw_article_business_signals rabs
-                                WHERE rabs.peer_id IN (SELECT id FROM target_peers)
-                                  AND rabs.period ~ '^[0-9]{4}Q[1-4]$'
-                                GROUP BY rabs.period
-                                ORDER BY
-                                    MAX(COALESCE(rabs.period_year, NULLIF(SUBSTRING(rabs.period FROM '^([0-9]{4})'), '')::int, 0)) DESC,
-                                    MAX(COALESCE(rabs.period_quarter, NULLIF(SUBSTRING(rabs.period FROM 'Q([1-4])$'), '')::int, 0)) DESC,
-                                    rabs.period DESC
-                                LIMIT 1
-                            )
-                        ) AS period
-                    ),
-                    blocked_keywords(keyword_key) AS (
-                        VALUES
-                            ('contract'),
-                            ('tech_release'),
-                            ('other'),
-                            ('market_trend'),
-                            ('market'),
-                            ('financial'),
-                            ('company'),
-                            ('personnel'),
-                            ('tech'),
-                            ('regulation'),
-                            ('partnership'),
-                            ('expansion'),
-                            ('deal'),
-                            ('ma'),
-                            ('infra'),
-                            ('security'),
-                            ('sk ax'),
-                            ('samsung sds'),
-                            ('lg cns'),
-                            ('hyundai autoever'),
-                            ('posco dx'),
-                            ('sk_ax'),
-                            ('samsung_sds'),
-                            ('lg_cns'),
-                            ('hyundai_autoever'),
-                            ('posco_dx'),
-                            ('삼성sds'),
-                            ('lgcns'),
-                            ('현대오토에버'),
-                            ('포스코dx'),
-                            ('ai'),
-                            ('ax'),
-                            ('dx'),
-                            ('ai/dx'),
-                            ('ai·dx'),
-                            ('ai dx'),
-                            ('기술')
-                    ),
-                    action_terms(term, weight, label, evidence_priority) AS (
-                        VALUES
-                            ('수주', 4, '수주', 10),
-                            ('계약', 4, '계약', 10),
-                            ('담당', 3, '담당', 8),
-                            ('체결', 4, '체결', 10),
-                            ('선정', 4, '선정', 10),
-                            ('착수', 3, '착수', 8),
-                            ('실증', 3, '실증', 8),
-                            ('출시', 3, '출시', 8),
-                            ('투자', 3, '투자', 8),
-                            ('공급', 3, '공급', 8),
-                            ('납품', 3, '납품', 8),
-                            ('상용화', 3, '상용화', 8),
-                            ('적용', 2, '적용', 6),
-                            ('도입', 2, '도입', 6),
-                            ('구축', 3, '구축', 8),
-                            ('개발', 2, '개발', 6),
-                            ('고도화', 2, '고도화', 6),
-                            ('운영', 2, '운영', 6),
-                            ('확대', 2, '확대', 6),
-                            ('협력', 2, '협력', 6),
-                            ('제휴', 2, '제휴', 6),
-                            ('제공', 2, '제공', 6)
-                    ),
-                    technology_indicators(term, weight) AS (
-                        VALUES
-                            ('생성형ai', 5),
-                            ('생성ai', 5),
-                            ('ai에이전트', 5),
-                            ('에이전트', 4),
-                            ('llm', 5),
-                            ('sllm', 5),
-                            ('rag', 4),
-                            ('mlops', 4),
-                            ('aiops', 4),
-                            ('클라우드', 3),
-                            ('cloud', 3),
-                            ('데이터센터', 3),
-                            ('인프라', 2),
-                            ('보안', 3),
-                            ('제로트러스트', 4),
-                            ('로봇', 4),
-                            ('로보틱스', 4),
-                            ('휴머노이드', 5),
-                            ('디지털트윈', 4),
-                            ('스마트팩토리', 3),
-                            ('자율주행', 4),
-                            ('ota', 4),
-                            ('커넥티드카', 4),
-                            ('내비게이션', 3),
-                            ('플랫폼', 2),
-                            ('솔루션', 2),
-                            ('자동화', 3),
-                            ('데이터', 2),
-                            ('모델', 2),
-                            ('소프트웨어', 3),
-                            ('sw', 3),
-                            ('ai', 1),
-                            ('dx', 1),
-                            ('ax', 1)
-                    ),
-                    signal_rows AS (
-                        SELECT
-                            rabs.id AS card_id,
-                            rabs.peer_id AS company_id,
-                            rabs.business_area,
-                            rabs.signal_type,
-                            NULLIF(trim(
-                                COALESCE(ra.title, '')
-                                || CASE
-                                    WHEN NULLIF(trim(COALESCE(rabs.summary, '')), '') IS NOT NULL
-                                    THEN ' - ' || COALESCE(rabs.summary, '')
-                                    WHEN NULLIF(trim(COALESCE(rabs.evidence_text, '')), '') IS NOT NULL
-                                    THEN ' - ' || COALESCE(rabs.evidence_text, '')
-                                    ELSE ''
-                                END
-                            ), '') AS evidence_text,
-                            NULLIF(trim(COALESCE(rabs.evidence_text, rabs.summary, '')), '') AS evidence_quote,
-                            NULLIF(trim(COALESCE(ra.content, '')), '') AS article_content,
-                            NULLIF(ra.url, '') AS evidence_url,
-                            COALESCE(rabs.confidence, 0.5) AS confidence,
-                            lower(
-                                COALESCE(ra.title, '')
-                                || ' '
-                                || COALESCE(rabs.business_area, '')
-                                || ' '
-                                || COALESCE(rabs.signal_type, '')
-                                || ' '
-                                || COALESCE(rabs.summary, '')
-                                || ' '
-                                || COALESCE(rabs.evidence_text, '')
-                            ) AS text_norm,
-                            regexp_replace(lower(
-                                COALESCE(ra.title, '')
-                                || ' '
-                                || COALESCE(rabs.business_area, '')
-                                || ' '
-                                || COALESCE(rabs.signal_type, '')
-                                || ' '
-                                || COALESCE(rabs.summary, '')
-                                || ' '
-                                || COALESCE(rabs.evidence_text, '')
-                            ), '\\s+', '', 'g') AS text_compact,
-                            regexp_replace(lower(
-                                COALESCE(ra.title, '')
-                                || ' '
-                                || COALESCE(rabs.summary, '')
-                                || ' '
-                                || COALESCE(rabs.evidence_text, '')
-                            ), '\\s+', '', 'g') AS evidence_compact
-                        FROM raw_article_business_signals rabs
-                        JOIN raw_articles ra
-                          ON ra.id = rabs.raw_article_id
-                        JOIN selected_signal_period ssp
-                          ON ssp.period = rabs.period
-                        WHERE rabs.peer_id IN (SELECT id FROM target_peers)
-                    ),
-                    candidate_rows AS (
-                        SELECT
-                            sr.*,
-                            'business' AS axis_type,
-                            trim(sr.business_area) AS keyword
-                        FROM signal_rows sr
-                        WHERE NULLIF(trim(COALESCE(sr.business_area, '')), '') IS NOT NULL
-                        UNION ALL
-                        SELECT
-                            sr.*,
-                            'tech' AS axis_type,
-                            trim(keyword_value) AS keyword
-                        FROM signal_rows sr
-                        CROSS JOIN LATERAL (
-                            SELECT sr.business_area AS keyword_value
-                            UNION ALL
-                            SELECT sr.signal_type AS keyword_value
-                        ) keywords
-                        WHERE NULLIF(trim(COALESCE(keyword_value, '')), '') IS NOT NULL
-                    ),
-                    normalized_candidates AS (
-                        SELECT DISTINCT
-                            card_id,
-                            company_id,
-                            axis_type,
-                            keyword,
-                            lower(regexp_replace(trim(keyword), '\\s+', ' ', 'g')) AS keyword_key,
-                            regexp_replace(lower(trim(keyword)), '\\s+', '', 'g') AS keyword_compact,
-                            evidence_text,
-                            evidence_quote,
-                            article_content,
-                            evidence_url,
-                            confidence,
-                            text_norm,
-                            text_compact,
-                            evidence_compact
-                        FROM candidate_rows
-                        WHERE length(trim(keyword)) >= 2
-                    ),
-                    scored_candidate_rows AS (
-                        SELECT
-                            nc.*,
-                            COALESCE(MAX(ti.weight), 0) AS technology_match_score,
-                            COALESCE(MAX(at.weight), 0) AS action_relation_score,
-                            (array_agg(at.label ORDER BY at.evidence_priority DESC, length(at.term) DESC) FILTER (
-                                WHERE at.label IS NOT NULL
-                                  AND nc.evidence_compact LIKE '%' || regexp_replace(lower(at.term), '\\s+', '', 'g') || '%'
-                            ))[1] AS primary_action_label,
-                            CASE WHEN bk.keyword_key IS NOT NULL THEN 1 ELSE 0 END AS is_blocked
-                        FROM normalized_candidates nc
-                        LEFT JOIN technology_indicators ti
-                          ON nc.keyword_compact LIKE '%' || ti.term || '%'
-                          OR nc.text_compact LIKE '%' || ti.term || '%'
-                        LEFT JOIN action_terms at
-                          ON nc.text_compact LIKE '%' || regexp_replace(lower(at.term), '\\s+', '', 'g') || '%'
-                        LEFT JOIN blocked_keywords bk
-                          ON bk.keyword_key = nc.keyword_key
-                        GROUP BY
-                            nc.card_id,
-                            nc.company_id,
-                            nc.axis_type,
-                            nc.keyword,
-                            nc.keyword_key,
-                            nc.keyword_compact,
-                            nc.evidence_text,
-                            nc.evidence_quote,
-                            nc.article_content,
-                            nc.evidence_url,
-                            nc.confidence,
-                            nc.text_norm,
-                            nc.text_compact,
-                            nc.evidence_compact,
-                            bk.keyword_key
-                    ),
-                    axis_keyword_agg AS (
-                        SELECT
-                            company_id,
-                            axis_type,
-                            keyword_key,
-                            (array_agg(keyword ORDER BY length(keyword) DESC, keyword ASC))[1] AS label,
-                            COUNT(DISTINCT card_id) AS evidence_count,
-                            MAX(technology_match_score) AS technology_match_score,
-                            MAX(action_relation_score) AS action_relation_score,
-                            AVG(confidence) AS confidence_score,
-                            (array_agg(primary_action_label ORDER BY action_relation_score DESC) FILTER (
-                                WHERE primary_action_label IS NOT NULL
-                            ))[1] AS primary_action_label,
-                            (array_agg(evidence_text ORDER BY action_relation_score DESC, confidence DESC, length(evidence_text) DESC) FILTER (
-                                WHERE evidence_text IS NOT NULL
-                            ))[1] AS selected_evidence_text,
-                            (array_agg(evidence_url ORDER BY action_relation_score DESC, confidence DESC) FILTER (
-                                WHERE evidence_url IS NOT NULL
-                            ))[1] AS selected_evidence_url,
-                            (array_agg(
-                                NULLIF(trim(regexp_replace(
-                                    CASE
-                                        WHEN position(keyword_compact in regexp_replace(lower(COALESCE(article_content, '')), '\\s+', '', 'g')) > 0
-                                        THEN substring(article_content FROM 1 FOR 260)
-                                        ELSE COALESCE(evidence_quote, evidence_text)
-                                    END,
-                                    '\\s+',
-                                    ' ',
-                                    'g'
-                                )), '')
-                                ORDER BY action_relation_score DESC, confidence DESC
-                            ) FILTER (WHERE COALESCE(evidence_quote, evidence_text, article_content) IS NOT NULL))[1] AS selected_evidence_quote
-                        FROM scored_candidate_rows
-                        WHERE is_blocked = 0
-                          AND (
-                            axis_type = 'business'
-                            OR technology_match_score >= 2
-                          )
-                        GROUP BY company_id, axis_type, keyword_key
-                    ),
-                    ranked_axes AS (
-                        SELECT
-                            *,
-                            ROUND((
-                                LN(1 + LEAST(evidence_count, 6))
-                                + LEAST(2.0, evidence_count::double precision / 3.0)
-                                + action_relation_score * 0.8
-                                + CASE WHEN axis_type = 'tech' THEN technology_match_score * 0.9 ELSE 0 END
-                                + LEAST(1.0, confidence_score)
-                                + CASE WHEN length(label) >= 5 THEN 0.6 ELSE 0 END
-                            )::numeric, 3) AS final_score,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY company_id, axis_type
-                                ORDER BY
-                                    (
-                                        LN(1 + LEAST(evidence_count, 6))
-                                        + LEAST(2.0, evidence_count::double precision / 3.0)
-                                        + action_relation_score * 0.8
-                                        + CASE WHEN axis_type = 'tech' THEN technology_match_score * 0.9 ELSE 0 END
-                                        + LEAST(1.0, confidence_score)
-                                        + CASE WHEN length(label) >= 5 THEN 0.6 ELSE 0 END
-                                    ) DESC,
-                                    action_relation_score DESC,
-                                    technology_match_score DESC,
-                                    evidence_count DESC,
-                                    length(label) DESC,
-                                    label ASC
-                            ) AS axis_rank
-                        FROM axis_keyword_agg
-                        WHERE evidence_count > 0
-                    ),
-                    selected_axes AS (
-                        SELECT
-                            tp.id AS company_id,
-                            MAX(ra.label) FILTER (WHERE ra.axis_type = 'business' AND ra.axis_rank = 1) AS business_keyword,
-                            MAX(ra.label) FILTER (WHERE ra.axis_type = 'tech' AND ra.axis_rank = 1) AS tech_keyword,
-                            MAX(ra.selected_evidence_text) FILTER (WHERE ra.axis_type = 'business' AND ra.axis_rank = 1) AS business_evidence_text,
-                            MAX(ra.selected_evidence_text) FILTER (WHERE ra.axis_type = 'tech' AND ra.axis_rank = 1) AS tech_evidence_text,
-                            MAX(ra.selected_evidence_url) FILTER (WHERE ra.axis_type = 'business' AND ra.axis_rank = 1) AS business_evidence_url,
-                            MAX(ra.selected_evidence_url) FILTER (WHERE ra.axis_type = 'tech' AND ra.axis_rank = 1) AS tech_evidence_url,
-                            MAX(ra.selected_evidence_quote) FILTER (WHERE ra.axis_type = 'business' AND ra.axis_rank = 1) AS business_evidence_quote,
-                            MAX(ra.selected_evidence_quote) FILTER (WHERE ra.axis_type = 'tech' AND ra.axis_rank = 1) AS tech_evidence_quote,
-                            MAX(ra.primary_action_label) FILTER (WHERE ra.axis_type = 'business' AND ra.axis_rank = 1) AS business_action_label,
-                            MAX(ra.primary_action_label) FILTER (WHERE ra.axis_type = 'tech' AND ra.axis_rank = 1) AS tech_action_label,
-                            COALESCE(MAX(ra.final_score) FILTER (WHERE ra.axis_type = 'business' AND ra.axis_rank = 1), 0)
-                                + COALESCE(MAX(ra.final_score) FILTER (WHERE ra.axis_type = 'tech' AND ra.axis_rank = 1), 0) AS final_score
-                        FROM target_peers tp
-                        LEFT JOIN ranked_axes ra
-                          ON ra.company_id = tp.id
-                         AND ra.axis_rank = 1
-                        GROUP BY tp.id
-                    ),
-                    evidence_sample_rows AS (
-                        SELECT
-                            sa.company_id,
-                            sa.business_evidence_url AS evidence_url,
-                            tp.name || ' 사업 키워드 기준: ' || sa.business_keyword
-                            || '. 근거 내용: ' || regexp_replace(sa.business_evidence_text, '[.。]+$', '')
-                            || CASE
-                                WHEN NULLIF(trim(COALESCE(sa.business_evidence_quote, '')), '') IS NOT NULL
-                                THEN '. 원문 확인 문구: ' || regexp_replace(sa.business_evidence_quote, '[.。]+$', '')
-                                ELSE ''
-                            END
-                            || '. 판단 이유: ' || COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
-                            || ' 원문 기반 사업 신호의 business_area에서 반복 확인된 표현입니다. '
-                            || CASE
-                                WHEN COALESCE(NULLIF(sa.business_action_label, ''), '') <> ''
-                                THEN sa.business_action_label || ' 같은 실행 신호가 함께 나타나 '
-                                ELSE '구체적인 사업 문맥과 함께 나타나 '
-                            END
-                            || '해당 분기 사업 방향으로 읽히기 때문에 '''
-                            || sa.business_keyword || '''를 사업 키워드로 판단했습니다.' AS evidence_text
-                        FROM selected_axes sa
-                        JOIN target_peers tp
-                          ON tp.id = sa.company_id
-                        WHERE sa.business_evidence_text IS NOT NULL
-                          AND sa.business_keyword IS NOT NULL
-                        UNION ALL
-                        SELECT
-                            sa.company_id,
-                            sa.tech_evidence_url AS evidence_url,
-                            tp.name || ' 기술 키워드 기준: ' || sa.tech_keyword
-                            || '. 근거 내용: ' || regexp_replace(sa.tech_evidence_text, '[.。]+$', '')
-                            || CASE
-                                WHEN NULLIF(trim(COALESCE(sa.tech_evidence_quote, '')), '') IS NOT NULL
-                                THEN '. 원문 확인 문구: ' || regexp_replace(sa.tech_evidence_quote, '[.。]+$', '')
-                                ELSE ''
-                            END
-                            || '. 판단 이유: ' || COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
-                            || ' 원문 기반 사업 신호에서 일반 기술 신호와 함께 확인된 표현입니다. '
-                            || CASE
-                                WHEN COALESCE(NULLIF(sa.tech_action_label, ''), '') <> ''
-                                THEN sa.tech_action_label || ' 같은 실행 신호가 함께 나타나 '
-                                ELSE '구체적인 적용 문맥과 함께 나타나 '
-                            END
-                            || '사업을 가능하게 하는 기술 축으로 읽히기 때문에 '''
-                            || sa.tech_keyword || '''를 기술 키워드로 판단했습니다.' AS evidence_text
-                        FROM selected_axes sa
-                        JOIN target_peers tp
-                          ON tp.id = sa.company_id
-                        WHERE sa.tech_evidence_text IS NOT NULL
-                          AND sa.tech_keyword IS NOT NULL
-                    ),
-                    evidence_samples AS (
-                        SELECT
-                            company_id,
-                            array_agg(evidence_text ORDER BY evidence_text) AS evidence_texts,
-                            array_agg(COALESCE(evidence_url, '') ORDER BY evidence_text) AS evidence_urls
-                        FROM evidence_sample_rows
-                        GROUP BY company_id
-                    )
-                    SELECT
-                        tp.id,
-                        tp.name,
-                        tp.ax_revenue_share_pct,
-                        NULLIF(concat_ws(E'\\n', sa.business_keyword, sa.tech_keyword), '') AS top_keyword,
-                        sa.business_keyword,
-                        sa.tech_keyword AS technology_keyword,
-                        CASE
-                            WHEN sa.final_score = 0 THEN COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
-                                || ' 원문 기반 사업 신호에서 통과 후보가 없어 핵심 키워드를 노출하지 않습니다.'
-                            ELSE COALESCE((SELECT period FROM selected_signal_period), '해당 분기')
-                                || ' 공개 원문의 제목·요약·근거 문장에서 실제 등장한 사업명, 서비스명, 제품명, 기술명을 기준으로 점수화했습니다. '
-                                || '해당 분기에 확인된 사업 표현과 기술 신호를 분리해 선택했습니다.'
-                        END AS top_keyword_reason,
-                        CASE
-                            WHEN sa.final_score = 0 THEN '분기 원문 기반 사업 신호 통과 후보 없음'
-                            ELSE '점수 ' || sa.final_score::text
-                                || ' = 분기 내 원문 신호 빈도 + 실행 활동 + 일반 기술 신호 + 추출 신뢰도'
-                        END AS top_keyword_basis,
-                        NULLIF(sa.final_score, 0) AS top_keyword_score,
-                        COALESCE(es.evidence_texts, ARRAY[]::text[]) AS top_keyword_evidence,
-                        COALESCE(es.evidence_urls, ARRAY[]::text[]) AS top_keyword_evidence_urls
-                    FROM target_peers tp
-                    JOIN selected_axes sa
-                      ON sa.company_id = tp.id
-                    LEFT JOIN evidence_samples es
-                      ON es.company_id = tp.id
-                    """;
-
-            return jdbcTemplate.query(
-                    sql,
-                    ps -> ps.setString(1, period),
-                    rs -> {
-                        Map<String, SupplementalRow> rows = new HashMap<>();
-                        while (rs.next()) {
-                            rows.put(
-                                    rs.getString("id"),
-                                    new SupplementalRow(
-                                            rs.getString("name"),
-                                            nullableDouble(rs.getObject("ax_revenue_share_pct")),
-                                            rs.getString("top_keyword"),
-                                            rs.getString("business_keyword"),
-                                            rs.getString("technology_keyword"),
-                                            rs.getString("top_keyword_reason"),
-                                            rs.getString("top_keyword_basis"),
-                                            nullableDouble(rs.getObject("top_keyword_score")),
-                                            nullableStringList(rs.getObject("top_keyword_evidence")),
-                                            nullableStringList(rs.getObject("top_keyword_evidence_urls"))
-                                    )
-                            );
-                        }
-                        return rows;
-                    }
-            );
-        } catch (DataAccessException ex) {
-            log.warn("PeerOverviewTable | quarterly supplemental rows unavailable, financial rows only", ex);
-            return Map.of();
-        }
+    @FunctionalInterface
+    private interface PositioningQueryBinder {
+        void bind(PreparedStatement ps) throws SQLException;
     }
 
     private Map<String, SupplementalRow> loadLlmKeywordRows(String period) {
         try {
-            String sql = """
-                    SELECT DISTINCT ON (peer_id)
-                        peer_id,
-                        output_payload::text AS output_payload,
-                        confidence
-                    FROM peer_llm_analysis_snapshots
-                    WHERE analysis_type = 'peer_overview_keywords'
-                      AND scope = 'company'
-                      AND comparison_mode = 'quarterly_keyword_selection'
-                      AND status = 'active'
-                      AND peer_id IN ('sk_ax', 'samsung_sds', 'lg_cns', 'hyundai_autoever', 'posco_dx')
-                      AND (expires_at IS NULL OR expires_at > NOW())
-                    ORDER BY
-                        peer_id,
-                        updated_at DESC NULLS LAST,
-                        generated_at DESC,
-                        created_at DESC
-                    """;
-
             return jdbcTemplate.query(
-                    sql,
+                    LLM_KEYWORD_ROWS_SQL,
                     rs -> {
                         Map<String, SupplementalRow> rows = new HashMap<>();
                         while (rs.next()) {
@@ -2633,15 +1181,6 @@ public class PeerOverviewTableService {
         return cleaned.replaceAll("^[,;\\s]+|[,;\\s]+$", "");
     }
 
-    private String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return "";
-    }
-
     private Map<String, Object> mapFinancialRow(ResultSet rs) throws SQLException {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", rs.getString("id"));
@@ -2753,10 +1292,6 @@ public class PeerOverviewTableService {
         return result;
     }
 
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
-    }
-
     private record DisplayPeer(int displayOrder, String id, String label) {
     }
 
@@ -2799,11 +1334,4 @@ public class PeerOverviewTableService {
     ) {
     }
 
-    private Map<String, Object> mapOf(Object... entries) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        for (int i = 0; i < entries.length; i += 2) {
-            map.put((String) entries[i], entries[i + 1]);
-        }
-        return map;
-    }
 }

@@ -185,6 +185,59 @@ class GlobalSearchServiceTest {
         assertThat(List.of(paramsCaptor.getValue())).contains("%AI 반도체%", "%AI%", "%반도체%");
     }
 
+    @Test
+    @DisplayName("복수 scope 검색도 최종 limit을 지키고 hasMore를 계산한다")
+    void multiScopeSearchAppliesFinalLimit() {
+        ReflectionTestUtils.setField(service, "semanticSearchEnabled", false);
+        when(jdbcTemplate.query(contains("br.legacy_payload::text"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), any(Object[].class)))
+                .thenReturn(List.of(
+                        searchItem("BRIEFING", "BR-001", 95.0),
+                        searchItem("BRIEFING", "BR-002", 65.0)));
+        when(jdbcTemplate.query(contains("FROM card_news cn"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), any(Object[].class)))
+                .thenReturn(List.of(
+                        searchItem("CARD_NEWS", "IC-001", 90.0),
+                        searchItem("CARD_NEWS", "IC-002", 60.0)));
+        when(jdbcTemplate.query(contains("FROM peer_companies pc"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), any(Object[].class)))
+                .thenReturn(List.of(
+                        searchItem("PEER_PLUS", "samsung_sds", 80.0),
+                        searchItem("PEER_PLUS", "lg_cns", 55.0)));
+
+        Map<String, Object> result = service.search(Map.of(
+                "query", "AX",
+                "scopes", List.of("BRIEFING", "CARD_NEWS", "PEER_PLUS"),
+                "limit", 4
+        ));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> items = (List<Map<String, Object>>) result.get("items");
+        assertThat(items).hasSize(4);
+        assertThat(result).containsEntry("total", 6);
+        assertThat(result).containsEntry("hasMore", true);
+    }
+
+    @Test
+    @DisplayName("legacy scope 이름(cards, peers, briefings)을 현재 scope로 정규화한다")
+    void legacyScopeNamesNormalizeToCurrentScopes() {
+        ReflectionTestUtils.setField(service, "semanticSearchEnabled", false);
+        when(jdbcTemplate.query(contains("FROM card_news cn"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), any(Object[].class)))
+                .thenReturn(List.of(searchItem("CARD_NEWS", "IC-001", 90.0)));
+        when(jdbcTemplate.query(contains("FROM peer_companies pc"),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), any(Object[].class)))
+                .thenReturn(List.of(searchItem("PEER_PLUS", "samsung_sds", 80.0)));
+
+        Map<String, Object> result = service.search(Map.of(
+                "query", "AX",
+                "scopes", List.of("cards", "peers"),
+                "limit", 8
+        ));
+
+        assertThat(result.get("scopes")).isEqualTo(List.of("CARD_NEWS", "PEER_PLUS"));
+    }
+
     private static Map<String, Object> keywordItem(String id, double score) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", id);
@@ -208,6 +261,21 @@ class GlobalSearchServiceTest {
         item.put("snippet", "본문 매칭 브리핑");
         item.put("badge", "브리핑");
         item.put("target", "briefings");
+        item.put("targetId", id);
+        item.put("date", "2026-06-12");
+        item.put("score", score);
+        item.put("metadata", Map.of());
+        return item;
+    }
+
+    private static Map<String, Object> searchItem(String type, String id, double score) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", id);
+        item.put("type", type);
+        item.put("title", id);
+        item.put("snippet", "");
+        item.put("badge", type);
+        item.put("target", type.toLowerCase(java.util.Locale.ROOT));
         item.put("targetId", id);
         item.put("date", "2026-06-12");
         item.put("score", score);

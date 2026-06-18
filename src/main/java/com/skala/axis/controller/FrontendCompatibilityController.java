@@ -8,11 +8,14 @@
  */
 package com.skala.axis.controller;
 
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.dto.ApiResponse;
+import com.skala.axis.formatter.IssueImportanceClassifier;
 import com.skala.axis.service.BriefingReportService;
 import com.skala.axis.service.CardNewsService;
 import com.skala.axis.service.DashboardKeywordTrendChartService;
 import com.skala.axis.service.DashboardStockChartService;
+import com.skala.axis.service.PeerCompanyProvider;
 import com.skala.axis.service.RawArticleQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,7 +24,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +43,7 @@ public class FrontendCompatibilityController {
     private final DashboardStockChartService dashboardStockChartService;
     private final DashboardKeywordTrendChartService dashboardKeywordTrendChartService;
     private final RawArticleQueryService rawArticleQueryService;
+    private final PeerCompanyProvider peerCompanyProvider;
 
     @GetMapping("/dashboard")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboard() {
@@ -52,7 +55,7 @@ public class FrontendCompatibilityController {
 
     @GetMapping("/briefings")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefings() {
-        return briefingReportService.findOverview(LocalDate.now())
+        return briefingReportService.findOverview(AxisTime.today())
                 .map(payload -> ResponseEntity.ok(ApiResponse.success(payload)))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(ApiResponse.<Map<String, Object>>error("BRIEFING_REPORT_UNAVAILABLE", "저장된 브리핑 결과가 없습니다.")));
@@ -80,10 +83,10 @@ public class FrontendCompatibilityController {
                         .map(card -> Map.<String, Object>of(
                                 "id", card.getId(),
                                 "peerId", card.getPeerId() == null ? "" : card.getPeerId(),
-                                "peerName", peerName(card.getPeerId()),
+                                "peerName", peerCompanyProvider.displayName(card.getPeerId()),
                                 "title", card.getTitle() == null ? "" : card.getTitle(),
                                 "summaryLines", card.getSummaryLines() == null ? List.of() : card.getSummaryLines(),
-                                "importance", issueImportance(card.getImportance(), card.getImportanceScore()),
+                                "importance", IssueImportanceClassifier.classify(card.getImportance(), card.getImportanceScore()),
                                 "createdAt", card.getCreatedAt() == null ? "" : card.getCreatedAt().toString(),
                                 "sourceUrl", card.getSourceUrl() == null ? "" : card.getSourceUrl()
                         ))
@@ -128,20 +131,4 @@ public class FrontendCompatibilityController {
         );
     }
 
-    private static String issueImportance(String importance, Float score) {
-        if ("urgent".equals(importance) || "notable".equals(importance) || "reference".equals(importance)) {
-            return importance;
-        }
-        if (score != null && score >= 0.85f) return "urgent";
-        if (score != null && score >= 0.6f) return "notable";
-        return "reference";
-    }
-
-    private static String peerName(String peerId) {
-        if ("samsung_sds".equals(peerId)) return "삼성SDS";
-        if ("lg_cns".equals(peerId)) return "LG CNS";
-        if ("hyundai_autoever".equals(peerId)) return "현대오토에버";
-        if ("posco_dx".equals(peerId)) return "포스코DX";
-        return peerId == null || peerId.isBlank() ? "Peer사" : peerId;
-    }
 }

@@ -24,6 +24,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static com.skala.axis.query.AgentDiagnosticsQueries.LIST_BRIEFINGS_FALLBACK_SQL;
+import static com.skala.axis.query.AgentDiagnosticsQueries.LIST_BRIEFINGS_SQL;
+import static com.skala.axis.query.AgentDiagnosticsQueries.LIST_GLOBAL_TRENDS_SQL;
+import static com.skala.axis.query.AgentDiagnosticsQueries.LIST_INSIGHT_REPORTS_SQL;
+import static com.skala.axis.query.AgentDiagnosticsQueries.LIST_INTEGRATED_ISSUES_SQL;
+import static com.skala.axis.query.AgentDiagnosticsQueries.LIST_MIXER_RESULTS_SQL;
+import static com.skala.axis.query.AgentDiagnosticsQueries.countSql;
+import static com.skala.axis.query.AgentDiagnosticsQueries.detailSql;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -79,14 +88,9 @@ public class AgentDiagnosticsService {
         }
 
         try {
-            String sql = type.hasSourceAnalysisId
-                    ? "SELECT to_jsonb(t)::text AS row_json FROM " + type.tableName
-                    + " t WHERE t.id::text = ? OR t.source_analysis_id = ? LIMIT 1"
-                    : "SELECT to_jsonb(t)::text AS row_json FROM " + type.tableName
-                    + " t WHERE t.id::text = ? LIMIT 1";
             Object[] args = type.hasSourceAnalysisId ? new Object[] {id, id} : new Object[] {id};
             List<Map<String, Object>> rows = jdbcTemplate.query(
-                    sql,
+                    detailSql(type.tableName, type.hasSourceAnalysisId),
                     (rs, rowNum) -> parseObject(rs.getString("row_json")),
                     args
             );
@@ -105,7 +109,7 @@ public class AgentDiagnosticsService {
     private Map<String, Object> listSingleType(ResultType type, int limit, int offset) {
         try {
             Integer total = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM " + type.tableName,
+                    countSql(type.tableName),
                     Integer.class
             );
             List<Map<String, Object>> items = switch (type) {
@@ -131,22 +135,7 @@ public class AgentDiagnosticsService {
 
     private List<Map<String, Object>> listMixer(int limit, int offset) {
         return jdbcTemplate.query(
-                """
-                    SELECT
-                        id::text AS id,
-                        source_analysis_id,
-                        title,
-                        final_one_liner,
-                        sk_ax_implication,
-                        confidence::double precision AS confidence,
-                        array_to_json(input_peer_ids)::text AS peer_ids_json,
-                        array_to_json(input_card_ids)::text AS source_ids_json,
-                        created_at::text AS created_at,
-                        updated_at::text AS updated_at
-                    FROM mixer_results
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                """,
+                LIST_MIXER_RESULTS_SQL,
                 (rs, rowNum) -> compactAnalysisRow(rs, "mixer"),
                 limit,
                 offset
@@ -155,22 +144,7 @@ public class AgentDiagnosticsService {
 
     private List<Map<String, Object>> listInsight(int limit, int offset) {
         return jdbcTemplate.query(
-                """
-                    SELECT
-                        id::text AS id,
-                        source_analysis_id,
-                        title,
-                        final_one_liner,
-                        sk_ax_implication,
-                        confidence::double precision AS confidence,
-                        array_to_json(focus_peer_ids)::text AS peer_ids_json,
-                        array_to_json(source_card_ids)::text AS source_ids_json,
-                        created_at::text AS created_at,
-                        updated_at::text AS updated_at
-                    FROM insight_reports
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                """,
+                LIST_INSIGHT_REPORTS_SQL,
                 (rs, rowNum) -> compactAnalysisRow(rs, "insight"),
                 limit,
                 offset
@@ -179,27 +153,7 @@ public class AgentDiagnosticsService {
 
     private List<Map<String, Object>> listGlobalTrends(int limit, int offset) {
         return jdbcTemplate.query(
-                """
-                    SELECT
-                        id::text AS id,
-                        source_analysis_id,
-                        title,
-                        summary AS final_one_liner,
-                        sk_ax_implication,
-                        confidence::double precision AS confidence,
-                        array_to_json(related_peer_ids)::text AS peer_ids_json,
-                        array_to_json(related_card_ids)::text AS source_ids_json,
-                        industry,
-                        region,
-                        keyword,
-                        keyword_category,
-                        trend_date::text AS trend_date,
-                        created_at::text AS created_at,
-                        updated_at::text AS updated_at
-                    FROM global_industry_trends
-                    ORDER BY trend_date DESC, created_at DESC
-                    LIMIT ? OFFSET ?
-                """,
+                LIST_GLOBAL_TRENDS_SQL,
                 (rs, rowNum) -> {
                     Map<String, Object> row = compactAnalysisRow(rs, "global_trends");
                     row.put("industry", rs.getString("industry"));
@@ -217,24 +171,7 @@ public class AgentDiagnosticsService {
     private List<Map<String, Object>> listBriefings(int limit, int offset) {
         try {
             return jdbcTemplate.query(
-                    """
-                        SELECT
-                            id,
-                            NULL AS source_analysis_id,
-                            title,
-                            COALESCE(NULLIF(key_summary, ''), title) AS final_one_liner,
-                            sk_implication AS sk_ax_implication,
-                            confidence::double precision AS confidence,
-                            '[]'::json AS peer_ids_json,
-                            array_to_json(related_card_ids)::text AS source_ids_json,
-                            briefing_type,
-                            status,
-                            created_at::text AS created_at,
-                            completed_at::text AS updated_at
-                        FROM briefing_reports
-                        ORDER BY created_at DESC
-                        LIMIT ? OFFSET ?
-                    """,
+                    LIST_BRIEFINGS_SQL,
                     (rs, rowNum) -> {
                         Map<String, Object> row = compactAnalysisRow(rs, "briefing");
                         row.put("briefing_type", rs.getString("briefing_type"));
@@ -246,24 +183,7 @@ public class AgentDiagnosticsService {
             );
         } catch (BadSqlGrammarException ignored) {
             return jdbcTemplate.query(
-                    """
-                        SELECT
-                            id,
-                            NULL AS source_analysis_id,
-                            title,
-                            title AS final_one_liner,
-                            NULL AS sk_ax_implication,
-                            confidence::double precision AS confidence,
-                            '[]'::json AS peer_ids_json,
-                            '[]'::json AS source_ids_json,
-                            briefing_type,
-                            status,
-                            created_at::text AS created_at,
-                            completed_at::text AS updated_at
-                        FROM briefing_reports
-                        ORDER BY created_at DESC
-                        LIMIT ? OFFSET ?
-                    """,
+                    LIST_BRIEFINGS_FALLBACK_SQL,
                     (rs, rowNum) -> {
                         Map<String, Object> row = compactAnalysisRow(rs, "briefing");
                         row.put("briefing_type", rs.getString("briefing_type"));
@@ -278,25 +198,7 @@ public class AgentDiagnosticsService {
 
     private List<Map<String, Object>> listIntegratedIssues(int limit, int offset) {
         return jdbcTemplate.query(
-                """
-                    SELECT
-                        id::text AS id,
-                        issue_key,
-                        headline AS title,
-                        one_line_summary AS final_one_liner,
-                        main_company,
-                        event_type,
-                        confidence::double precision AS confidence,
-                        is_valid,
-                        status,
-                        array_to_json(mentioned_peer_companies)::text AS peer_ids_json,
-                        array_to_json(source_ids)::text AS source_ids_json,
-                        created_at::text AS created_at,
-                        updated_at::text AS updated_at
-                    FROM integrated_issues
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                """,
+                LIST_INTEGRATED_ISSUES_SQL,
                 (rs, rowNum) -> {
                     Map<String, Object> row = mapOf(
                             "type", "integrated_issue",

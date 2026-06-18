@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static com.skala.axis.query.TodayInsightReportQueries.LATEST_ON_OR_BEFORE_SQL;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -35,16 +37,11 @@ public class TodayInsightReportService {
 
     public Optional<Map<String, Object>> findLatestOnOrBefore(LocalDate anchorDate) {
         try {
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                    SELECT report_date::text AS report_date,
-                           output_payload::text AS output_payload,
-                           created_at
-                      FROM today_insight_reports
-                     WHERE report_date <= CAST(? AS date)
-                       AND status = 'active'
-                     ORDER BY report_date DESC, created_at DESC
-                     LIMIT ?
-                    """, anchorDate.toString(), LOOKBACK_REPORT_LIMIT);
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    LATEST_ON_OR_BEFORE_SQL,
+                    anchorDate.toString(),
+                    LOOKBACK_REPORT_LIMIT
+            );
             if (rows.isEmpty()) {
                 return Optional.empty();
             }

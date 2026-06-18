@@ -8,6 +8,7 @@
  */
 package com.skala.axis.service;
 
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.dto.SearchRequest;
 import com.skala.axis.dto.SearchResponse;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +23,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -33,6 +33,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+
+import static com.skala.axis.query.GlobalSearchQueries.BRIEFING_DATE;
+import static com.skala.axis.query.GlobalSearchQueries.BRIEFING_SEARCH_TEXT;
+import static com.skala.axis.query.GlobalSearchQueries.CARD_NEWS_DATE;
+import static com.skala.axis.query.GlobalSearchQueries.CARD_NEWS_SEARCH_TEXT;
+import static com.skala.axis.query.GlobalSearchQueries.PEER_DATE;
+import static com.skala.axis.query.GlobalSearchQueries.PEER_SEARCH_TEXT;
+import static com.skala.axis.query.GlobalSearchQueries.briefingSearchSql;
+import static com.skala.axis.query.GlobalSearchQueries.cardNewsHydrateSql;
+import static com.skala.axis.query.GlobalSearchQueries.cardNewsKeywordSql;
+import static com.skala.axis.query.GlobalSearchQueries.peerSearchSql;
 
 @Slf4j
 @Service
@@ -77,7 +88,7 @@ public class GlobalSearchService {
             return stringValue(right.get("date")).compareTo(stringValue(left.get("date")));
         });
 
-        int limit = criteria.isMultiScope() ? items.size() : Math.min(criteria.limit(), items.size());
+        int limit = Math.min(criteria.limit(), items.size());
         List<Map<String, Object>> limitedItems = items.subList(0, limit);
         Map<String, Long> counts = new LinkedHashMap<>();
         ALL_SCOPES.forEach(scope -> counts.put(scope, items.stream().filter(item -> scope.equals(item.get("type"))).count()));
@@ -98,23 +109,7 @@ public class GlobalSearchService {
     }
 
     private List<Map<String, Object>> searchBriefings(SearchCriteria criteria) {
-        String searchText = """
-                concat_ws(
-                    ' ',
-                    br.title,
-                    br.briefing_type,
-                    br.period_label,
-                    br.key_summary,
-                    br.sk_implication,
-                    br.global_search_text,
-                    br.payload::text,
-                    br.legacy_payload::text,
-                    array_to_string(br.related_card_ids, ' '),
-                    br.provenance::text
-                )
-                """;
-        String termMatchSql = briefingTermMatchSql(criteria, searchText);
-        String briefingDate = "COALESCE(br.report_date, br.date_to, br.date_from)";
+        String termMatchSql = briefingTermMatchSql(criteria, BRIEFING_SEARCH_TEXT);
         SqlParts parts = new SqlParts();
         if (criteria.hasQuery()) {
             if (criteria.queryDate() != null) {
@@ -122,44 +117,22 @@ public class GlobalSearchService {
                 values.add(criteria.likePattern());
                 values.addAll(criteria.termLikePatterns());
                 values.add(Date.valueOf(criteria.queryDate()));
-                parts.add("(" + searchText + " ILIKE ? OR " + termMatchSql + " OR " + briefingDate + " = ?)",
+                parts.add("(" + BRIEFING_SEARCH_TEXT + " ILIKE ? OR " + termMatchSql + " OR " + BRIEFING_DATE + " = ?)",
                         values.toArray());
             } else if (criteria.termLikePatterns().isEmpty()) {
-                parts.add(searchText + " ILIKE ?", criteria.likePattern());
+                parts.add(BRIEFING_SEARCH_TEXT + " ILIKE ?", criteria.likePattern());
             } else {
                 List<Object> values = new ArrayList<>();
                 values.add(criteria.likePattern());
                 values.addAll(criteria.termLikePatterns());
-                parts.add("(" + searchText + " ILIKE ? OR " + termMatchSql + ")", values.toArray());
+                parts.add("(" + BRIEFING_SEARCH_TEXT + " ILIKE ? OR " + termMatchSql + ")", values.toArray());
             }
         }
-        addDateRange(parts, criteria, briefingDate);
+        addDateRange(parts, criteria, BRIEFING_DATE);
         if (!parts.hasConditions()) {
             parts.add("TRUE");
         }
-        String sql = """
-                SELECT
-                    br.id,
-                    br.title,
-                    COALESCE(NULLIF(br.key_summary, ''), NULLIF(br.sk_implication, ''), br.period_label, br.briefing_type) AS snippet,
-                    COALESCE(br.report_date, br.date_to, br.date_from) AS item_date,
-                    br.briefing_type,
-                    br.status,
-                    CASE
-                        WHEN lower(br.title) = lower(?) THEN 130
-                        WHEN %s = ? THEN 120
-                        WHEN lower(br.title) LIKE lower(?) THEN 115
-                        WHEN lower(COALESCE(br.key_summary, '')) LIKE lower(?) THEN 105
-                        WHEN lower(COALESCE(br.sk_implication, '')) LIKE lower(?) THEN 100
-                        WHEN %s ILIKE ? THEN 96
-                        WHEN %s THEN 88
-                        ELSE 45
-                    END AS score
-                FROM briefing_reports br
-                WHERE %s
-                ORDER BY score DESC, COALESCE(br.report_date, br.date_to, br.date_from) DESC, br.created_at DESC
-                LIMIT ?
-                """.formatted(briefingDate, searchText, termMatchSql, parts.whereSql());
+        String sql = briefingSearchSql(termMatchSql, parts.whereSql());
         List<Object> params = new ArrayList<>();
         params.add(criteria.query());
         params.add(criteria.queryDate() == null ? Date.valueOf(LocalDate.of(1900, 1, 1)) : Date.valueOf(criteria.queryDate()));
@@ -259,23 +232,10 @@ public class GlobalSearchService {
 
     private Map<Long, Map<String, Object>> hydrateCardNewsByRawArticleIds(SearchCriteria criteria, List<Long> rdbIds) {
         SqlParts parts = new SqlParts();
-        addDateRange(parts, criteria, "cn.created_at::date");
+        addDateRange(parts, criteria, CARD_NEWS_DATE);
         String dateFilter = parts.hasConditions() ? " AND " + parts.whereSql() : "";
         String placeholders = String.join(", ", java.util.Collections.nCopies(rdbIds.size(), "?"));
-        String sql = """
-                SELECT
-                    cn.id,
-                    cn.title,
-                    COALESCE(NULLIF(cn.primary_keyword_category, ''), NULLIF(cn.event_type, ''), NULLIF(cn.importance, ''), '카드뉴스') AS subtitle,
-                    COALESCE(pc.name, cn.company) AS company_name,
-                    cn.created_at::date AS item_date,
-                    cn.importance,
-                    cn.event_type,
-                    cn.primary_raw_article_id
-                FROM card_news cn
-                LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
-                WHERE cn.status = 'ACTIVE' AND cn.primary_raw_article_id IN (%s)%s
-                """.formatted(placeholders, dateFilter);
+        String sql = cardNewsHydrateSql(placeholders, dateFilter);
         List<Object> params = new ArrayList<>(rdbIds);
         params.addAll(parts.params());
         List<Map<String, Object>> rows = jdbcTemplate.query(sql, this::cardNewsHydrateRow, params.toArray());
@@ -303,29 +263,8 @@ public class GlobalSearchService {
     }
 
     private List<Map<String, Object>> searchCardNewsKeyword(SearchCriteria criteria) {
-        String searchText = "cn.global_search_text";
-        SqlParts parts = baseWhere(criteria, "cn.created_at::date", searchText);
-        String sql = """
-                SELECT
-                    cn.id,
-                    cn.title,
-                    COALESCE(NULLIF(cn.primary_keyword_category, ''), NULLIF(cn.event_type, ''), NULLIF(cn.importance, ''), '카드뉴스') AS subtitle,
-                    COALESCE(pc.name, cn.company) AS company_name,
-                    cn.created_at::date AS item_date,
-                    cn.importance,
-                    cn.event_type,
-                    CASE
-                        WHEN lower(cn.title) = lower(?) THEN 110
-                        WHEN lower(cn.title) LIKE lower(?) THEN 85
-                        WHEN lower(array_to_string(cn.keywords, ' ')) LIKE lower(?) THEN 70
-                        ELSE 40
-                    END AS score
-                FROM card_news cn
-                LEFT JOIN peer_companies pc ON pc.id = COALESCE(cn.peer_company_id, cn.company)
-                WHERE cn.status = 'ACTIVE' AND %s
-                ORDER BY score DESC, cn.created_at DESC
-                LIMIT ?
-                """.formatted(parts.whereSql());
+        SqlParts parts = baseWhere(criteria, CARD_NEWS_DATE, CARD_NEWS_SEARCH_TEXT);
+        String sql = cardNewsKeywordSql(parts.whereSql());
         List<Object> params = new ArrayList<>();
         params.add(criteria.query());
         params.add(criteria.likePattern());
@@ -336,25 +275,8 @@ public class GlobalSearchService {
     }
 
     private List<Map<String, Object>> searchPeers(SearchCriteria criteria) {
-        String searchText = "pc.global_search_text";
-        SqlParts parts = baseWhere(criteria, "COALESCE(pc.financial_updated_at, pc.created_at)::date", searchText);
-        String sql = """
-                SELECT
-                    pc.id,
-                    pc.name,
-                    pc.tier,
-                    COALESCE(array_to_string(pc.core_keywords, ', '), array_to_string(pc.keywords, ', '), pc.tier) AS snippet,
-                    COALESCE(pc.financial_updated_at, pc.created_at)::date AS item_date,
-                    CASE
-                        WHEN lower(pc.name) = lower(?) OR lower(pc.id) = lower(?) THEN 100
-                        WHEN lower(pc.name) LIKE lower(?) THEN 80
-                        ELSE 38
-                    END AS score
-                FROM peer_companies pc
-                WHERE %s
-                ORDER BY score DESC, COALESCE(pc.financial_updated_at, pc.created_at) DESC
-                LIMIT ?
-                """.formatted(parts.whereSql());
+        SqlParts parts = baseWhere(criteria, PEER_DATE, PEER_SEARCH_TEXT);
+        String sql = peerSearchSql(parts.whereSql());
         List<Object> params = new ArrayList<>();
         params.add(criteria.query());
         params.add(criteria.query());
@@ -518,10 +440,6 @@ public class GlobalSearchService {
                     .toList();
         }
 
-        boolean isMultiScope() {
-            return scopes.size() > 1;
-        }
-
         int limitPerScope() {
             return Math.max(limit, 6);
         }
@@ -529,26 +447,36 @@ public class GlobalSearchService {
         private static List<String> normalizeScopes(Object rawScopes) {
             if (rawScopes instanceof List<?> values) {
                 List<String> scopes = values.stream()
-                        .map(value -> Objects.toString(value, "").trim().toUpperCase(Locale.ROOT))
-                        .filter(ALL_SCOPES::contains)
+                        .map(SearchCriteria::normalizeScope)
+                        .filter(Objects::nonNull)
                         .distinct()
                         .toList();
                 if (!scopes.isEmpty()) {
                     return scopes;
                 }
             }
-            String raw = Objects.toString(rawScopes, "").trim().toUpperCase(Locale.ROOT);
-            if (ALL_SCOPES.contains(raw)) {
-                return List.of(raw);
+            String normalized = normalizeScope(rawScopes);
+            if (normalized != null) {
+                return List.of(normalized);
             }
             return ALL_SCOPES;
+        }
+
+        private static String normalizeScope(Object rawScope) {
+            String raw = Objects.toString(rawScope, "").trim().toUpperCase(Locale.ROOT);
+            return switch (raw) {
+                case "BRIEFING", "BRIEFINGS" -> "BRIEFING";
+                case "CARD_NEWS", "CARDS" -> "CARD_NEWS";
+                case "PEER_PLUS", "PEERS" -> "PEER_PLUS";
+                default -> null;
+            };
         }
 
         private static LocalDate[] rangeFromPeriod(String period, LocalDate explicitStart, LocalDate explicitEnd) {
             if (explicitStart != null || explicitEnd != null) {
                 return new LocalDate[]{explicitStart, explicitEnd};
             }
-            LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+            LocalDate today = AxisTime.today();
             return switch (period == null ? "all" : period) {
                 case "7d" -> new LocalDate[]{today.minusDays(7), today};
                 case "30d" -> new LocalDate[]{today.minusDays(30), today};

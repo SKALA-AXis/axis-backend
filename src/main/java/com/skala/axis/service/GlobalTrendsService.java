@@ -10,6 +10,7 @@ package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.skala.axis.config.AxisTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -42,8 +43,9 @@ public class GlobalTrendsService {
     public Map<String, Object> listTrends(String from, String to, int limit, int offset) {
         int safeLimit = clamp(limit, 1, 50);
         int safeOffset = Math.max(0, offset);
-        LocalDate fromDate = parseDate(from, LocalDate.now().minusDays(30));
-        LocalDate toDate = parseDate(to, LocalDate.now());
+        LocalDate today = AxisTime.today();
+        LocalDate fromDate = parseDate(from, today.minusDays(30));
+        LocalDate toDate = parseDate(to, today);
 
         try {
             Integer total = jdbcTemplate.queryForObject(

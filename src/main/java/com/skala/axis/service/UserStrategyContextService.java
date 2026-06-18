@@ -26,6 +26,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static com.skala.axis.query.UserStrategyContextQueries.COUNT_CONTEXTS_BY_USER_SQL;
+import static com.skala.axis.query.UserStrategyContextQueries.DEACTIVATE_STRATEGY_PROJECTIONS_SQL;
+import static com.skala.axis.query.UserStrategyContextQueries.DELETE_CONTEXT_SQL;
+import static com.skala.axis.query.UserStrategyContextQueries.INSERT_CONTEXT_SQL;
+import static com.skala.axis.query.UserStrategyContextQueries.LIST_BY_USER_SQL;
+import static com.skala.axis.query.UserStrategyContextQueries.UPDATE_CONTEXT_SQL;
+
 @Service
 @RequiredArgsConstructor
 public class UserStrategyContextService {
@@ -41,20 +48,7 @@ public class UserStrategyContextService {
     public Map<String, Object> list(UUID userId) {
         authService.requireUser(userId);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                """
-                SELECT id,
-                       raw_text,
-                       overlay_json,
-                       source_type,
-                       file_name,
-                       file_size,
-                       metadata,
-                       created_at,
-                       updated_at
-                  FROM user_strategy_contexts
-                 WHERE user_id = ?
-                 ORDER BY updated_at DESC
-                """,
+                LIST_BY_USER_SQL,
                 userId
         );
         return Map.of("items", rows.stream().map(this::toItem).toList());
@@ -65,22 +59,7 @@ public class UserStrategyContextService {
         NormalizedContext context = normalizeContext(request);
         Map<String, Object> overlay = generateOverlay(userId, context);
         Map<String, Object> row = jdbcTemplate.queryForMap(
-                """
-                INSERT INTO user_strategy_contexts (
-                    user_id, raw_text, overlay_json, source_type,
-                    file_name, file_size, metadata
-                )
-                VALUES (?, ?, CAST(? AS jsonb), ?, ?, ?, CAST(? AS jsonb))
-                RETURNING id,
-                          raw_text,
-                          overlay_json,
-                          source_type,
-                          file_name,
-                          file_size,
-                          metadata,
-                          created_at,
-                          updated_at
-                """,
+                INSERT_CONTEXT_SQL,
                 userId,
                 context.rawText(),
                 toJson(overlay),
@@ -111,26 +90,7 @@ public class UserStrategyContextService {
         Map<String, Object> overlay = generateOverlay(userId, context);
         try {
             Map<String, Object> row = jdbcTemplate.queryForMap(
-                """
-                UPDATE user_strategy_contexts
-                       SET raw_text = ?,
-                           overlay_json = CAST(? AS jsonb),
-                           source_type = ?,
-                           file_name = ?,
-                           file_size = ?,
-                           metadata = CAST(? AS jsonb)
-                     WHERE id = ?
-                       AND user_id = ?
-                    RETURNING id,
-                              raw_text,
-                              overlay_json,
-                              source_type,
-                              file_name,
-                              file_size,
-                              metadata,
-                              created_at,
-                              updated_at
-                    """,
+                    UPDATE_CONTEXT_SQL,
                     context.rawText(),
                     toJson(overlay),
                     context.sourceType(),
@@ -157,7 +117,7 @@ public class UserStrategyContextService {
     public Map<String, Object> delete(UUID userId, UUID contextId, RequestMetadata metadata) {
         User user = authService.requireUser(userId);
         int deleted = jdbcTemplate.update(
-                "DELETE FROM user_strategy_contexts WHERE id = ? AND user_id = ?",
+                DELETE_CONTEXT_SQL,
                 contextId,
                 userId
         );
@@ -181,7 +141,7 @@ public class UserStrategyContextService {
 
     private void deactivateStrategyProjectionsWhenNoContextRemains(UUID userId) {
         Integer remaining = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM user_strategy_contexts WHERE user_id = ?",
+                COUNT_CONTEXTS_BY_USER_SQL,
                 Integer.class,
                 userId
         );
@@ -189,13 +149,7 @@ public class UserStrategyContextService {
             return;
         }
         jdbcTemplate.update(
-                """
-                UPDATE card_news_strategy_context_projections
-                   SET is_applied = FALSE,
-                       reverted_at = CAST(? AS timestamptz)
-                 WHERE user_id = ?
-                   AND is_applied = TRUE
-                """,
+                DEACTIVATE_STRATEGY_PROJECTIONS_SQL,
                 OffsetDateTime.now(ZoneOffset.UTC).toString(),
                 userId
         );

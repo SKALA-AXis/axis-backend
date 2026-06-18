@@ -25,6 +25,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static com.skala.axis.query.BriefingReportQueries.COMPLETED_ROW_FOR_ANCHOR_SQL;
+import static com.skala.axis.query.BriefingReportQueries.DETAIL_BY_ID_SQL;
+import static com.skala.axis.query.BriefingReportQueries.LATEST_COMPLETED_ROWS_SQL;
+import static com.skala.axis.query.BriefingReportQueries.LATEST_COMPLETED_ROW_SQL;
+import static com.skala.axis.query.BriefingReportQueries.STATUS_BY_ID_SQL;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -69,27 +75,7 @@ public class BriefingReportService {
     public Optional<Map<String, Object>> findById(String briefingId) {
         try {
             List<BriefingRow> rows = jdbcTemplate.query(
-                    """
-                            SELECT id,
-                                   title,
-                                   briefing_type,
-                                   date_from::text AS date_from,
-                                   date_to::text AS date_to,
-                                   COALESCE(report_date, date_to)::text AS report_date,
-                                   period_label,
-                                   status,
-                                   progress::double precision AS progress,
-                                   key_summary,
-                                   sk_implication,
-                                   cardinality(COALESCE(related_card_ids, '{}'::text[])) AS primary_count,
-                                   payload::text AS payload_json,
-                                   COALESCE(provenance, '{}'::jsonb)::text AS provenance_json,
-                                   created_at::text AS created_at,
-                                   completed_at::text AS completed_at
-                              FROM briefing_reports
-                             WHERE id = ?
-                             LIMIT 1
-                            """,
+                    DETAIL_BY_ID_SQL,
                     (rs, rowNum) -> mapRow(rs),
                     briefingId
             );
@@ -103,17 +89,7 @@ public class BriefingReportService {
     public Optional<Map<String, Object>> findStatus(String briefingId) {
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                    """
-                            SELECT id,
-                                   status,
-                                   progress::double precision AS progress,
-                                   error_message,
-                                   created_at::text AS created_at,
-                                   completed_at::text AS completed_at
-                              FROM briefing_reports
-                             WHERE id = ?
-                             LIMIT 1
-                            """,
+                    STATUS_BY_ID_SQL,
                     briefingId
             );
             if (rows.isEmpty()) {
@@ -138,31 +114,7 @@ public class BriefingReportService {
     private List<BriefingRow> findLatestCompletedRows(LocalDate anchorDate, int limit) {
         try {
             return jdbcTemplate.query(
-                    """
-                            SELECT id,
-                                   title,
-                                   briefing_type,
-                                   date_from::text AS date_from,
-                                   date_to::text AS date_to,
-                                   COALESCE(report_date, date_to)::text AS report_date,
-                                   period_label,
-                                   status,
-                                   progress::double precision AS progress,
-                                   key_summary,
-                                   sk_implication,
-                                   cardinality(COALESCE(related_card_ids, '{}'::text[])) AS primary_count,
-                                   payload::text AS payload_json,
-                                   COALESCE(provenance, '{}'::jsonb)::text AS provenance_json,
-                                   created_at::text AS created_at,
-                                   completed_at::text AS completed_at
-                              FROM briefing_reports
-                             WHERE COALESCE(report_date, date_to) <= CAST(? AS date)
-                               AND status IN ('completed', 'completed_partial')
-                             ORDER BY COALESCE(report_date, date_to) DESC,
-                                      completed_at DESC NULLS LAST,
-                                      created_at DESC
-                             LIMIT ?
-                            """,
+                    LATEST_COMPLETED_ROWS_SQL,
                     (rs, rowNum) -> mapRow(rs),
                     anchorDate.toString(),
                     Math.max(1, Math.min(limit, 50))
@@ -195,31 +147,7 @@ public class BriefingReportService {
     private Optional<BriefingRow> findCompletedRowForAnchor(String briefingType, LocalDate anchorDate) {
         try {
             List<BriefingRow> rows = jdbcTemplate.query(
-                    """
-                            SELECT id,
-                                   title,
-                                   briefing_type,
-                                   date_from::text AS date_from,
-                                   date_to::text AS date_to,
-                                   COALESCE(report_date, date_to)::text AS report_date,
-                                   period_label,
-                                   status,
-                                   progress::double precision AS progress,
-                                   key_summary,
-                                   sk_implication,
-                                   cardinality(COALESCE(related_card_ids, '{}'::text[])) AS primary_count,
-                                   payload::text AS payload_json,
-                                   COALESCE(provenance, '{}'::jsonb)::text AS provenance_json,
-                                   created_at::text AS created_at,
-                                   completed_at::text AS completed_at
-                              FROM briefing_reports
-                             WHERE briefing_type = ?
-                               AND CAST(? AS date) BETWEEN date_from AND date_to
-                               AND status IN ('completed', 'completed_partial')
-                             ORDER BY completed_at DESC NULLS LAST,
-                                      created_at DESC
-                             LIMIT 1
-                            """,
+                    COMPLETED_ROW_FOR_ANCHOR_SQL,
                     (rs, rowNum) -> mapRow(rs),
                     briefingType,
                     anchorDate.toString()
@@ -235,32 +163,7 @@ public class BriefingReportService {
     private Optional<BriefingRow> findLatestCompletedRow(String briefingType, LocalDate anchorDate) {
         try {
             List<BriefingRow> rows = jdbcTemplate.query(
-                    """
-                            SELECT id,
-                                   title,
-                                   briefing_type,
-                                   date_from::text AS date_from,
-                                   date_to::text AS date_to,
-                                   COALESCE(report_date, date_to)::text AS report_date,
-                                   period_label,
-                                   status,
-                                   progress::double precision AS progress,
-                                   key_summary,
-                                   sk_implication,
-                                   cardinality(COALESCE(related_card_ids, '{}'::text[])) AS primary_count,
-                                   payload::text AS payload_json,
-                                   COALESCE(provenance, '{}'::jsonb)::text AS provenance_json,
-                                   created_at::text AS created_at,
-                                   completed_at::text AS completed_at
-                              FROM briefing_reports
-                             WHERE briefing_type = ?
-                               AND COALESCE(report_date, date_to) <= CAST(? AS date)
-                               AND status IN ('completed', 'completed_partial')
-                             ORDER BY COALESCE(report_date, date_to) DESC,
-                                      completed_at DESC NULLS LAST,
-                                      created_at DESC
-                             LIMIT 1
-                            """,
+                    LATEST_COMPLETED_ROW_SQL,
                     (rs, rowNum) -> mapRow(rs),
                     briefingType,
                     anchorDate.toString()

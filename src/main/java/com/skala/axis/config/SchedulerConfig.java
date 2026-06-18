@@ -18,7 +18,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import java.time.LocalDate;
+
 import java.util.List;
 import java.util.Map;
 
@@ -60,7 +60,7 @@ public class SchedulerConfig {
 
     @Scheduled(cron = "${axis.scheduler.today-insight-cron:0 10 8 * * MON-FRI}", zone = "Asia/Seoul")
     public void warmupTodayInsight() {
-        Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(LocalDate.now());
+        Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(AxisTime.today());
 
         log.info("TodayInsight 오전 사전 생성 시작 | anchor={}", request.get("anchor_date"));
         aiClientService.generateTodayInsight(request)

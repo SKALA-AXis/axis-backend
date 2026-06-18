@@ -10,6 +10,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
 import com.skala.axis.service.BriefingReportService;
@@ -41,7 +42,7 @@ public class BriefingController {
 
     @GetMapping("/today")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getTodayBriefing() {
-        return briefingReportService.findLatestPayload("daily", LocalDate.now())
+        return briefingReportService.findLatestPayload("daily", AxisTime.today())
                 .map(payload -> ResponseEntity.ok(ApiResponse.success(payload)))
                 .orElseGet(() -> briefingUnavailable("BRIEFING_REPORT_UNAVAILABLE"));
     }
@@ -129,9 +130,9 @@ public class BriefingController {
 
     private static LocalDate parseAnchorDate(String raw) {
         try {
-            return raw == null || raw.isBlank() ? LocalDate.now() : LocalDate.parse(raw);
+            return raw == null || raw.isBlank() ? AxisTime.today() : LocalDate.parse(raw);
         } catch (Exception ignored) {
-            return LocalDate.now();
+            return AxisTime.today();
         }
     }
 
@@ -165,7 +166,7 @@ public class BriefingController {
 
     private static LocalDate parseMonthAnchor(String raw) {
         try {
-            LocalDate today = LocalDate.now();
+            LocalDate today = AxisTime.today();
             YearMonth month = raw == null || raw.isBlank()
                     ? YearMonth.from(today)
                     : YearMonth.parse(raw);
@@ -175,19 +176,19 @@ public class BriefingController {
             }
             return month.atEndOfMonth();
         } catch (Exception ignored) {
-            return LocalDate.now();
+            return AxisTime.today();
         }
     }
 
     private static LocalDate parseWeekAnchor(String rawMonth, String rawWeekIndex) {
         try {
+            LocalDate today = AxisTime.today();
             YearMonth month = rawMonth == null || rawMonth.isBlank()
-                    ? YearMonth.from(LocalDate.now())
+                    ? YearMonth.from(today)
                     : YearMonth.parse(rawMonth);
             int weekIndex = Math.max(1, Math.min(5, Integer.parseInt(rawWeekIndex == null ? "1" : rawWeekIndex)));
             int startDay = Math.min(month.lengthOfMonth(), ((weekIndex - 1) * 7) + 1);
             int endDay = Math.min(month.lengthOfMonth(), weekIndex * 7);
-            LocalDate today = LocalDate.now();
             LocalDate start = month.atDay(startDay);
             LocalDate end = month.atDay(endDay);
             if (YearMonth.from(today).equals(month) && !today.isBefore(start) && !today.isAfter(end)) {
@@ -198,7 +199,7 @@ public class BriefingController {
             }
             return month.atDay(endDay);
         } catch (Exception ignored) {
-            return LocalDate.now();
+            return AxisTime.today();
         }
     }
 }

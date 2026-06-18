@@ -163,6 +163,15 @@ public final class AssistantConversationQueries {
                AND status <> 'deleted'
             """;
 
+    public static final String CONVERSATION_ACCESS_OWNER = """
+            SELECT user_id::text AS user_id,
+                   device_id_hash,
+                   status
+              FROM assistant_conversations
+             WHERE id = ?
+             LIMIT 1
+            """;
+
     private AssistantConversationQueries() {
     }
 }

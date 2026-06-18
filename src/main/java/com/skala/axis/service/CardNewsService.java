@@ -13,6 +13,7 @@ package com.skala.axis.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.RawArticle;
@@ -29,7 +30,6 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -51,7 +51,6 @@ import java.util.stream.Collectors;
 @Service
 public class CardNewsService {
     private static final DateTimeFormatter LEGACY_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
-    private static final ZoneId DISPLAY_ZONE = ZoneId.of("Asia/Seoul");
     private static final String SELF_PEER_ID = "sk_ax";
     private static final TypeReference<List<Map<String, Object>>> MAP_LIST_TYPE = new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
@@ -90,10 +89,10 @@ public class CardNewsService {
     }
 
     public List<CardNewsResponse> getTodayCards(String peerId, String importance, UUID userId) {
-      LocalDate today = LocalDate.now(DISPLAY_ZONE);
-      List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
-      return mapCards(cards, peerId, importance, null, today, false, userId);
-}
+        LocalDate today = AxisTime.today();
+        List<CardNews> cards = cardNewsRepository.findByStatusOrderByCreatedAtDesc(CardNewsStatus.ACTIVE);
+        return mapCards(cards, peerId, importance, null, today, false, userId);
+    }
 
     public List<CardNewsResponse> getAll(String peerId, String importance, String eventType) {
         return getAll(peerId, importance, eventType, null);
@@ -610,7 +609,7 @@ public class CardNewsService {
         }
         String text = String.valueOf(value).trim();
         try {
-            return OffsetDateTime.parse(text).atZoneSameInstant(DISPLAY_ZONE).toLocalDateTime();
+            return OffsetDateTime.parse(text).atZoneSameInstant(AxisTime.SERVICE_ZONE).toLocalDateTime();
         } catch (DateTimeParseException ignored) {
             // Fall through to local date-time/date parsing for legacy source payloads.
         }
@@ -1052,7 +1051,7 @@ public class CardNewsService {
         if (basisAt == null) {
             return null;
         }
-        return basisAt.atZone(DISPLAY_ZONE).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        return basisAt.atZone(AxisTime.SERVICE_ZONE).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 
     private String localDateInDisplayZone(String value) {
@@ -1061,7 +1060,7 @@ public class CardNewsService {
         }
         try {
             return OffsetDateTime.parse(value.trim())
-                    .atZoneSameInstant(DISPLAY_ZONE)
+                    .atZoneSameInstant(AxisTime.SERVICE_ZONE)
                     .toLocalDate()
                     .toString();
         } catch (DateTimeParseException ignored) {

@@ -29,6 +29,7 @@ import java.util.UUID;
 
 import static com.skala.axis.query.AssistantConversationQueries.COUNT_ACCESS_BY_DEVICE;
 import static com.skala.axis.query.AssistantConversationQueries.COUNT_ACCESS_BY_USER;
+import static com.skala.axis.query.AssistantConversationQueries.CONVERSATION_ACCESS_OWNER;
 import static com.skala.axis.query.AssistantConversationQueries.DELETE_CONVERSATION_IF_DELETED;
 import static com.skala.axis.query.AssistantConversationQueries.DELETE_MESSAGES_BY_CONVERSATION;
 import static com.skala.axis.query.AssistantConversationQueries.END_CONVERSATION;
@@ -366,14 +367,7 @@ public class AssistantConversationService {
 
     private boolean canUseConversation(UUID conversationId, UUID userId, String deviceHash) {
         try {
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                    SELECT user_id::text AS user_id,
-                           device_id_hash,
-                           status
-                      FROM assistant_conversations
-                     WHERE id = ?
-                     LIMIT 1
-                    """, conversationId);
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(CONVERSATION_ACCESS_OWNER, conversationId);
             if (rows.isEmpty()) {
                 return true;
             }

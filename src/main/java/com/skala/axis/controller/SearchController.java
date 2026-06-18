@@ -11,11 +11,14 @@ package com.skala.axis.controller;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.service.GlobalSearchService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/search")
 @RequiredArgsConstructor
@@ -27,7 +30,9 @@ public class SearchController {
         try {
             return ResponseEntity.ok(ApiResponse.success(globalSearchService.search(request)));
         } catch (RuntimeException e) {
-            return ResponseEntity.ok(ApiResponse.success(emptySearch(request == null ? "" : String.valueOf(request.getOrDefault("query", "")))));
+            log.error("Global search failed | query={}", queryOf(request), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SEARCH_FAILED", "검색 결과를 불러오지 못했습니다."));
         }
     }
 
@@ -42,17 +47,13 @@ public class SearchController {
                     "limit", limit
             ))));
         } catch (RuntimeException e) {
-            return ResponseEntity.ok(ApiResponse.success(emptySearch(q == null ? "" : q)));
+            log.error("Global search suggestions failed | query={}", q == null ? "" : q, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SEARCH_FAILED", "검색 결과를 불러오지 못했습니다."));
         }
     }
 
-    private static Map<String, Object> emptySearch(String query) {
-        return Map.of(
-                "query", query,
-                "items", java.util.List.of(),
-                "counts", Map.of("BRIEFING", 0, "CARD_NEWS", 0, "PEER_PLUS", 0),
-                "total", 0,
-                "hasMore", false
-        );
+    private static String queryOf(Map<String, Object> request) {
+        return request == null ? "" : String.valueOf(request.getOrDefault("query", ""));
     }
 }
