@@ -25,30 +25,37 @@
   DB 적재 결과 캐시. DB 공백/조회실패 시 기존 하드코딩과 동일한 정적 폴백(캐시 안 함 → 다음 호출 재시도).
 - 단위테스트 6종: DB값 우선 / 캐시(findAll 1회) / 미상→peerId / null·blank→"Peer사" / DB공백→폴백 / DB예외→폴백.
 
-### B-R2(착수) — `formatter/` 패키지 + `IssueImportanceClassifier`
-- 두 컨트롤러에 복제된 importance 등급 버킷팅(명시 등급 우선 + score 임계 0.85/0.6)을
-  `formatter/IssueImportanceClassifier.classify(importance, score)` 순수 함수로 추출. 임계값 상수화.
-- 단위테스트 3종(명시등급 보존 / 임계 경계 / null·미상→reference).
+### B-R2 — formatter/util 순수 헬퍼 추출 (대폭 진행)
+- 컨트롤러 중복 제거: `formatter/IssueImportanceClassifier`(importance 버킷팅).
+- **PeerOverviewTableService 분해 (2801 → 2576, -225, 5배치, 전부 단위테스트 동반·gradle test green)**:
+  - `formatter/PeerOverviewFormat` — 숫자/텍스트 포맷 8종(formatKrwBnText·formatPercentText·formatPercentPointText·nullToDash·topicParticle·firstNonBlank·nullToEmpty·blankToNull)
+  - `util/JsonValues` — JSON Object 트리 네비게이터 5종(listValue·objectList·objectMap·stringValue·firstNonBlankObject)
+  - `formatter/SwotText` — SWOT 표시 텍스트 정규화 6종
+  - `util/MapBuilder` — 순서보존+null허용 mapOf
+  - `formatter/PeerInsightBuilder` — insight·traceItem·buildRiskInsight 빌더 3종
+  - 전부 정적 import 로 호출부 무변경(move-only) + 현행 동작 단위테스트(28종)로 고정.
 
 ---
 
-## ⏸ 이월 (무인 자동작업 부적합 — 감독 하 진행 권장)
+## ⏸ 남은 작업 (stage 2/3 — 감독/신중 진행)
 
-> **이월 사유(공통)**: 아래 대상 핵심 서비스들은 **단위테스트가 없다**
-> (PeerOverviewTableService·DashboardKeywordTrendChartService·KeywordGraphService 모두 무테스트).
-> 구조 분해는 compile-green 만으로 동작 보존을 보장할 수 없고, 데모(2026-06-23) 직전 핵심 기능
-> (peer 비교표 등)을 무인 환경에서 리스크에 노출하는 것은 "완벽한지 확인" 원칙에 어긋난다.
-> → **characterization 테스트(현행 동작 골든 캡처) 선행 후, 소단위로 분해**하는 것을 권장.
+### B-R3 (stage 2) — PeerOverview query/ 계층 분리 — **감독 하 권장**
+> 순수 헬퍼는 위에서 다 빠졌고, 남은 최대 감량은 DB 로더(loadPositioningPoints·
+> loadSupplementalRows[~470줄]·loadFinancialRows·loadRows·loadSwotInsights 등)를 query/ 로
+> 분리하는 것(목표 2576→~600). **그러나 이 로더들은** ① multi-CTE SQL 을 `ResultSetExtractor`
+> 람다로 처리, ② TTL 캐시(cachedPeerOverviewTable), ③ mapper(mapPositioningPoint)·record
+> (DisplayPeer)·바인딩 헬퍼와 강결합. → 안전 분리는 **공개메서드 2종 characterization(쿼리별 SQL
+> 조각 모킹) 선행** 필요. 무인 + Postgres 전용 SQL(H2 실행불가)이라 characterization 이 fragile
+> → **무인 강행 시 데모(2026-06-23) 리스크, 감독 하 진행 권장.** (2026-06-18 무인 세션에서
+> 여기까지가 안전한 한계로 판단.)
 
-| 항목 | 계획 | 이월 사유 / 선행조건 |
-|---|---|---|
-| **B-R2 잔여** | formatter/ 로 더 많은 DTO 매핑 이동 | 안전하나 가치/리스크 대비 후순위. 매핑별 소단위로 가능. |
-| **B-R3** | query/ 패키지로 SQL/쿼리빌더 추출 | 테스트 보유 서비스(GlobalSearch·CardNews)부터는 가능. 무테스트 서비스는 characterization 선행. |
-| **B-R4** | AI fallback 패턴 AOP 화 | 횡단 관심사 — 동작 변화 위험(예외 흐름). 통합 테스트 선행 필요. |
-| **B-R5** | `@Cacheable` 도입 | 캐시 무효화 정책 설계 필요(peer/financial 갱신 주기). 설계 후 진행. |
-| **PeerOverviewTableService 분해** | 2801줄 → 3계층(≤500/class) | **무테스트 + 핵심 기능**. characterization 테스트 → 소단위(섹션별) 분해. AI repo `strategic_insight` 분해계획과 동일 방식 권장. |
+| 항목 | 상태 |
+|---|---|
+| **B-R3 query/** | stage 2 — 위 사유로 감독 하. 다음 단위 = 쿼리 로더(characterization 선행). |
+| **B-R4** AI fallback AOP | 횡단 관심사·예외흐름 변화 위험 — 통합테스트 선행. |
+| **B-R5** @Cacheable | 캐시 무효화 정책 설계 후. |
 
 ### 권장 다음 단계 (감독 하)
-1. PeerOverviewTableService 의 **순수 계산/포맷 메서드**부터 formatter/ 로 소단위 추출(각 추출에 단위테스트 동반).
-2. 그 다음 query/ 로 SQL 추출 → 마지막에 조립 로직만 남겨 3계층 완성.
-3. 각 단계 `./gradlew test` 게이트 + 별도 커밋(맥락 단위).
+1. getPeerPositioningChart·getPeerOverviewTable characterization 테스트(쿼리 SQL 조각별 모킹 → 출력 구조 고정).
+2. 그 위에서 query/ 로 로더 1개씩 이동(mapper·record 동반) → `./gradlew test` 게이트 → 커밋.
+3. 마지막에 조립/캐시 로직만 남겨 3계층 완성.
