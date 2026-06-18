@@ -1114,9 +1114,6 @@ public class CardNewsService {
     }
 
     private String displayCategoryLabel(CardNews card, String sector) {
-        if ("industry_trend".equals(card.getPeerId())) {
-            return "industry";
-        }
         return categoryLabel(sector, card.getPrimaryKeywordCategory());
     }
 
