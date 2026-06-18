@@ -5,6 +5,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -24,6 +25,7 @@ import static com.skala.axis.query.DashboardStockChartQueries.DAILY_RATE_SQL;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class DashboardStockChartService {
     private static final int CHART_DAYS = 7;
     private static final DateTimeFormatter STOCK_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM.dd");

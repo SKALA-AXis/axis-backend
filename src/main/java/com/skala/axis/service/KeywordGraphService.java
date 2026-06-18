@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class KeywordGraphService {
     private static final int MAX_KEYWORD_NODES = 30;
     private static final int MAX_VISIBLE_KEYWORDS_PER_COMPANY = 10;
