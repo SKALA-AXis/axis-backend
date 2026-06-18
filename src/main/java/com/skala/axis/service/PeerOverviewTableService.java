@@ -32,6 +32,11 @@ import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentText;
 import static com.skala.axis.formatter.PeerOverviewFormat.nullToDash;
 import static com.skala.axis.formatter.PeerOverviewFormat.nullToEmpty;
 import static com.skala.axis.formatter.PeerOverviewFormat.topicParticle;
+import static com.skala.axis.util.JsonValues.firstNonBlankObject;
+import static com.skala.axis.util.JsonValues.listValue;
+import static com.skala.axis.util.JsonValues.objectList;
+import static com.skala.axis.util.JsonValues.objectMap;
+import static com.skala.axis.util.JsonValues.stringValue;
 
 @Slf4j
 @Service
@@ -1125,16 +1130,6 @@ public class PeerOverviewTableService {
         return String.join(" ", uniqueSentences);
     }
 
-    private Object firstNonBlankObject(Object... values) {
-        for (Object value : values) {
-            String text = stringValue(value);
-            if (!text.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
     private String defaultSwotFactorType(String label) {
         if (label == null) {
             return "";
@@ -1196,39 +1191,6 @@ public class PeerOverviewTableService {
             log.warn("PeerOverviewTable | failed to parse LLM analysis trace", ex);
             return List.of();
         }
-    }
-
-    private List<Object> listValue(Object value) {
-        if (value instanceof List<?> list) {
-            return new ArrayList<>(list);
-        }
-        return List.of();
-    }
-
-    private List<Map<String, Object>> objectList(Object value) {
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Object rawItem : listValue(value)) {
-            Map<String, Object> item = objectMap(rawItem);
-            if (!item.isEmpty()) {
-                items.add(item);
-            }
-        }
-        return items;
-    }
-
-    private Map<String, Object> objectMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                result.put(String.valueOf(entry.getKey()), entry.getValue());
-            }
-            return result;
-        }
-        return Map.of();
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : String.valueOf(value).trim();
     }
 
     private String sanitizeObjectivePeerFlowText(String value) {
