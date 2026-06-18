@@ -32,6 +32,9 @@ import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentText;
 import static com.skala.axis.formatter.PeerOverviewFormat.nullToDash;
 import static com.skala.axis.formatter.PeerOverviewFormat.nullToEmpty;
 import static com.skala.axis.formatter.PeerOverviewFormat.topicParticle;
+import static com.skala.axis.formatter.PeerInsightBuilder.buildRiskInsight;
+import static com.skala.axis.formatter.PeerInsightBuilder.insight;
+import static com.skala.axis.formatter.PeerInsightBuilder.traceItem;
 import static com.skala.axis.formatter.SwotText.canonicalSwotLabel;
 import static com.skala.axis.formatter.SwotText.defaultSwotFactorType;
 import static com.skala.axis.formatter.SwotText.isInsufficientSwotText;
@@ -1173,33 +1176,6 @@ public class PeerOverviewTableService {
                 insight("기술 신호", peerLabel + "는 " + peerTech + "를 제품·플랫폼 또는 구현 역량의 중심으로 보여줍니다. 기술명과 플랫폼 신호가 기술 방향의 객관 지표로 쓰입니다."),
                 insight("리스크", buildRiskInsight(peerLabel, revenue, margin, marginDelta))
         );
-    }
-
-    private Map<String, String> insight(String label, String body) {
-        Map<String, String> item = new LinkedHashMap<>();
-        item.put("label", label);
-        item.put("body", body);
-        return item;
-    }
-
-    private Map<String, Object> traceItem(String label, String body, String reasoning, String evidence) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("label", label);
-        item.put("body", body);
-        if (reasoning != null && !reasoning.isBlank()) {
-            item.put("reasoning", reasoning);
-        }
-        if (evidence != null && !evidence.isBlank()) {
-            item.put("evidence", evidence);
-        }
-        return item;
-    }
-
-    private String buildRiskInsight(String peerLabel, Double revenue, Double margin, Double marginDelta) {
-        String revenueText = revenue == null ? "매출 데이터가 제한적" : "매출 " + formatKrwBnText(revenue);
-        String marginText = margin == null ? "영업이익률 데이터가 제한적" : "영업이익률 " + formatPercentText(margin);
-        String deltaText = marginDelta == null ? "전분기 대비 수익성 변화는 확인이 제한적입니다" : "전분기 대비 영업이익률 변화는 " + formatPercentPointText(marginDelta) + "입니다";
-        return peerLabel + "는 " + revenueText + ", " + marginText + " 기준으로 함께 봐야 합니다. " + deltaText + ". 따라서 최근 사업·기술 신호가 강하더라도 실적 범위와 수익성 변동은 별도 리스크로 남습니다.";
     }
 
     private List<Map<String, Object>> loadFinancialRows(String period) {
