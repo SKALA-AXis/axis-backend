@@ -32,6 +32,12 @@ import static com.skala.axis.formatter.PeerOverviewFormat.formatPercentText;
 import static com.skala.axis.formatter.PeerOverviewFormat.nullToDash;
 import static com.skala.axis.formatter.PeerOverviewFormat.nullToEmpty;
 import static com.skala.axis.formatter.PeerOverviewFormat.topicParticle;
+import static com.skala.axis.formatter.SwotText.canonicalSwotLabel;
+import static com.skala.axis.formatter.SwotText.defaultSwotFactorType;
+import static com.skala.axis.formatter.SwotText.isInsufficientSwotText;
+import static com.skala.axis.formatter.SwotText.normalizeDisplayText;
+import static com.skala.axis.formatter.SwotText.normalizeSwotDisplayText;
+import static com.skala.axis.formatter.SwotText.sanitizeObjectivePeerFlowText;
 import static com.skala.axis.util.JsonValues.firstNonBlankObject;
 import static com.skala.axis.util.JsonValues.listValue;
 import static com.skala.axis.util.JsonValues.objectList;
@@ -659,35 +665,6 @@ public class PeerOverviewTableService {
         return fallback;
     }
 
-    private String canonicalSwotLabel(String value) {
-        String normalized = value == null ? "" : value.trim().toLowerCase();
-        return switch (normalized) {
-            case "strength", "strengths", "강점" -> "Strength";
-            case "weakness", "weaknesses", "약점" -> "Weakness";
-            case "opportunity", "opportunities", "기회" -> "Opportunity";
-            case "threat", "threats", "위협" -> "Threat";
-            default -> null;
-        };
-    }
-
-    private String normalizeDisplayText(String value) {
-        if (value == null) {
-            return "";
-        }
-        String cleaned = value
-                .replaceAll("(?is)<[^>]+>", " ")
-                .replaceAll("[\\[\\]\\{\\}\"]", " ")
-                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.length() > 260) {
-            int sentenceEnd = Math.max(cleaned.lastIndexOf(". ", 220), cleaned.lastIndexOf("다. ", 220));
-            int cutIndex = sentenceEnd > 80 ? sentenceEnd + 1 : 260;
-            cleaned = cleaned.substring(0, Math.min(cutIndex, cleaned.length())).trim();
-        }
-        return cleaned;
-    }
-
     private Map<String, List<Map<String, String>>> buildComparisonInsights(List<Map<String, Object>> rows) {
         Map<String, Map<String, Object>> rowById = new HashMap<>();
         for (Map<String, Object> row : rows) {
@@ -1100,47 +1077,6 @@ public class PeerOverviewTableService {
         return String.join(" ", parts);
     }
 
-    private boolean isInsufficientSwotText(String value) {
-        return value != null && (
-                value.contains("현재 입력 근거만으로 해당 축을 정의하기 어렵다")
-                        || value.contains("판단 근거 부족")
-        );
-    }
-
-    private String normalizeSwotDisplayText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        String cleaned = sanitizeObjectivePeerFlowText(value)
-                .replaceAll("[\\[\\]\\{\\}\"]", " ")
-                .replaceAll("(?m)^\\s*[-*•]\\s*", "")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (cleaned.isBlank()) {
-            return "";
-        }
-
-        List<String> uniqueSentences = new ArrayList<>();
-        for (String sentence : cleaned.split("(?<=[.!?。])\\s+")) {
-            String normalized = sentence.replaceAll("\\s+", " ").trim();
-            if (!normalized.isBlank() && !uniqueSentences.contains(normalized)) {
-                uniqueSentences.add(normalized);
-            }
-        }
-        return String.join(" ", uniqueSentences);
-    }
-
-    private String defaultSwotFactorType(String label) {
-        if (label == null) {
-            return "";
-        }
-        return switch (label) {
-            case "Strength", "Weakness" -> "internal_controllable";
-            case "Opportunity", "Threat" -> "external_uncontrollable";
-            default -> "";
-        };
-    }
-
     private List<Map<String, Object>> extractAnalysisTrace(PeerLlmAnalysisSnapshot snapshot) {
         List<Map<String, Object>> items = new ArrayList<>();
         List<Map<String, Object>> sourceItems = snapshot.analysisTrace().isEmpty()
@@ -1191,48 +1127,6 @@ public class PeerOverviewTableService {
             log.warn("PeerOverviewTable | failed to parse LLM analysis trace", ex);
             return List.of();
         }
-    }
-
-    private String sanitizeObjectivePeerFlowText(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        return value
-                .replace("최근 공개 원문에서는", "")
-                .replace("최근 공개 원문에서", "최근 신호에서")
-                .replace("최근 공개 원문 신호", "최근 신호")
-                .replace("이 Peer사는", "해당 기업은")
-                .replace("이 Peer사가", "해당 기업이")
-                .replace("이 Peer사를", "해당 기업을")
-                .replace("이 Peer사의", "해당 기업의")
-                .replace("이 peer사는", "해당 기업은")
-                .replace("이 peer사가", "해당 기업이")
-                .replace("이 peer사를", "해당 기업을")
-                .replace("이 peer사의", "해당 기업의")
-                .replace("Peer사는", "해당 기업은")
-                .replace("Peer사가", "해당 기업이")
-                .replace("Peer사를", "해당 기업을")
-                .replace("Peer사의", "해당 기업의")
-                .replace("Peer사에", "해당 기업에")
-                .replace("Peer사", "대상 기업")
-                .replace("peer사는", "해당 기업은")
-                .replace("peer사가", "해당 기업이")
-                .replace("peer사를", "해당 기업을")
-                .replace("peer사의", "해당 기업의")
-                .replace("peer사에", "해당 기업에")
-                .replace("peer사", "대상 기업")
-                .replace("현재 입력 근거만으로 해당 축을 정의하기 어렵다", "판단 근거가 부족합니다.")
-                .replace("SK AX와 비교했을 때", "")
-                .replace("SK AX와 비교해", "")
-                .replace("SK AX와 비교하면", "")
-                .replace("SK AX 대비", "")
-                .replace("SK AX 기준", "")
-                .replace("SK AX 관점에서", "")
-                .replace("SK AX는", "해당 기업은")
-                .replace("SK AX의", "해당 기업의")
-                .replace("자사", "해당 기업")
-                .replaceAll("\\s+", " ")
-                .trim();
     }
 
     private List<Map<String, String>> buildAllComparisonInsights(List<Map<String, Object>> rows) {
