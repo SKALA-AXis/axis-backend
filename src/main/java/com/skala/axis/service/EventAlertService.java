@@ -1,5 +1,6 @@
 package com.skala.axis.service;
 
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.domain.CardNews;
 import com.skala.axis.domain.CardNewsStatus;
 import com.skala.axis.domain.SentAlert;
@@ -90,7 +91,7 @@ public class EventAlertService {
 
     /** 자동/수동 스캔 — 최근 후보 카드 전수 평가. */
     public ScanResult scanRecent(String triggerSource) {
-        LocalDateTime since = LocalDateTime.now().minusMinutes(scanLookbackMinutes);
+        LocalDateTime since = AxisTime.localDateTimeNow().minusMinutes(scanLookbackMinutes);
         List<CardNews> candidates = cardNewsRepository.findAlertCandidates(
                 since, CardNewsStatus.ACTIVE, normalizedEventTypes());
 
@@ -139,7 +140,7 @@ public class EventAlertService {
         if (peerEventSuppressDays > 0 && cand.peerId() != null && cand.eventType() != null
                 && sentAlertRepository.existsByPeerIdAndEventTypeAndSentAtAfter(
                         cand.peerId(), cand.eventType(),
-                        LocalDateTime.now().minusDays(peerEventSuppressDays))) {
+                        AxisTime.localDateTimeNow().minusDays(peerEventSuppressDays))) {
             return AlertOutcome.SKIPPED_DUPLICATE;
         }
 
@@ -150,7 +151,7 @@ public class EventAlertService {
         }
 
         String subject = buildSubject(cand);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = AxisTime.localDateTimeNow();
 
         // 예약(dedupe_key 선점) — 동시 스캔 경합은 UNIQUE 위반으로 한쪽만 통과.
         SentAlert reserved;

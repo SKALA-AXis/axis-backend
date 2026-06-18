@@ -1,5 +1,6 @@
 package com.skala.axis.service;
 
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.dto.CardNewsResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,7 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -66,7 +66,7 @@ public class BriefingService {
             return;
         }
 
-        String subject = "[AXIS] 오늘의 동향 브리핑 — " + LocalDate.now();
+        String subject = "[AXIS] 오늘의 동향 브리핑 — " + AxisTime.today();
         String text = buildBriefingText(todayCards);
         String html = buildBriefingHtml(todayCards);
         sesMailService.sendBriefing(recipients, subject, html, text);
@@ -213,7 +213,7 @@ public class BriefingService {
         sb.append("<header style=\"border-bottom:2px solid #111827;padding-bottom:16px;margin-bottom:24px;\">");
         sb.append("<h1 style=\"margin:0;font-size:22px;\">AXIS 오늘의 섹터별 브리핑</h1>");
         sb.append("<p style=\"margin:8px 0 0;color:#6b7280;font-size:14px;\">")
-                .append(LocalDate.now()).append(" · 전체 ").append(cards.size())
+                .append(AxisTime.today()).append(" · 전체 ").append(cards.size())
                 .append("건 · 섹터당 핵심 최대 ").append(MAX_CARDS_PER_SECTOR).append("건</p>");
         sb.append("</header>");
 

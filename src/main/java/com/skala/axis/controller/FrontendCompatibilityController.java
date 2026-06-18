@@ -1,5 +1,6 @@
 package com.skala.axis.controller;
 
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.service.BriefingReportService;
 import com.skala.axis.service.CardNewsService;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +44,7 @@ public class FrontendCompatibilityController {
 
     @GetMapping("/briefings")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getBriefings() {
-        return briefingReportService.findOverview(LocalDate.now())
+        return briefingReportService.findOverview(AxisTime.today())
                 .map(payload -> ResponseEntity.ok(ApiResponse.success(payload)))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                         .body(ApiResponse.<Map<String, Object>>error("BRIEFING_REPORT_UNAVAILABLE", "저장된 브리핑 결과가 없습니다.")));

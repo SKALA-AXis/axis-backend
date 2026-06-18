@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.config.AuthProperties;
 import com.skala.axis.config.AuthSecurity;
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.dto.CardNewsResponse;
 import com.skala.axis.exception.AiServerException;
@@ -20,7 +21,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -94,7 +94,7 @@ public class CardController {
         }
         log.info("todayCards | total={} page={} peer={} importance={}", total, items.size(), peerId, importance);
         return ResponseEntity.ok(ApiResponse.success(Map.of(
-                "date", LocalDate.now().toString(),
+                "date", AxisTime.today().toString(),
                 "items", items,
                 "total", total
         )));

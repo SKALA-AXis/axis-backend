@@ -2,6 +2,7 @@ package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;
 import com.skala.axis.exception.AiServerException;
+import com.skala.axis.config.AxisTime;
 import com.skala.axis.security.CronInternalAuth;
 import com.skala.axis.service.AgentResponseGuard;
 import com.skala.axis.service.AiClientService;
@@ -117,7 +118,7 @@ public class DashboardController {
                     .body(ApiResponse.success(Map.of("status", "unauthorized")));
         }
 
-        Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(LocalDate.now());
+        Map<String, Object> request = TodayInsightCronRequestFactory.dailyGenerateRequest(AxisTime.today());
         try {
             Map<String, Object> result = aiClientService.generateTodayInsight(request).block();
             AgentResponseGuard.requireSuccess("TODAY_INSIGHT", result);
@@ -207,7 +208,7 @@ public class DashboardController {
 
     static Map<String, Object> todayInsightRequest(Map<String, String> params, boolean preloadModel, boolean cacheOnly) {
         Map<String, Object> request = new HashMap<>();
-        request.put("anchor_date", params.getOrDefault("anchor_date", LocalDate.now().toString()));
+        request.put("anchor_date", params.getOrDefault("anchor_date", AxisTime.today().toString()));
         request.put("window_days", intParam(params, "window_days", 60));
         request.put("max_issues", intParam(params, "max_issues", 8));
         request.put("max_cards", intParam(params, "max_cards", 12));
@@ -314,7 +315,7 @@ public class DashboardController {
         try {
             return LocalDate.parse(String.valueOf(value));
         } catch (Exception ignored) {
-            return LocalDate.now();
+            return AxisTime.today();
         }
     }
 }

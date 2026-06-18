@@ -18,6 +18,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static com.skala.axis.query.MixerResultQueries.RECENT_MIXER_RESULTS_SQL;
+import static com.skala.axis.query.MixerResultQueries.SHARE_PAYLOAD_SQL;
+import static com.skala.axis.query.MixerResultQueries.UPSERT_MIXER_RESULT_SQL;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -74,45 +78,9 @@ public class MixerResultService {
                 "analysis_mode", normalizeMode(analysisMode)
         ));
 
-        String sql = """
-                INSERT INTO mixer_results (
-                    source_analysis_id,
-                    title,
-                    input_card_ids,
-                    input_peer_ids,
-                    input_keywords,
-                    ratios,
-                    generated_implication,
-                    insight_brief,
-                    radar_axes,
-                    connections,
-                    sk_ax_implication,
-                    final_one_liner,
-                    confidence,
-                    payload
-                )
-                VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb), CAST(? AS jsonb),
-                        CAST(? AS jsonb), CAST(? AS jsonb), ?, ?, ?, CAST(? AS jsonb))
-                ON CONFLICT (source_analysis_id) WHERE source_analysis_id IS NOT NULL
-                DO UPDATE SET
-                    title = EXCLUDED.title,
-                    input_card_ids = EXCLUDED.input_card_ids,
-                    input_peer_ids = EXCLUDED.input_peer_ids,
-                    input_keywords = EXCLUDED.input_keywords,
-                    ratios = EXCLUDED.ratios,
-                    generated_implication = EXCLUDED.generated_implication,
-                    insight_brief = EXCLUDED.insight_brief,
-                    radar_axes = EXCLUDED.radar_axes,
-                    connections = EXCLUDED.connections,
-                    sk_ax_implication = EXCLUDED.sk_ax_implication,
-                    final_one_liner = EXCLUDED.final_one_liner,
-                    confidence = EXCLUDED.confidence,
-                    payload = EXCLUDED.payload,
-                    updated_at = NOW()
-                """;
         try {
             jdbcTemplate.update(connection -> {
-                PreparedStatement ps = connection.prepareStatement(sql);
+                PreparedStatement ps = connection.prepareStatement(UPSERT_MIXER_RESULT_SQL);
                 ps.setString(1, savedSourceAnalysisId);
                 ps.setString(2, firstText(result, "mix_insight", "insight", "final_one_liner"));
                 Array cardArray = connection.createArrayOf("text", inputCardIds.toArray(String[]::new));
@@ -141,24 +109,7 @@ public class MixerResultService {
         int limit = Math.max(1, Math.min(rawLimit, 20));
         try {
             return jdbcTemplate.query(
-                    """
-                        SELECT
-                            id::text AS id,
-                            source_analysis_id,
-                            title,
-                            final_one_liner,
-                            sk_ax_implication,
-                            confidence::double precision AS confidence,
-                            array_to_json(input_peer_ids)::text AS peer_ids_json,
-                            array_to_json(input_card_ids)::text AS card_ids_json,
-                            array_to_json(input_keywords)::text AS keywords_json,
-                            payload::text AS payload_json,
-                            created_at::text AS created_at,
-                            updated_at::text AS updated_at
-                        FROM mixer_results
-                        ORDER BY created_at DESC
-                        LIMIT ?
-                    """,
+                    RECENT_MIXER_RESULTS_SQL,
                     (rs, rowNum) -> {
                         Map<String, Object> payload = parseObject(rs.getString("payload_json"));
                         Map<String, Object> provenance = mapValue(payload.get("provenance"));
@@ -197,25 +148,7 @@ public class MixerResultService {
         }
         try {
             List<Map<String, Object>> rows = jdbcTemplate.query(
-                    """
-                        SELECT
-                            id::text AS id,
-                            source_analysis_id,
-                            title,
-                            final_one_liner,
-                            sk_ax_implication,
-                            confidence::double precision AS confidence,
-                            array_to_json(input_card_ids)::text AS card_ids_json,
-                            array_to_json(input_peer_ids)::text AS peer_ids_json,
-                            array_to_json(input_keywords)::text AS keywords_json,
-                            payload::text AS payload_json,
-                            created_at::text AS created_at,
-                            updated_at::text AS updated_at
-                        FROM mixer_results
-                        WHERE source_analysis_id = ? OR id::text = ?
-                        ORDER BY updated_at DESC
-                        LIMIT 1
-                    """,
+                    SHARE_PAYLOAD_SQL,
                     (rs, rowNum) -> {
                         String resolvedMixId = stringValue(rs.getString("source_analysis_id"));
                         if (resolvedMixId.isBlank()) {
