@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-04
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-04 최종민 — 카드 뉴스 이미지 서빙 추가, briefing 생성 위임 및 V30 이미지 읽기 수정, readOnly 트랜잭션 명시
+ *   2026-05-19 박진 — DB 수정 및 사용하지 않는 기능 페이지 삭제
+ */
 package com.skala.axis.service;
 
 import jakarta.persistence.EntityNotFoundException;

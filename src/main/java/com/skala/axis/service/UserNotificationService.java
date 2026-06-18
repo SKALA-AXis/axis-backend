@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 기능 추가와 함께 사용자 알림 서비스 신설
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제 및 관리자 감사로그 API 연동
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.CardNews;

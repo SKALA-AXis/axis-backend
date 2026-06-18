@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 생성, 이후 CronJob 호출용 /api/pipeline/{trigger,delivery,status} 화이트리스트, today-insight 크론 생성, 대형 이벤트 이메일 알림 반영
+ *   2026-05-11 박진 — 프론트 기반 백엔드 대량 수정, 이후 로그인 보안·비밀번호 찾기, 에이전트 진단 Swagger, 생성형 브리핑 워크플로 공개
+ *   2026-06-04 안가은 — 대시보드 실시간 키워드 트렌드 스파이크 적용
+ */
 package com.skala.axis.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;

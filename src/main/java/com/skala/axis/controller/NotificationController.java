@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-11 박진 — 프론트 연동 위한 백엔드 대량 수정 후 로그인/회원가입, 알림 설정, 챗봇 백엔드 지원 추가
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.config.AuthProperties;

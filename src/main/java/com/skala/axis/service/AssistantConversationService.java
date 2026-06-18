@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-06-08
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-08 박진 — assistant 대화 API 추가, PDF 챗 지원·챗봇 로직 수정·AI 연동 강화 및 목업 삭제·챗봇 고도화
+ *   2026-06-11 안가은 — 백엔드 SQL 쿼리 분리
+ *   2026-06-17 최종민 — 쓰기 보유 JDBC 서비스 메서드 레벨 @Transactional 적용
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

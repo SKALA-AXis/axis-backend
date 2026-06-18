@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 생성, 이후 파이프라인 수동 브리핑 트리거·KST 타임존 수정, today-insight 크론 생성, 대형 이벤트 이메일 알림 추가
+ *   2026-05-06 박진 — 백엔드 초안에 반영, 이후 투데이 인사이트 API와 일일 생성 저장 연결
+ *   2026-05-12 박지원 — modified 추적 처리
+ */
 package com.skala.axis.config;
 
 import com.skala.axis.service.AiClientService;

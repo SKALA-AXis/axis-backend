@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-18
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-06-18 안가은 — 오늘 인사이트가 placeholder 대신 최신 리포트를 반환하도록 수정한 테스트 작성
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;

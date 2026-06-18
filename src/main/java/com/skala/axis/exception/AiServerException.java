@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인에 AI 서버 예외 추가
+ *   2026-06-11 박진 — 챗봇 AI 연동 강화 작업에 맞춰 예외 보강
+ */
 package com.skala.axis.exception;
 
 import org.springframework.http.HttpStatus;

@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-12
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-12 최종민 — AWS SES V2 SDK 통합(IRSA + ses-mailer-sa), Slack 발송 폐기
+ */
 package com.skala.axis.service;
 
 import lombok.extern.slf4j.Slf4j;

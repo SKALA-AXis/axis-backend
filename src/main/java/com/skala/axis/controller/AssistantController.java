@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-05-11
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-11 박진 — 프론트 기반 백엔드 수정으로 어시스턴트 컨트롤러 도입, 이후 대화 API·PDF 챗·목업 제거 등 챗봇 고도화
+ *   2026-05-15 최종민 — /api/assistant/chat 픽스처를 axis-ai /chat 연동으로 전환
+ */
 package com.skala.axis.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;

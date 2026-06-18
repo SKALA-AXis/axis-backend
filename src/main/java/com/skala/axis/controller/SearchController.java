@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 생성
+ *   2026-05-11 박진 — 프론트 기반 백엔드 대량 수정, 카드뉴스·알림 설정, 챗봇 로직 수정
+ *   2026-06-14 안가은 — 대시보드·전역 검색 API 보강
+ */
 package com.skala.axis.controller;
 
 import com.skala.axis.dto.ApiResponse;

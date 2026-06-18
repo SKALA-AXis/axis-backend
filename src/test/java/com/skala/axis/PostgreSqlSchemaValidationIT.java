@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-08
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-08 최종민 — gitleaks CI·풀 SHA 이미지 태그와 함께 Hibernate validate 테스트 추가, Postgres 스키마 IT는 환경변수 미설정 시 skip 처리
+ */
 package com.skala.axis;
 
 import org.junit.jupiter.api.Test;

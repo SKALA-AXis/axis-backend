@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 기능으로 카드뉴스 북마크 엔티티 추가
+ */
 package com.skala.axis.domain;
 
 import jakarta.persistence.Column;

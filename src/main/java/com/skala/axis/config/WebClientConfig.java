@@ -1,3 +1,10 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 작성
+ *   2026-06-12 박진 — 생성형 브리핑 워크플로 연동 위해 WebClient 설정 보완
+ */
 package com.skala.axis.config;
 
 import org.springframework.beans.factory.annotation.Value;

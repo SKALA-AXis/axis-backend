@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인 구성 시 애플리케이션 컨텍스트 로드 테스트 신설
+ */
 package com.skala.axis;
 
 import org.junit.jupiter.api.Test;

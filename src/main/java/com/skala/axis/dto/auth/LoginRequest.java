@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 기능 추가에 따른 로그인 요청 DTO 작성, 이후 에이전트 진단 Swagger 엔드포인트 작업 반영
+ */
 package com.skala.axis.dto.auth;
 
 import com.fasterxml.jackson.annotation.JsonAlias;

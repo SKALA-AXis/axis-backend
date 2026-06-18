@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-06-10
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-06-10 박진 — mixer 결과 영속화 및 최신 인사이트 제공
+ *   2026-06-14 안가은 — briefing/dashboard read model 갱신 및 placeholder 대신 최신 리포트 반환
+ *   2026-06-17 최종민 — 순수 read JDBC 서비스에 @Transactional(readOnly=true) 명시
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

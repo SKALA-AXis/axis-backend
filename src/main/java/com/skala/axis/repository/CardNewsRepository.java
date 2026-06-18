@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-05-12
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-12 최종민 — issue_cards를 card_news로 리네이밍하며 리포지토리 신설, 이후 대형 이벤트 알림 후보 조회 추가
+ *   2026-05-22 박진 — 카드뉴스 대폭 수정 및 알림 설정 반영
+ *   2026-05-29 안가은 — 카드뉴스 소프트삭제·관리자 감사로그 API용 조회 메서드 추가
+ */
 package com.skala.axis.repository;
 
 import com.skala.axis.domain.CardNews;

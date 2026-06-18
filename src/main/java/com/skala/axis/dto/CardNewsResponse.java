@@ -1,3 +1,13 @@
+/*
+ * 작성일: 2026-05-12
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-05-12 최종민 — issue_cards→card_news 리네이밍 및 image*→cover* 필드 OpenAPI 계약 정렬, 카드 라인 배지(peer·sector·score) 추가
+ *   2026-05-18 박지원 — 원문 신뢰도(credibility) 필드 제거, 소스 카운트 응답 수정, 발행 시각순 카드 정렬
+ *   2026-05-19 박진 — DB 수정 및 미사용 기능 페이지 삭제 반영
+ *   2026-05-27 안가은 — 카드뉴스 데이터 연동
+ *   2026-06-14 심유정 — 카드뉴스 메인 상세 필드 노출 및 전략 액션 projection 추가
+ */
 package com.skala.axis.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;

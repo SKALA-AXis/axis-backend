@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-29
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-05-29 안가은 — 관리자 감사로그 API 추가
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.AdminAuditLog;

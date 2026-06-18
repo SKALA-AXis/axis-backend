@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-06-09
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-06-09 최종민 — GET /api/global/trends read API 작성, 이후 read 서비스에 @Transactional(readOnly=true) 명시
+ *   2026-06-11 안가은 — 백엔드 SQL 쿼리 분리
+ *   2026-06-12 박지원 — 글로벌 트렌드 헤드라인·종합 요약·근거 링크·기업 동향 노출 추가
+ */
 package com.skala.axis.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;

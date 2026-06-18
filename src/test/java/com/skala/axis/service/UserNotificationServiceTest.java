@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-27
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-27 박진 — 중요한 알림 키워드 사용자 설정 추가에 대한 테스트 작성
+ */
 package com.skala.axis.service;
 
 import com.skala.axis.domain.User;

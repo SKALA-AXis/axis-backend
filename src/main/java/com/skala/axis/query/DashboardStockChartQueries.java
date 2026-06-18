@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-06-11
+ * 작성자: 안가은
+ * 변경이력:
+ *   2026-06-11 안가은 — backend SQL 쿼리 분리 작업으로 주가 차트 쿼리 작성
+ */
 package com.skala.axis.query;
 
 public final class DashboardStockChartQueries {

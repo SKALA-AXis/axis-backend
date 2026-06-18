@@ -1,3 +1,11 @@
+/*
+ * 작성일: 2026-04-21
+ * 작성자: 최종민
+ * 변경이력:
+ *   2026-04-21 최종민 — axis-backend 베이스라인으로 엔티티 추가, @Column peer_id→company DB 스키마 매핑 정합
+ *   2026-05-19 박지원 — DB schema V31 반영
+ *   2026-05-27 안가은 — 카드뉴스 데이터 연동
+ */
 package com.skala.axis.domain;
 
 import jakarta.persistence.*;

@@ -1,3 +1,9 @@
+/*
+ * 작성일: 2026-05-21
+ * 작성자: 박진
+ * 변경이력:
+ *   2026-05-21 박진 — 로그인/회원가입 기능과 함께 사용자 알림 리포지토리 추가, 이후 알림 설정 및 챗봇 지원 보강
+ */
 package com.skala.axis.repository;
 
 import com.skala.axis.domain.UserNotification;
