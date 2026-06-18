@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -21,6 +22,7 @@ import static com.skala.axis.query.RawArticleQueries.LIST_BY_FILTER;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class RawArticleQueryService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
