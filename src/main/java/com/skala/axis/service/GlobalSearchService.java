@@ -289,7 +289,19 @@ public class GlobalSearchService {
     private SqlParts baseWhere(SearchCriteria criteria, String dateExpression, String searchExpression) {
         SqlParts parts = new SqlParts();
         if (criteria.hasQuery()) {
-            parts.add(searchExpression + " ILIKE ?", criteria.likePattern());
+            if (criteria.termLikePatterns().isEmpty()) {
+                parts.add(searchExpression + " ILIKE ?", criteria.likePattern());
+            } else {
+                // 전체 일치 OR 토큰 전부 포함 — "삼성 sds"(공백) 가 "삼성SDS" 를 잡도록(브리핑 검색과 동일 규칙).
+                String termMatch = criteria.termLikePatterns().stream()
+                        .map(ignored -> searchExpression + " ILIKE ?")
+                        .reduce((left, right) -> left + " AND " + right)
+                        .orElse("FALSE");
+                List<Object> values = new ArrayList<>();
+                values.add(criteria.likePattern());
+                values.addAll(criteria.termLikePatterns());
+                parts.add("(" + searchExpression + " ILIKE ? OR (" + termMatch + "))", values.toArray());
+            }
         }
         addDateRange(parts, criteria, dateExpression);
         if (!parts.hasConditions()) {
