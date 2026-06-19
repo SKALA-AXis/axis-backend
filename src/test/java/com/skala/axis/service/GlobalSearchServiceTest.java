@@ -129,6 +129,22 @@ class GlobalSearchServiceTest {
     }
 
     @Test
+    @DisplayName("Peer 검색은 공백 분리 토큰으로도 매칭한다 ('삼성 sds' → '삼성SDS')")
+    void peerSearchMatchesMultiWordTokens() {
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> paramsCaptor = ArgumentCaptor.forClass(Object[].class);
+        when(jdbcTemplate.query(sqlCaptor.capture(),
+                ArgumentMatchers.<RowMapper<Map<String, Object>>>any(), paramsCaptor.capture()))
+                .thenReturn(List.of());
+
+        service.search(Map.of("query", "삼성 sds", "scopes", List.of("PEER_PLUS")));
+
+        // 전체 likePattern 단독이 아니라 토큰 AND 매칭이 SQL 에 포함되어야 "삼성 sds" 가 "삼성SDS" 를 잡는다.
+        assertThat(sqlCaptor.getValue()).contains("peer_companies").contains("ILIKE ? AND");
+        assertThat(paramsCaptor.getValue()).contains("%삼성%", "%sds%");
+    }
+
+    @Test
     @DisplayName("의미 검색 결과가 모자라면 키워드 결과를 중복 없이 보충한다")
     void semanticResultsMergedWithKeywordWithoutDuplicates() {
         when(aiClientService.search(any(SearchRequest.class))).thenReturn(Mono.just(aiResponse(11L)));

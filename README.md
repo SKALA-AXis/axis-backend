@@ -26,46 +26,52 @@ AXIS 서비스의 Spring Boot REST API 서버입니다. Frontend가 호출하는
 | API Docs | SpringDoc OpenAPI |
 | Test | JUnit 5, MockMvc, H2 |
 
-## 실행 전 준비
+## 사전 요구사항
+
+| 항목 | 값 |
+|---|---|
+| JDK | **17** — Gradle toolchain 이 17 을 사용/자동 프로비저닝합니다. 미설치 시 JDK17 설치 또는 `JAVA_HOME` 을 17 로 지정 |
+| Gradle | Wrapper 포함(`./gradlew`) — 별도 설치 불필요 |
+| PostgreSQL | 앱 실행 시에만 필요. **테스트는 H2 인메모리라 DB 불필요** |
+
+> macOS 에 여러 JDK 가 있으면 toolchain 이 17 을 못 찾을 수 있습니다. JDK17 설치 후 지정하세요:
+> `export JAVA_HOME=$(/usr/libexec/java_home -v 17)` (Homebrew `openjdk@17` 등).
+
+## 빠른 검증 (DB·클러스터 불필요)
 
 ```bash
 cd axis-backend
-
-# 최초 1회 또는 권한이 빠진 경우
-chmod +x ./gradlew
-
-# 컴파일 및 테스트
-./gradlew test
+chmod +x ./gradlew     # 최초 1회 권한
+./gradlew test         # H2 인메모리로 전체 테스트 — 외부 DB 없이 동작
 ```
 
-로컬에서 DB 없이 API 계약 스모크 테스트만 확인할 때는 테스트가 H2 인메모리 DB를 사용합니다.
+계약 스모크만: `./gradlew test --tests com.skala.axis.OpenApiContractSmokeTests`
 
-## 로컬 실행
+## 로컬 실행 (호스트, 클러스터 불필요)
 
-전체 스택 (backend + ai + frontend) 을 한 번에 띄우는 권장 방법은 [`axis-infra/README.md`](../axis-infra/README.md) 의 *로컬 개발 3 모드* 가이드를 참고. 가장 빠른 진입:
-
-```bash
-cd ../axis-infra
-make up-cluster          # cluster DB + docker compose (port-forward 자동)
-```
-
-backend 만 host 에서 빠르게 iterate (HMR / debugger 등) 하는 경우:
+backend 를 호스트에서 직접 띄워 빠르게 iterate(HMR/디버거). DB 는 로컬 docker 컨테이너로:
 
 ```bash
-# 1. DB 준비 — cluster (Mode A) 또는 로컬 docker (Mode B)
+# 1. 로컬 docker DB (axis-infra 의 postgres 컨테이너만)
 cd ../axis-infra
-docker compose --profile local --env-file .env.local up -d postgres   # Mode B 만
+cp .env.local.example .env 2>/dev/null || true
+docker compose --profile local up -d postgres
 
-# 2. backend host 실행
+# 2. backend 호스트 실행 (:8080)
 cd ../axis-backend
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
+
+`bootRun` 은 `axis-backend/.env` → `.env.local` 을 자동으로 읽어 환경변수로 주입합니다(빌드 스크립트 기능, 시스템 환경변수가 우선). 로컬 전용 설정은 `axis-backend/.env.local` 에 두면 됩니다(커밋 금지).
+
+- **전체 스택**(backend+ai+frontend+DB)을 한 번에: [`axis-infra/README.md`](../axis-infra/README.md) 의 *빠른 시작* → `docker compose --profile local up -d --build`
+- **팀 개발자**(SKALA EKS 접근 시): `cd ../axis-infra && make up-cluster` (공용 클러스터 DB 연결)
 
 `local` profile 의 host 실행 기본값은 `jdbc:postgresql://localhost:5432/axis`, `axuser`, `axpass`. 다른 DB 에 붙을 때만 `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` 환경 변수로 override.
 
 `local` profile 은 JPA `ddl-auto=none` 으로 동작한다. cluster DB / port-forward DB 처럼 스키마가 코드보다 한두 migration 뒤처진 환경에서도 boot 자체는 가능하게 두고, 스키마 검증은 아래의 격리 docker DB + Flyway enable 경로에서 수행한다.
 
-### ⚠️ Flyway 자동 차단 (PR #20 부터)
+### Flyway 자동 차단 (PR #20 부터)
 
 `local` profile 로 실행 시 Flyway 가 **자동 비활성** — backend 시작 시 schema migrate 안 함. cluster DB 를 port-forward 로 보면서 dev 하는 중 새 migration 파일이 silent 적용되는 사고 방지.
 
