@@ -71,7 +71,7 @@ cd ../axis-backend
 
 `local` profile 은 JPA `ddl-auto=none` 으로 동작한다. cluster DB / port-forward DB 처럼 스키마가 코드보다 한두 migration 뒤처진 환경에서도 boot 자체는 가능하게 두고, 스키마 검증은 아래의 격리 docker DB + Flyway enable 경로에서 수행한다.
 
-### ⚠️ Flyway 자동 차단 (PR #20 부터)
+### Flyway 자동 차단 (PR #20 부터)
 
 `local` profile 로 실행 시 Flyway 가 **자동 비활성** — backend 시작 시 schema migrate 안 함. cluster DB 를 port-forward 로 보면서 dev 하는 중 새 migration 파일이 silent 적용되는 사고 방지.
 
