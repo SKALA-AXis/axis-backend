@@ -88,8 +88,33 @@ public class GlobalSearchService {
             return stringValue(right.get("date")).compareTo(stringValue(left.get("date")));
         });
 
-        int limit = Math.min(criteria.limit(), items.size());
-        List<Map<String, Object>> limitedItems = items.subList(0, limit);
+        // 전체 점수순 상위 limit 만 자르면 최고점 scope(briefing 130/120…)가 limit 을 독식해
+        // card/peer(110/85, 100/80)가 결과에서 통째로 사라진다. scope 라운드로빈으로 각 scope 의
+        // 상위 항목을 번갈아 담아 limit 까지 채워, 총량(limit)은 지키되 어느 scope 도 굶지 않게 한다.
+        // (items 는 위에서 점수순 정렬됨 → bucket 내 순서도 점수순)
+        Map<String, List<Map<String, Object>>> byScope = new LinkedHashMap<>();
+        for (String scope : ALL_SCOPES) {
+            byScope.put(scope, new ArrayList<>());
+        }
+        for (Map<String, Object> item : items) {
+            List<Map<String, Object>> bucket = byScope.get(String.valueOf(item.get("type")));
+            if (bucket != null) {
+                bucket.add(item);
+            }
+        }
+        List<Map<String, Object>> limitedItems = new ArrayList<>();
+        int[] cursor = new int[ALL_SCOPES.size()];
+        boolean progressed = true;
+        while (limitedItems.size() < criteria.limit() && progressed) {
+            progressed = false;
+            for (int i = 0; i < ALL_SCOPES.size() && limitedItems.size() < criteria.limit(); i++) {
+                List<Map<String, Object>> bucket = byScope.get(ALL_SCOPES.get(i));
+                if (cursor[i] < bucket.size()) {
+                    limitedItems.add(bucket.get(cursor[i]++));
+                    progressed = true;
+                }
+            }
+        }
         Map<String, Long> counts = new LinkedHashMap<>();
         ALL_SCOPES.forEach(scope -> counts.put(scope, items.stream().filter(item -> scope.equals(item.get("type"))).count()));
 
